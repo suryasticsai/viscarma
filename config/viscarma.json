@@ -1,9 +1,9 @@
 {
   "appUrl": "http://localhost:3000",
-  "repoPath": "../your-target-app",
+  "repoPath": "../alkembicneo",
   "github": {
     "owner": "suryasticsai",
-    "repo": "your-target-repo",
+    "repo": "alkembicneo",
     "baseBranch": "main",
     "prLabels": ["auto-generated"]
   },
