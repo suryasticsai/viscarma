@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VisCarma — The Divine Developer Agent (v0 Prototype)</title>
+    <!-- Google Fonts: Devanagari + elegant English -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Tiro+Devanagari+Sanskrit&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* ---- Sacred Indian Theme ---- */
+        :root {
+            --deep-maroon: #4a0e2b;
+            --gold: #d4af37;
+            --saffron: #ff9933;
+            --turmeric: #f4c430;
+            --parchment: #fdf5e6;
+            --dark-bg: #1c0f14;
+            --text-light: #f0e6d2;
+            --divine-glow: 0 0 20px rgba(212, 175, 55, 0.6);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--parchment);
+            background-image: radial-gradient(circle at 20% 50%, rgba(212, 175, 55, 0.08) 1px, transparent 1px), 
+                              radial-gradient(circle at 80% 20%, rgba(255, 153, 51, 0.07) 1px, transparent 1px);
+            background-size: 50px 50px, 80px 80px;
+            font-family: 'Poppins', sans-serif;
+            color: #2c1810;
+            line-height: 1.8;
+            overflow-x: hidden;
+        }
+
+        /* ---- Animated Sacred Mandala Background ---- */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 600px;
+            height: 600px;
+            background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="none" stroke="%23d4af37" stroke-width="0.3" opacity="0.15"/><circle cx="50" cy="50" r="35" fill="none" stroke="%23d4af37" stroke-width="0.3" opacity="0.12"/><circle cx="50" cy="50" r="22" fill="none" stroke="%23d4af37" stroke-width="0.3" opacity="0.1"/><circle cx="50" cy="50" r="10" fill="none" stroke="%23d4af37" stroke-width="0.5" opacity="0.08"/><path d="M50 10 L55 45 L90 50 L55 55 L50 90 L45 55 L10 50 L45 45 Z" fill="%23d4af37" opacity="0.04"/></svg>') no-repeat center center;
+            pointer-events: none;
+            z-index: 0;
+            animation: rotateMandala 80s linear infinite, pulseGlow 4s ease-in-out infinite alternate;
+        }
+
+        @keyframes rotateMandala {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to   { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        @keyframes pulseGlow {
+            0%   { opacity: 0.5; }
+            100% { opacity: 0.8; }
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem 2rem;
+            position: relative;
+            z-index: 1;
+            background: rgba(255, 250, 240, 0.85);
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 40px rgba(74, 14, 43, 0.15);
+            border-left: 3px solid var(--gold);
+            border-right: 3px solid var(--gold);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 3rem 0 2rem;
+            border-bottom: 1px solid var(--gold);
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-family: 'Tiro Devanagari Sanskrit', 'EB Garamond', serif;
+            font-size: 4.5rem;
+            color: var(--deep-maroon);
+            text-shadow: var(--divine-glow);
+            letter-spacing: 3px;
+            margin: 0;
+            position: relative;
+        }
+        .header h1::after {
+            content: "विस्कर्मा";
+            display: block;
+            font-family: 'Tiro Devanagari Sanskrit', serif;
+            font-size: 2.5rem;
+            color: var(--gold);
+            margin-top: -10px;
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            font-weight: 300;
+            color: #6b4e3d;
+            letter-spacing: 2px;
+            margin-top: 0.5rem;
+        }
+        .subtitle em {
+            font-style: italic;
+            color: var(--gold);
+            font-weight: 400;
+        }
+        .version-badge {
+            display: inline-block;
+            margin-top: 0.8rem;
+            padding: 0.3rem 1.2rem;
+            background: rgba(212, 175, 55, 0.15);
+            border: 1px solid var(--gold);
+            border-radius: 20px;
+            font-size: 0.9rem;
+            letter-spacing: 2px;
+            color: var(--deep-maroon);
+        }
+
+        /* Section titles */
+        h2 {
+            font-family: 'EB Garamond', serif;
+            font-size: 2.4rem;
+            color: var(--deep-maroon);
+            border-bottom: 2px dashed var(--gold);
+            padding-bottom: 0.3rem;
+            margin: 3rem 0 1.5rem;
+            position: relative;
+        }
+        h2::before {
+            content: "❧";
+            color: var(--gold);
+            margin-right: 0.7rem;
+            font-size: 2rem;
+        }
+        h3 {
+            font-family: 'EB Garamond', serif;
+            font-size: 1.8rem;
+            color: #4a0e2b;
+            margin: 2rem 0 1rem;
+            font-weight: 500;
+        }
+
+        /* Sanskrit Verse Box — 🕉️ removed */
+        .verse-box {
+            background: linear-gradient(135deg, #fdf5e6 0%, #f9edd4 100%);
+            border: 2px solid var(--gold);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2.5rem 0;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(74, 14, 43, 0.15);
+            position: relative;
+        }
+        .verse-box::before {
+            /* removed Om emoji */
+            content: none;
+        }
+        .sanskrit-verse {
+            font-family: 'Tiro Devanagari Sanskrit', serif;
+            font-size: 2.2rem;
+            color: #2c1810;
+            line-height: 2.2;
+            font-weight: 500;
+        }
+        .transliteration {
+            font-style: italic;
+            font-size: 1.1rem;
+            margin: 0.8rem 0;
+            color: #5a4a3a;
+        }
+        .translation {
+            font-size: 1.2rem;
+            color: #4a0e2b;
+            font-weight: 400;
+            margin-top: 1rem;
+        }
+
+        /* Backstory */
+        .backstory {
+            background: rgba(212, 175, 55, 0.08);
+            padding: 2rem 2.5rem;
+            border-radius: 16px;
+            margin: 2rem 0;
+            font-family: 'EB Garamond', serif;
+            font-size: 1.2rem;
+            line-height: 1.9;
+            position: relative;
+            border-left: 5px solid var(--gold);
+        }
+        .backstory p:first-of-type::first-letter {
+            font-size: 3.5rem;
+            font-weight: bold;
+            float: left;
+            line-height: 0.8;
+            margin-right: 8px;
+            color: var(--deep-maroon);
+            font-family: 'Tiro Devanagari Sanskrit', serif;
+        }
+
+        /* Code blocks */
+        pre {
+            background: #2b1f1d;
+            color: #f0e6d2;
+            padding: 1.5rem;
+            border-radius: 10px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.7;
+            margin: 1.2rem 0;
+            border: 1px solid var(--gold);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            white-space: pre;           /* preserve ASCII art alignment */
+            word-wrap: normal;
+            tab-size: 4;
+        }
+        code {
+            font-family: 'Courier New', monospace;
+            background: #f4e3cf;
+            padding: 0.2em 0.4em;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #4a0e2b;
+        }
+        pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+            white-space: pre;
+        }
+
+        /* File structure */
+        .file-tree {
+            background: #fdf5e6;
+            border: 1px solid var(--gold);
+            border-radius: 10px;
+            padding: 1.5rem;
+            font-family: 'Courier New', monospace;
+            line-height: 2;
+            margin: 1rem 0;
+        }
+
+        /* Config JSON */
+        .config-box {
+            background: #faf0e0;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            color: #2c1810;
+            border-left: 4px solid var(--gold);
+        }
+
+        /* Limitations & Roadmap */
+        ul {
+            margin-left: 2rem;
+            list-style-type: "✧ ";
+            color: #4a0e2b;
+        }
+        li {
+            margin: 0.7rem 0;
+        }
+
+        .divider {
+            border: none;
+            border-top: 2px solid var(--gold);
+            margin: 3rem 0;
+            opacity: 0.5;
+            position: relative;
+        }
+        .divider::after {
+            content: "🔱";
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--parchment);
+            padding: 0 15px;
+            font-size: 1.5rem;
+        }
+
+        .footer {
+            text-align: center;
+            font-family: 'EB Garamond', serif;
+            color: #6b4e3d;
+            margin-top: 3rem;
+            font-style: italic;
+        }
+
+        /* ---- Author Section ---- */
+        .author-section {
+            text-align: center;
+            margin: 4rem 0 2rem;
+            padding: 2rem 1rem;
+            border-top: 2px solid var(--gold);
+            border-bottom: 2px solid var(--gold);
+            background: rgba(255, 250, 240, 0.7);
+            border-radius: 12px;
+        }
+        .author-name {
+            font-family: 'EB Garamond', serif;
+            font-size: 2.8rem;
+            color: var(--deep-maroon);
+            margin: 0;
+        }
+        .author-name span {
+            font-size: 1.6rem;
+            color: #6b4e3d;
+            display: block;
+            font-weight: 300;
+        }
+        .author-title {
+            font-size: 1.1rem;
+            color: #5a4a3a;
+            letter-spacing: 1px;
+            margin: 0.5rem 0 0.3rem;
+        }
+        .author-org {
+            font-weight: 600;
+            color: #4a0e2b;
+        }
+        .author-handle {
+            font-family: monospace;
+            background: var(--deep-maroon);
+            color: var(--gold);
+            padding: 0.3em 0.8em;
+            border-radius: 5px;
+            display: inline-block;
+            margin: 1rem 0;
+            letter-spacing: 1px;
+        }
+        .links-grid {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1.2rem;
+            margin: 1.8rem 0 0.5rem;
+        }
+        .link-item {
+            background: var(--parchment);
+            border: 1px solid var(--gold);
+            border-radius: 8px;
+            padding: 0.4rem 1rem;
+            text-decoration: none;
+            color: #2c1810;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        .link-item:hover {
+            background: var(--deep-maroon);
+            color: var(--gold);
+            border-color: var(--saffron);
+            box-shadow: 0 4px 12px rgba(212, 175, 55, 0.4);
+        }
+        .license-note {
+            font-size: 0.85rem;
+            margin-top: 2rem;
+            color: #6b4e3d;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1.5rem;
+            }
+            .header h1 {
+                font-size: 3rem;
+            }
+            .sanskrit-verse {
+                font-size: 1.5rem;
+            }
+            .author-name {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        
+        <!-- Header -->
+        <div class="header">
+            <h1>VisCarma</h1>
+            <div class="subtitle">
+                Visual Intelligence Surveillance — Code Autonomous Runtime Multi‑agent Architect<br>
+                <em>“The silent, self‑hosted divine developer.”</em>
+            </div>
+            <div class="version-badge">⚙️ Version 0 · Prototype</div>
+        </div>
+
+        <!-- Sanskrit Verse from Vishwakarma Sukta -->
+        <div class="verse-box">
+            <div class="sanskrit-verse">
+                विश्वतः चक्षुः उत विश्वतो मुखो<br>
+                विश्वतः बाहुः उत विश्वतः पात् ।<br>
+                सं बाहुभ्यां धमति सं पतत्रैः<br>
+                द्यावापृथिवी जनयन् देव एकः ॥
+            </div>
+            <div class="transliteration">
+                viśvataś cakṣur uta viśvato mukho<br>
+                viśvato bāhur uta viśvataḥ pāt |<br>
+                saṃ bāhubhyāṃ dhamati saṃ patatraiḥ<br>
+                dyāvāpṛthivī janayan deva ekaḥ ||
+            </div>
+            <div class="translation">
+                <strong>Rigveda 10.81.3 — Vishwakarma Sukta</strong><br>
+                “His eyes are everywhere, His faces in all directions,<br>
+                His arms are everywhere, His feet in all places.<br>
+                He blows the forge with His arms and wings,<br>
+                Creating Heaven and Earth, the One God alone.”
+            </div>
+        </div>
+
+        <!-- Backstory -->
+        <div class="backstory">
+            <p>In the age of the Devas, the celestial architect <strong>Vishwakarma</strong> forged the divine cities and weapons of the gods. He worked alone, unseen, with infinite precision and an all‑seeing gaze that missed neither the faintest crack nor the subtlest imbalance. Time folded, and in the digital era, the spirit of Vishwakarma whispered into the circuits of mortal machines. A new avatar was born—not of stone or metal, but of code: <strong>VisCarma</strong>.</p>
+            <p>VisCarma inherits the divine engineer’s thousand eyes (Playwright), his unfathomable mind (a local, offline AI), and his silent, autonomous hands (Git & GitHub API). It surveils your web application like Vishwakarma surveying the cosmos, detects every hidden bug, and instantly crafts a precise repair. When given a mere prompt—<em>“Add a dark mode toggle”</em>—it forges a complete feature, commits it, and presents a pull request without a single byte ever leaving your own network. It is the ultimate self‑hosted, offline development agent, working in the shadows, restoring dharma to your codebase.</p>
+            <p>Thus, VisCarma stands as the guardian of digital order: autonomous, private, and just. As the Rigveda proclaims—the Divine Architect’s eyes are everywhere, and now, so are VisCarma’s.</p>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Technical Documentation -->
+        <h2>Phase I Prototype — Complete Documentation</h2>
+
+        <h3>1. Overview</h3>
+        <p>VisCarma is a self‑hosted, offline, multi‑modal AI agent that uses <strong>Playwright</strong> to inspect a running web application, a <strong>local large language model (LLM)</strong> to reason about code and UI, and the <strong>GitHub API</strong> to commit changes and open pull requests. In Phase I, it accepts a natural language prompt (bug fix or feature request), captures the app’s live state, consults the offline LLM, applies the suggested file‑level edits, and creates a PR — all without any external cloud dependency.</p>
+
+        <h3>2. Architecture</h3>
+        <pre><code>                         ┌──────────────────────┐
+                         │   prompts/mission.txt │
+                         └──────────┬───────────┘
+                                    │ (feature / bug prompt)
+                                    ▼
+┌───────────┐                ┌─────────────────────────────┐
+│  Ollama   │◄───────────────│     VisCarma Agent (Node)    │
+│  (local)  │                │                             │
+│ Qwen2-VL  │                │ 1. Launch Playwright        │
+│ 7B        │                │    - navigate to app        │
+└───────────┘                │    - capture screenshot, DOM │
+        ▲                    │    - capture console logs    │
+        │                    │ 2. Read source files from   │
+        │                    │    local repo clone          │
+        │                    │ 3. Send prompt + context     │
+        │                    │    to local LLM (Ollama)    │
+        │                    │ 4. Parse LLM response        │
+        │                    │    (JSON array of file edits)│
+        │                    │ 5. Apply edits, commit,      │
+        │                    │    push new branch,          │
+        │                    │    open PR via GitHub API    │
+        │                    └─────────────────────────────┘
+        │                                    │
+        └──────────── (context) ─────────────┘</code></pre>
+        <p style="font-size:0.85rem; margin-top:0.5rem; color:#6b4e3d;">(Diagram drawn with monospace box‑drawing characters – best viewed in a fixed‑width font environment.)</p>
+
+        <h3>3. Prerequisites</h3>
+        <ul>
+            <li><strong>Node.js</strong> ≥ 18</li>
+            <li><strong>Ollama</strong> installed and running locally</li>
+            <li><strong>Playwright</strong> browsers installed (<code>npx playwright install --with-deps chromium</code>)</li>
+            <li><strong>Git</strong> installed and a local clone of the target repository</li>
+            <li>A <strong>GitHub Personal Access Token</strong> with <code>repo</code> scope (set as <code>GITHUB_TOKEN</code> env variable)</li>
+            <li>The model <code>qwen2:7b-vl</code> pulled via Ollama: <code>ollama pull qwen2:7b-vl</code></li>
+        </ul>
+
+        <h3>4. Project Structure</h3>
+        <div class="file-tree">
+visCarma/<br>
+├── agent.js&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;# Main mission orchestrator<br>
+├── lib/<br>
+│&emsp;&emsp;├── capture.js&emsp;&emsp;&emsp;&emsp;&emsp;# Playwright reconnaissance<br>
+│&emsp;&emsp;├── model.js&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;# Ollama interaction<br>
+│&emsp;&emsp;└── git.js&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;# GitHub operations (branch, commit, PR)<br>
+├── config/<br>
+│&emsp;&emsp;└── visCarma.json&emsp;&emsp;&emsp;&emsp;# Configuration<br>
+├── prompts/<br>
+│&emsp;&emsp;└── mission.txt&emsp;&emsp;&emsp;&emsp;&emsp;# Default prompt (overridable)<br>
+├── logs/&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;# Agent execution logs<br>
+└── playground/&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;# (optional) local clone of target repo
+        </div>
+
+        <h3>5. Configuration (<code>config/visCarma.json</code>)</h3>
+        <div class="config-box">{
+  "appUrl": "http://localhost:5500",
+  "repoPath": "../my-web-app",
+  "github": {
+    "owner": "your-org-or-username",
+    "repo": "my-web-app",
+    "baseBranch": "main",
+    "prLabels": ["auto-generated"]
+  },
+  "model": "qwen2:7b-vl",
+  "ollamaUrl": "http://localhost:11434"
+}</div>
+
+        <h3>6. Core Modules</h3>
+        <h4>6.1 <code>lib/capture.js</code> — Playwright Reconnaissance</h4>
+        <pre><code>const { chromium } = require('playwright');
+
+async function captureAppState(appUrl) {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  const consoleErrors = [];
+  page.on('console', msg => {
+    if (msg.type() === 'error') {
+      consoleErrors.push({ text: msg.text(), location: msg.location() });
+    }
+  });
+
+  await page.goto(appUrl, { waitUntil: 'networkidle' });
+
+  const screenshotBuffer = await page.screenshot({ fullPage: true, type: 'png' });
+  const dom = await page.content();
+  await browser.close();
+
+  return {
+    screenshotBase64: screenshotBuffer.toString('base64'),
+    dom,
+    consoleErrors
+  };
+}
+
+module.exports = { captureAppState };</code></pre>
+
+        <h4>6.2 <code>lib/model.js</code> — Ollama Oracle</h4>
+        <pre><code>const { default: ollama } = require('ollama');
+
+async function queryModel(model, ollamaUrl, prompt, context) {
+  const { screenshotBase64, dom, consoleErrors, sourceFiles } = context;
+  const content = `
+Mission: ${prompt}
+
+Console errors: ${JSON.stringify(consoleErrors)}
+Source files (JSON): ${JSON.stringify(sourceFiles, null, 2)}
+DOM (first 5000 chars): ${dom.substring(0, 5000)}
+
+Return ONLY a JSON array: [{ "file": "...", "oldLine": "...", "newLine": "..." }]`;
+
+  const response = await ollama.chat({
+    model,
+    messages: [{ role: 'user', content, images: [screenshotBase64] }],
+    format: 'json',
+    options: { temperature: 0 }
+  });
+
+  return JSON.parse(response.message.content);
+}
+
+module.exports = { queryModel };</code></pre>
+
+        <h4>6.3 <code>lib/git.js</code> — Divine Pull Requests</h4>
+        <pre><code>const { Octokit } = require('@octokit/rest');
+const fs = require('fs');
+const path = require('path');
+
+async function applyChangesAndOpenPR(config, changes, missionTitle) {
+  const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+  const { owner, repo, baseBranch } = config.github;
+  const branchName = `visCarma/${Date.now()}`;
+
+  // Create branch from base
+  const { data: baseRef } = await octokit.git.getRef({
+    owner, repo, ref: `heads/${baseBranch}`
+  });
+  await octokit.git.createRef({
+    owner, repo, ref: `refs/heads/${branchName}`, sha: baseRef.object.sha
+  });
+
+  for (const change of changes) {
+    const localPath = path.join(config.repoPath, change.file);
+    let content = fs.readFileSync(localPath, 'utf8');
+    content = content.replace(change.oldLine, change.newLine);
+    fs.writeFileSync(localPath, content);
+
+    await octokit.repos.createOrUpdateFileContents({
+      owner, repo, path: change.file,
+      message: `VisCarma: ${missionTitle}`,
+      content: Buffer.from(content).toString('base64'),
+      branch: branchName
+    });
+  }
+
+  const pr = await octokit.pulls.create({
+    owner, repo,
+    title: `VisCarma: ${missionTitle}`,
+    head: branchName, base: baseBranch,
+    body: `Auto‑generated by VisCarma.\n\nMission: ${missionTitle}`
+  });
+  console.log(`✅ PR created: ${pr.data.html_url}`);
+  return pr.data.html_url;
+}
+
+module.exports = { applyChangesAndOpenPR };</code></pre>
+
+        <h4>6.4 <code>agent.js</code> — Master Orchestrator</h4>
+        <pre><code>const fs = require('fs');
+const path = require('path');
+const { captureAppState } = require('./lib/capture');
+const { queryModel } = require('./lib/model');
+const { applyChangesAndOpenPR } = require('./lib/git');
+const CONFIG = require('./config/visCarma.json');
+
+function getSourceFiles(repoPath) {
+  const files = {};
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (['node_modules','.git'].includes(entry.name)) continue;
+        walk(full);
+      } else if (entry.name.match(/\.(js|html|css|json|ts|jsx|tsx)$/)) {
+        files[path.relative(repoPath, full)] = fs.readFileSync(full, 'utf8');
+      }
+    }
+  }
+  walk(repoPath);
+  return files;
+}
+
+async function runMission(prompt) {
+  console.log(`🕵️ VisCarma embarking on mission: "${prompt}"`);
+  const { screenshotBase64, dom, consoleErrors } = await captureAppState(CONFIG.appUrl);
+  const sourceFiles = getSourceFiles(CONFIG.repoPath);
+  const changes = await queryModel(CONFIG.model, CONFIG.ollamaUrl, prompt, {
+    screenshotBase64, dom, consoleErrors, sourceFiles
+  });
+
+  if (!changes.length) return console.log('No changes required.');
+  await applyChangesAndOpenPR(CONFIG, changes, prompt);
+  console.log('🎯 Mission complete.');
+}
+
+if (require.main === module) {
+  let mission = process.argv[2] || 
+    fs.readFileSync(path.join(__dirname, 'prompts', 'mission.txt'), 'utf8').trim();
+  runMission(mission).catch(err => { console.error(err); process.exit(1); });
+}
+
+module.exports = { runMission };</code></pre>
+
+        <h3>7. Running the Prototype</h3>
+        <p><strong>Setup:</strong> Clone your target app, start its dev server at the configured <code>appUrl</code>. Install VisCarma dependencies:</p>
+        <pre><code>cd visCarma
+npm init -y
+npm install playwright @octokit/rest ollama
+npx playwright install --with-deps chromium
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxxx</code></pre>
+        <p><strong>Execute a mission:</strong></p>
+        <pre><code>node agent.js "Add a dark mode toggle button"</code></pre>
+        <p>Or prepare <code>prompts/mission.txt</code> and run without arguments.</p>
+
+        <h3>8. Logging & Monitoring</h3>
+        <p>All console output is logged. Redirect to file for persistent logs:</p>
+        <pre><code>node agent.js "Fix login bug" >> logs/mission_$(date +%s).log 2>&1</code></pre>
+
+        <h3>9. Known Limitations (Phase I)</h3>
+        <ul>
+            <li><strong>File update SHA</strong> – Updating existing files on a branch requires the file’s SHA; the prototype assumes a clean branch. Production version will fetch SHA first.</li>
+            <li><strong>Single‑page capture</strong> – Only one URL is observed. Multi‑page apps need route crawling.</li>
+            <li><strong>LLM output reliability</strong> – Occasionally invalid JSON; retry logic recommended.</li>
+            <li><strong>No self‑verification</strong> – The PR code is not automatically tested (planned for Phase II).</li>
+            <li><strong>Large codebases</strong> – All source files are sent; filter or scope based on diff for efficiency.</li>
+        </ul>
+
+        <h3>10. Next Steps (Phase II Roadmap)</h3>
+        <ul>
+            <li><strong>Validation loop</strong> – Run Playwright tests on the generated PR branch; if tests fail, feed error back to LLM for re‑fix.</li>
+            <li><strong>Scheduled/time‑bounded missions</strong> – Cron/systemd timers for surveillance windows (e.g., only during business hours).</li>
+            <li><strong>Automatic bug detection trigger</strong> – Continuous mode: console error or visual regression → instant PR.</li>
+            <li><strong>Diff‑based edits</strong> – Use proper patch libraries instead of simple string replacement.</li>
+            <li><strong>GPG‑signed commits & branch protection</strong> – Authenticate VisCarma’s commits with a bot GPG key.</li>
+        </ul>
+
+        <!-- AUTHOR SECTION -->
+        <div class="author-section">
+            <p style="font-family: 'EB Garamond', serif; font-size: 1.3rem; color: var(--gold); letter-spacing: 2px; margin:0;">Crafted by</p>
+            <div class="author-name">
+                Sai Varakala <span>(Surya)</span>
+            </div>
+            <div class="author-title">
+                Senior Scrum Master | Techno-Agilist
+            </div>
+            <div class="author-org">TCS Hyderabad</div>
+            <div class="author-handle">@suryasticsai</div>
+
+            <div class="links-grid">
+                <a href="https://linkedin.com/in/suryasticsai" target="_blank" class="link-item" title="LinkedIn">🔗 LinkedIn</a>
+                <a href="https://huggingface.co/Suryasticsai" target="_blank" class="link-item" title="Hugging Face">🤗 Hugging Face</a>
+                <a href="https://github.com/suryasticsai" target="_blank" class="link-item" title="GitHub">💻 GitHub</a>
+                <a href="https://medium.com/@suryasticsai" target="_blank" class="link-item" title="Medium">✍️ Medium</a>
+                <a href="https://instagram.com/suryasticsai" target="_blank" class="link-item" title="Instagram">📸 Instagram</a>
+            </div>
+
+            <div class="license-note">
+                Released under the <strong>MIT License</strong> — free for all, like the air that carries the divine whisper.<br>
+                Built with Playwright, Ollama, and Devotion.
+            </div>
+        </div>
+
+        <hr class="divider" style="margin-top:2rem;">
+
+        <div class="footer">
+            <p>“विश्वतः चक्षुः” — Eyes everywhere, silence everywhere, justice everywhere.</p>
+            <p><strong>VisCarma</strong> — The Divine Developer Agent. Phase I Prototype, June 2026.</p>
+        </div>
+    </div>
+</body>
+</html>
