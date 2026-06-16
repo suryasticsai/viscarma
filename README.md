@@ -1,8 +1,8 @@
-# viscarma
+# VisCarMa
 VisCarma - The spy in your virtual space. It enters disguised, offline, silently watches your web apps, hunts down bugs and terminates them, then proposes new features through pull requests. Zero cloud, zero API keys, zero traces. Close your eyes and wake up to a clean territory.
 ---
 
-## What is VisCarma?
+## What is VisCarMa?
 
 VisCarma is a self‑hosted, offline, multi‑modal AI agent that infiltrates your running web application without detection. It observes everything, captures bugs, and autonomously opens pull requests with fixes or brand‑new features — all without a single byte leaving your infrastructure.
 
