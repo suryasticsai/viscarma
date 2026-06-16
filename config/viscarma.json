@@ -1,12 +1,12 @@
 {
-  "appUrl": "http://localhost:3000",
-  "repoPath": "../alkembicneo",
+  "appUrl": "https://suryasticsai.github.io/viscarma-test/",
+  "repoPath": "../viscarma-test",
   "github": {
     "owner": "suryasticsai",
-    "repo": "alkembicneo",
+    "repo": "viscarma-test",
     "baseBranch": "main",
     "prLabels": ["auto-generated"]
   },
-  "model": "qwen2:7b-vl",
+  "model": "qwen2.5-coder:7b",
   "ollamaUrl": "http://localhost:11434"
 }

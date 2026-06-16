@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VisCarma – Command Centre</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #1a1a1a;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', sans-serif;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 2rem;
+            border-radius: 12px;
+            width: 800px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #d4af37;
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+        .form-group {
+            margin-bottom: 0.8rem;
+        }
+        label {
+            display: block;
+            font-weight: 500;
+            color: #c0c0c0;
+            margin-bottom: 0.2rem;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #555;
+            border-radius: 6px;
+            background: #333;
+            color: #e0e0e0;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+        button {
+            margin-top: 0.5rem;
+            width: 100%;
+            padding: 0.7rem;
+            background: #d4af37;
+            color: #1a1a1a;
+            font-weight: bold;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover { background: #b8962c; }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        #output {
+            flex: 1;
+            background: #1e1e1e;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-top: 1rem;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            min-height: 200px;
+            max-height: 400px;
+            border: 1px solid #444;
+        }
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 1.1em;
+            background: #d4af37;
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        .status {
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+        .status .success { color: #4caf50; }
+        .status .error { color: #f44336; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🕵️ VisCarma Command Centre</h1>
+    <form id="missionForm">
+        <div class="form-group">
+            <label for="repo">GitHub Repo</label>
+            <input type="text" id="repo" value="viscarma-test" required>
+        </div>
+        <div class="form-group">
+            <label for="owner">Owner</label>
+            <input type="text" id="owner" value="suryasticsai" required>
+        </div>
+        <div class="form-group">
+            <label for="branch">Base Branch</label>
+            <input type="text" id="branch" value="main" required>
+        </div>
+        <div class="form-group">
+            <label for="prompt">Mission</label>
+            <textarea id="prompt" rows="2" placeholder="e.g. Fix all ESLint issues in index.html" required>Add a to-do list feature to index.html</textarea>
+        </div>
+        <button type="submit" id="launchBtn">Launch Mission</button>
+    </form>
+    <div id="output"></div>
+    <div id="status" class="status"></div>
+</div>
+
+<script>
+    const form = document.getElementById('missionForm');
+    const outputDiv = document.getElementById('output');
+    const statusDiv = document.getElementById('status');
+    const launchBtn = document.getElementById('launchBtn');
+
+    let eventSource = null;
+    let typingInterval = null;
+    let outputBuffer = '';
+    let isTyping = false;
+
+    // ── Typing effect ──────────────────────────────────────
+    function startTyping() {
+        if (typingInterval) clearInterval(typingInterval);
+        isTyping = true;
+        typingInterval = setInterval(() => {
+            if (outputBuffer.length > 0) {
+                const char = outputBuffer.charAt(0);
+                outputBuffer = outputBuffer.substring(1);
+                outputDiv.innerHTML += char;
+                outputDiv.scrollTop = outputDiv.scrollHeight;
+            } else {
+                // Buffer empty – stop typing, keep cursor
+                isTyping = false;
+                clearInterval(typingInterval);
+                typingInterval = null;
+            }
+        }, 15); // speed (ms per character)
+    }
+
+    function appendText(text) {
+        outputBuffer += text;
+        if (!isTyping && outputBuffer.length > 0) {
+            startTyping();
+        }
+    }
+
+    function clearOutput() {
+        outputDiv.innerHTML = '';
+        outputBuffer = '';
+        if (typingInterval) {
+            clearInterval(typingInterval);
+            typingInterval = null;
+            isTyping = false;
+        }
+    }
+
+    // ── Form submission ────────────────────────────────────
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const repo = document.getElementById('repo').value.trim();
+        const owner = document.getElementById('owner').value.trim();
+        const branch = document.getElementById('branch').value.trim();
+        const prompt = document.getElementById('prompt').value.trim();
+
+        if (!prompt) {
+            alert('Please enter a mission prompt.');
+            return;
+        }
+
+        // Disable button during mission
+        launchBtn.disabled = true;
+        launchBtn.textContent = 'Running...';
+
+        clearOutput();
+        statusDiv.innerHTML = '⏳ Connecting...';
+        statusDiv.className = 'status';
+
+        // Build the SSE URL
+        const url = `/stream?repo=${encodeURIComponent(repo)}&owner=${encodeURIComponent(owner)}&branch=${encodeURIComponent(branch)}&prompt=${encodeURIComponent(prompt)}`;
+
+        // Close any existing connection
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+
+        eventSource = new EventSource(url);
+
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'output') {
+                    appendText(data.content);
+                    statusDiv.innerHTML = '🔄 Running...';
+                    statusDiv.className = 'status';
+                } else if (data.type === 'error') {
+                    appendText('❌ ERROR: ' + data.content + '\n');
+                } else if (data.type === 'done') {
+                    // Mission finished
+                    appendText('\n\n✅ Mission complete.\n');
+                    statusDiv.innerHTML = '✅ Done.';
+                    statusDiv.className = 'status success';
+                    eventSource.close();
+                    launchBtn.disabled = false;
+                    launchBtn.textContent = 'Launch Mission';
+                }
+            } catch (err) {
+                console.error('Parse error:', err);
+            }
+        };
+
+        eventSource.onerror = (error) => {
+            console.error('EventSource error:', error);
+            // If the connection closes unexpectedly, try to recover
+            if (eventSource.readyState === EventSource.CLOSED) {
+                statusDiv.innerHTML = '⚠️ Connection closed.';
+                statusDiv.className = 'status error';
+                launchBtn.disabled = false;
+                launchBtn.textContent = 'Launch Mission';
+            }
+        };
+
+        // Handle page unload to close connection
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) eventSource.close();
+        });
+    });
+</script>
+</body>
+</html>

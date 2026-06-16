@@ -1,0 +1,16 @@
+{
+  "name": "viscarma",
+  "version": "0.1.0",
+  "description": "The spy in your virtual space – offline AI agent for web apps",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.1.1",
+    "ollama": "^0.5.0",
+    "playwright": "^1.45.0"
+  },
+  "author": "Sai Varakala (Surya)",
+  "license": "MIT"
+}
