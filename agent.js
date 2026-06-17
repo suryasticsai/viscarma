@@ -2,11 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { execSync } = require('child_process');
-const { captureAppState } = require('./lib/capture');
+const { captureAppState, saveScreenshot } = require('./lib/capture');
 const { queryModel } = require('./lib/model');
 const { applyChangesAndOpenPR } = require('./lib/git');
 const { trySimpleFix } = require('./lib/rules');
 const { runAider } = require('./lib/aider');
+const { saveLogEntry } = require('./lib/missionLog');
+const { handlePRComments } = require('./lib/prHandler');
+const { generateDocumentation } = require('./lib/docGen');
 const CONFIG = require('./config/viscarma.json');
 
 // ──────────────────────────────────────────────
@@ -132,6 +135,25 @@ function detectChanges(repoPath) {
 }
 
 // ──────────────────────────────────────────────
+//  Auto‑generate prompt from console errors
+// ──────────────────────────────────────────────
+function generatePromptFromError(consoleErrors, originalPrompt) {
+  const specificKeywords = ['bug', 'fix', 'error', 'issue', 'duplicate', 'unused'];
+  if (specificKeywords.some(k => originalPrompt.toLowerCase().includes(k))) {
+    return originalPrompt;
+  }
+  if (!consoleErrors || consoleErrors.length === 0) {
+    return originalPrompt;
+  }
+  const firstError = consoleErrors[0];
+  let file = firstError.file || 'unknown';
+  let text = firstError.text || 'unknown error';
+  const prompt = `Fix the console error: "${text}"${file !== 'unknown' ? ` in file "${file}"` : ''}.`;
+  console.log(`🔍 Auto‑generated prompt from console error: "${prompt}"`);
+  return prompt;
+}
+
+// ──────────────────────────────────────────────
 //  Main mission function
 // ──────────────────────────────────────────────
 async function runMission(prompt, dynamicConfig = null) {
@@ -140,7 +162,7 @@ async function runMission(prompt, dynamicConfig = null) {
 
   const config = dynamicConfig || CONFIG;
 
-  // ─── Override repoPath if --repo-path was provided ────
+  // Override repoPath if --repo-path was provided
   const args = parseArgs(process.argv);
   if (args['repo-path']) {
     config.repoPath = args['repo-path'];
@@ -150,23 +172,33 @@ async function runMission(prompt, dynamicConfig = null) {
   console.log(`🕵️ VisCarma embarking on mission: "${prompt}"`);
   console.log(`🎯 Target: ${config.github.owner}/${config.github.repo} (branch: ${config.github.baseBranch})`);
 
-  // Capture the app state (if browser URL is configured)
+  // ─── Capture app state ──────────────────────────────────
   let screenshotBase64 = '', dom = '', consoleErrors = [];
+  let beforeScreenshotPath = null;
   if (config.appUrl) {
     try {
       const captured = await captureAppState(config.appUrl);
       screenshotBase64 = captured.screenshotBase64;
       dom = captured.dom;
       consoleErrors = captured.consoleErrors;
+      // Save before screenshot
+      if (screenshotBase64) {
+        const filename = `before-${Date.now()}.png`;
+        beforeScreenshotPath = saveScreenshot(screenshotBase64, filename);
+        console.log(`📸 Before screenshot saved: ${beforeScreenshotPath}`);
+      }
     } catch (e) {
       console.log('No browser capture (backend repo detected). Working with source files only.');
     }
   }
 
+  // ─── Auto‑generate prompt from console errors ──────────
+  const effectivePrompt = generatePromptFromError(consoleErrors, prompt);
+
   // Read all source files from the local clone
   const sourceFiles = getSourceFiles(config.repoPath);
 
-  // ─── TOOL USE: ESLint auto‑fix (Chapter 5) ─────────────────
+  // ─── TOOL USE: ESLint auto‑fix (Chapter 5) ─────────────
   try {
     console.log('🧹 Running ESLint auto‑fix on the repo...');
     execSync('npx eslint --fix .', { cwd: config.repoPath, stdio: 'inherit' });
@@ -175,11 +207,34 @@ async function runMission(prompt, dynamicConfig = null) {
     console.log('✅ ESLint completed (fixes may have been applied).');
   }
 
-  // ─── Rule‑based simple fix (fast) ─────────────────
-  const simpleFix = trySimpleFix(prompt, sourceFiles);
+  // ─── Rule‑based simple fix ─────────────────────────────
+  const simpleFix = trySimpleFix(effectivePrompt, sourceFiles);
   if (simpleFix && simpleFix.length > 0) {
     console.log('🔧 Simple bug detected — applying rule‑based fix...');
-    const prUrl = await applyChangesAndOpenPR(config, simpleFix, prompt);
+    const prUrl = await applyChangesAndOpenPR(config, simpleFix, effectivePrompt);
+    // After changes, capture after screenshot
+    let afterScreenshotPath = null;
+    if (config.appUrl) {
+      try {
+        const afterCapture = await captureAppState(config.appUrl);
+        if (afterCapture.screenshotBase64) {
+          const filename = `after-${Date.now()}.png`;
+          afterScreenshotPath = saveScreenshot(afterCapture.screenshotBase64, filename);
+          console.log(`📸 After screenshot saved: ${afterScreenshotPath}`);
+        }
+      } catch (e) {}
+    }
+    // Log mission
+    saveLogEntry({
+      agent: 'Rule-based',
+      prompt: effectivePrompt,
+      success: !!prUrl,
+      prUrl: prUrl || null,
+      beforeScreenshot: beforeScreenshotPath,
+      afterScreenshot: afterScreenshotPath,
+      filesChanged: simpleFix.map(c => c.file),
+      error: null
+    });
     const missionEnd = new Date();
     const duration = Math.round((missionEnd - missionStart) / 1000);
     console.log(`⏱️  Mission ended at ${missionEnd.toLocaleTimeString()}`);
@@ -189,16 +244,47 @@ async function runMission(prompt, dynamicConfig = null) {
   }
 
   // ─── Route to the appropriate agent ─────────────────
-  const prUrl = await agentParth(prompt, config);
+  let agentName = 'Parth';
+  let result = await agentParth(effectivePrompt, config);
+
+  // ─── Capture after screenshot ──────────────────────────
+  let afterScreenshotPath = null;
+  if (config.appUrl) {
+    try {
+      const afterCapture = await captureAppState(config.appUrl);
+      if (afterCapture.screenshotBase64) {
+        const filename = `after-${Date.now()}.png`;
+        afterScreenshotPath = saveScreenshot(afterCapture.screenshotBase64, filename);
+        console.log(`📸 After screenshot saved: ${afterScreenshotPath}`);
+      }
+    } catch (e) {
+      console.log('Could not capture after screenshot:', e.message);
+    }
+  }
+
+  // ─── Log mission ────────────────────────────────────────
+  saveLogEntry({
+    agent: agentName,
+    prompt: effectivePrompt,
+    success: !!result,
+    prUrl: result || null,
+    beforeScreenshot: beforeScreenshotPath,
+    afterScreenshot: afterScreenshotPath,
+    filesChanged: result ? ['unknown'] : [],
+    error: null
+  });
 
   const missionEnd = new Date();
   const duration = Math.round((missionEnd - missionStart) / 1000);
   console.log(`⏱️  Mission ended at ${missionEnd.toLocaleTimeString()}`);
   console.log(`⌛ Total duration: ${duration} seconds`);
   console.log('🎯 Mission complete.');
-  return prUrl;
+  return result;
 }
 
+// ──────────────────────────────────────────────
+//  Helper: read all source files from repo
+// ──────────────────────────────────────────────
 function getSourceFiles(repoPath) {
   const files = {};
   function walk(dir) {
@@ -216,12 +302,38 @@ function getSourceFiles(repoPath) {
   return files;
 }
 
-// Entry point (CLI)
+// ──────────────────────────────────────────────
+//  Entry point (CLI)
+// ──────────────────────────────────────────────
 if (require.main === module) {
   (async () => {
     const args = parseArgs(process.argv);
 
-    const flags = ['repo', 'owner', 'base', 'app-url', 'repo-path', 'agent'];
+    // ─── Special actions ──────────────────────────────────
+
+    // 1. Generate documentation
+    if (args['generate-doc']) {
+      console.log('📄 VisCarma is generating documentation...');
+      const docPath = generateDocumentation();
+      console.log(`✅ Documentation generated at ${docPath}`);
+      process.exit(0);
+    }
+
+    // 2. Handle PR comments (Agent Parth)
+    if (args.action === 'handle-pr' && args['pr-url']) {
+      console.log('🧭 Agent Parth is checking PR comments...');
+      const token = process.env.GITHUB_TOKEN;
+      if (!token) {
+        console.error('GITHUB_TOKEN not set');
+        process.exit(1);
+      }
+      await handlePRComments(args['pr-url'], token);
+      process.exit(0);
+    }
+
+    // ─── Normal mission flow ──────────────────────────────
+
+    const flags = ['repo', 'owner', 'base', 'app-url', 'repo-path', 'agent', 'action', 'pr-url', 'generate-doc'];
     const missionWords = process.argv.slice(2).filter((_, i, arr) => {
       if (arr[i].startsWith('--')) {
         const key = arr[i].slice(2);
@@ -269,7 +381,6 @@ if (require.main === module) {
       else console.warn(`Unknown agent "${args.agent}". Using Parth as default.`);
     }
 
-    // Run the selected agent directly (bypassing Parth routing)
     let result;
     if (agentFunc === agentParth) {
       result = await runMission(mission, dynamicConfig);
