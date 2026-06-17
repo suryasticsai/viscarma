@@ -4,10 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VisCarma – DevAIne Agent</title>
-  <!-- Include avatars script -->
   <script src="avatars.js" defer></script>
   <style>
-    /* ─── Base ─── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       background: #0f0f1a;
@@ -18,7 +16,6 @@
       flex-direction: column;
       overflow: hidden;
     }
-
     .bg-glow {
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
@@ -29,7 +26,6 @@
         radial-gradient(circle at 90% 80%, rgba(212,175,55,0.04), transparent 40%),
         radial-gradient(circle at 50% 50%, rgba(212,175,55,0.02), transparent 70%);
     }
-
     .topbar {
       position: relative;
       z-index: 10;
@@ -41,6 +37,8 @@
       border-bottom: 1px solid #3a3a5a;
       flex-shrink: 0;
       backdrop-filter: blur(8px);
+      flex-wrap: wrap;
+      gap: 8px;
     }
     .topbar h1 {
       font-size: 1.6rem;
@@ -61,6 +59,7 @@
       display: flex;
       gap: 10px;
       align-items: center;
+      flex-wrap: wrap;
     }
     .topbar-actions button {
       background: #2a2a44;
@@ -81,6 +80,15 @@
     .topbar-actions button.danger:hover {
       background: #8b2f3a;
       border-color: #e74c3c;
+    }
+    .topbar-actions button.setup-btn {
+      background: #2e7d32;
+      border-color: #4caf50;
+      color: #fff;
+    }
+    .topbar-actions button.setup-btn:hover {
+      background: #4caf50;
+      border-color: #66bb6a;
     }
     .topbar-actions button.tab-btn {
       background: transparent;
@@ -133,10 +141,14 @@
       background: #1e1e36;
       border-left: 4px solid #555;
       transition: all 0.2s;
+      cursor: pointer;
     }
     .sidebar .agent-item:hover {
       background: #2a2a48;
       border-left-color: #d4af37;
+    }
+    .sidebar .agent-item:active {
+      transform: scale(0.97);
     }
     .sidebar .agent-item canvas.avatar-canvas {
       width: 48px;
@@ -144,8 +156,9 @@
       border-radius: 50%;
       flex-shrink: 0;
       background: transparent;
+      pointer-events: none;
     }
-    .sidebar .agent-item .info { flex: 1; }
+    .sidebar .agent-item .info { flex: 1; pointer-events: none; }
     .sidebar .agent-item .info .name { font-weight: 600; font-size: 0.95rem; }
     .sidebar .agent-item .info .role { font-size: 0.75rem; color: #999; }
     .sidebar .agent-item .status-dot {
@@ -155,6 +168,7 @@
       background: #4caf50;
       flex-shrink: 0;
       transition: all 0.3s;
+      pointer-events: none;
     }
     .sidebar .agent-item .status-dot.idle { background: #555; }
     .sidebar .agent-item .status-dot.pulse {
@@ -574,6 +588,7 @@
     <button class="tab-btn active" data-tab="chat">📡 Mission</button>
     <button class="tab-btn" data-tab="docs">📖 Docs</button>
     <button class="tab-btn" data-tab="prototype">🚀 Prototype</button>
+    <button id="setupBtn" class="setup-btn">⚙️ Setup</button>
     <button id="clearBtn" class="danger">🗑️ Clear</button>
     <button id="scrollLockBtn">🔒 Scroll Lock</button>
   </div>
@@ -638,9 +653,7 @@
 
     <!-- Tab: Chat -->
     <div id="panel-chat" class="tab-panel active">
-      <div class="chat-messages" id="chatMessages">
-        <!-- Messages injected here -->
-      </div>
+      <div class="chat-messages" id="chatMessages"></div>
       <div class="chat-status">
         <span id="connectionStatus">⚪ Disconnected</span>
         <span id="messageCount">0 messages</span>
@@ -651,51 +664,19 @@
     <div id="panel-docs" class="tab-panel">
       <h2>📖 Technical Documentation</h2>
       <p><strong>VisCarma</strong> is a multi‑agent system that autonomously improves your codebase. It combines the power of large language models (via Ollama) with battle‑tested tools like <strong>Aider</strong>, <strong>ESLint</strong>, and <strong>Playwright</strong> to fix bugs, add features, and orchestrate GitHub pull requests – all offline and private.</p>
-
       <h3>🤖 The Agents</h3>
       <div class="agent-grid-docs">
-        <div class="agent-card-docs" style="border-left-color:#d4af37;">
-          <span class="emoji">🔱</span>
-          <div class="name">VisCarma</div>
-          <div class="role">Supreme Commander</div>
-          <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Oversees missions and provides final approval.</p>
-        </div>
-        <div class="agent-card-docs" style="border-left-color:#e74c3c;">
-          <span class="emoji">🪓</span>
-          <div class="name">Parsh</div>
-          <div class="role">Bug Killer</div>
-          <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Identifies and eliminates bugs and errors.</p>
-        </div>
-        <div class="agent-card-docs" style="border-left-color:#2ecc71;">
-          <span class="emoji">🪈</span>
-          <div class="name">Krish</div>
-          <div class="role">Feature Inventor</div>
-          <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Designs and implements new capabilities.</p>
-        </div>
-        <div class="agent-card-docs" style="border-left-color:#3498db;">
-          <span class="emoji">☸️</span>
-          <div class="name">Parth</div>
-          <div class="role">The Driver</div>
-          <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Routes tasks and orchestrates the workflow.</p>
-        </div>
+        <div class="agent-card-docs" style="border-left-color:#d4af37;"><span class="emoji">🔱</span><div class="name">VisCarma</div><div class="role">Supreme Commander</div><p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Oversees missions and provides final approval.</p></div>
+        <div class="agent-card-docs" style="border-left-color:#e74c3c;"><span class="emoji">🪓</span><div class="name">Parsh</div><div class="role">Bug Killer</div><p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Identifies and eliminates bugs and errors.</p></div>
+        <div class="agent-card-docs" style="border-left-color:#2ecc71;"><span class="emoji">🪈</span><div class="name">Krish</div><div class="role">Feature Inventor</div><p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Designs and implements new capabilities.</p></div>
+        <div class="agent-card-docs" style="border-left-color:#3498db;"><span class="emoji">☸️</span><div class="name">Parth</div><div class="role">The Driver</div><p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Routes tasks and orchestrates the workflow.</p></div>
       </div>
-
       <h3>🧩 Agentic Patterns Used</h3>
       <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem;">
-        <span class="badge">Prompt Chaining</span>
-        <span class="badge">Routing</span>
-        <span class="badge">Parallelization</span>
-        <span class="badge">Reflection</span>
-        <span class="badge">Tool Use</span>
-        <span class="badge">Planning</span>
-        <span class="badge">Multi-Agent Collaboration</span>
-        <span class="badge">Guardrails</span>
-        <span class="badge">Evaluation & Monitoring</span>
+        <span class="badge">Prompt Chaining</span><span class="badge">Routing</span><span class="badge">Parallelization</span><span class="badge">Reflection</span><span class="badge">Tool Use</span><span class="badge">Planning</span><span class="badge">Multi-Agent Collaboration</span><span class="badge">Guardrails</span><span class="badge">Evaluation & Monitoring</span>
       </div>
-
       <h3>⚙️ Tech Stack</h3>
       <p>Node.js · Python (Aider) · Ollama · qwen2.5-coder:7b · Aider · ESLint · Playwright · Octokit · HTML/CSS/JS</p>
-
       <h3>📦 Quick Install</h3>
       <pre><code>git clone https://github.com/suryasticsai/viscarma.git
 cd viscarma
@@ -703,7 +684,6 @@ npm install
 python -m pip install aider-chat
 node server.js</code></pre>
       <p>Then open <a href="http://localhost:9000" target="_blank" style="color:#d4af37;">http://localhost:9000</a></p>
-
       <h3>🚀 Usage</h3>
       <ol>
         <li>Enter repo, owner, branch, and a mission prompt.</li>
@@ -716,36 +696,11 @@ node server.js</code></pre>
     <div id="panel-prototype" class="tab-panel">
       <h2 style="color:#d4af37; font-size:2rem; margin-bottom:0.2rem;">🚀 Prototype Showcase</h2>
       <p style="color:#aaa; margin-bottom:1.5rem;">Interactive demos of VisCarma's core capabilities.</p>
-
-      <div class="demo-card">
-        <h3>⚡ Bug Fix – Duplicate Declaration</h3>
-        <p>Given the prompt <code>"Fix the duplicate counter bug"</code>, VisCarma (via Parsh) instantly removes the duplicate <code>let counter</code> line.</p>
-        <div class="demo-badge">✅ Works live</div>
-      </div>
-
-      <div class="demo-card">
-        <h3>✨ Feature Add – To‑Do List</h3>
-        <p>Prompt: <code>"Add a to‑do list feature to index.html"</code>. Krish generates full HTML+JS with localStorage persistence.</p>
-        <div class="demo-badge">✅ Works live</div>
-      </div>
-
-      <div class="demo-card">
-        <h3>🧹 ESLint Auto‑Fix</h3>
-        <p>Before any AI, ESLint runs <code>--fix</code> to correct missing semicolons, <code>var</code> → <code>let</code>, and unused variables.</p>
-        <div class="demo-badge">✅ Runs automatically</div>
-      </div>
-
-      <div class="demo-card">
-        <h3>🧠 Critic Reflection</h3>
-        <p>After Aider applies a change, a separate <strong>Critic Agent</strong> reviews it. If flawed, it requests a refined fix – mimicking human pair‑review.</p>
-        <div class="demo-badge">✅ Integrated</div>
-      </div>
-
-      <div class="demo-card" style="border-color:#d4af37;">
-        <h3>🕵️ Real‑time Chat Dashboard</h3>
-        <p>All agent communications stream live with typing effects, agent avatars, and code blocks – built with SSE.</p>
-        <div class="demo-badge">✅ You're using it now!</div>
-      </div>
+      <div class="demo-card"><h3>⚡ Bug Fix – Duplicate Declaration</h3><p>Given the prompt <code>"Fix the duplicate counter bug"</code>, VisCarma (via Parsh) instantly removes the duplicate <code>let counter</code> line.</p><div class="demo-badge">✅ Works live</div></div>
+      <div class="demo-card"><h3>✨ Feature Add – To‑Do List</h3><p>Prompt: <code>"Add a to‑do list feature to index.html"</code>. Krish generates full HTML+JS with localStorage persistence.</p><div class="demo-badge">✅ Works live</div></div>
+      <div class="demo-card"><h3>🧹 ESLint Auto‑Fix</h3><p>Before any AI, ESLint runs <code>--fix</code> to correct missing semicolons, <code>var</code> → <code>let</code>, and unused variables.</p><div class="demo-badge">✅ Runs automatically</div></div>
+      <div class="demo-card"><h3>🧠 Critic Reflection</h3><p>After Aider applies a change, a separate <strong>Critic Agent</strong> reviews it. If flawed, it requests a refined fix – mimicking human pair‑review.</p><div class="demo-badge">✅ Integrated</div></div>
+      <div class="demo-card" style="border-color:#d4af37;"><h3>🕵️ Real‑time Chat Dashboard</h3><p>All agent communications stream live with typing effects, agent avatars, and code blocks – built with SSE.</p><div class="demo-badge">✅ You're using it now!</div></div>
     </div>
   </div>
 </div>
@@ -780,15 +735,9 @@ node server.js</code></pre>
 
 <!-- ─── JavaScript ────────────────────────────────────────── -->
 <script>
-// ─── After avatars.js loads, initialize the dashboard ────
 document.addEventListener('DOMContentLoaded', function() {
-  // Avatars are animated by animateAvatars() defined in avatars.js
-  // but we need to call it after the page loads.
-  if (typeof animateAvatars === 'function') {
-    animateAvatars();
-  }
+  if (typeof animateAvatars === 'function') animateAvatars();
 
-  // ─── DOM refs ──────────────────────────────────────────
   const chatMessages = document.getElementById('chatMessages');
   const launchBtn = document.getElementById('launchBtn');
   const clearBtn = document.getElementById('clearBtn');
@@ -798,6 +747,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const footerToggle = document.getElementById('footerToggle');
   const footerContent = document.getElementById('footerContent');
   const footerArrow = document.getElementById('footerArrow');
+  const setupBtn = document.getElementById('setupBtn');
 
   let eventSource = null;
   let messageCount = 0;
@@ -805,48 +755,57 @@ document.addEventListener('DOMContentLoaded', function() {
   let messageBuffer = '';
   let footerVisible = true;
 
-  // ─── Footer toggle ────────────────────────────────────
-  footerToggle.addEventListener('click', () => {
-    footerVisible = !footerVisible;
-    footerContent.classList.toggle('hidden', !footerVisible);
-    footerArrow.classList.toggle('collapsed', !footerVisible);
-  });
-
-  // ─── Tab switching ────────────────────────────────────
-  const tabBtns = document.querySelectorAll('.tab-btn');
-  const panels = {
-    chat: document.getElementById('panel-chat'),
-    docs: document.getElementById('panel-docs'),
-    prototype: document.getElementById('panel-prototype')
+  const agentIntro = {
+    'VisCarma': {
+      intro: "🔱 I am VisCarma, the Supreme Architect and commander of this DevAIne team. I oversee all missions, delegate tasks, and ensure quality.\n\nI can guide you through the entire installation process. Click me again to see step-by-step instructions! 🛠️",
+      install: [
+        "📦 **Step 1:** Clone the repository\n```bash\ngit clone https://github.com/suryasticsai/viscarma.git\n```",
+        "📦 **Step 2:** Navigate to the folder\n```bash\ncd viscarma\n```",
+        "📦 **Step 3:** Install Node dependencies\n```bash\nnpm install\n```",
+        "📦 **Step 4:** Install Aider (Python)\n```bash\npython -m pip install aider-chat\n```",
+        "📦 **Step 5:** Configure your GitHub token and repo in `config/visCarma.json`\n```json\n{\n  \"github\": {\n    \"token\": \"your_token_here\",\n    \"owner\": \"suryasticsai\",\n    \"repo\": \"viscarma-test\"\n  }\n}\n```",
+        "📦 **Step 6:** Start the dashboard\n```bash\nnode server.js\n```",
+        "📦 **Step 7:** Open http://localhost:9000 and launch your first mission! 🚀\n\n💡 You can also run missions via CLI:\n```bash\nnode agent.js --repo viscarma-test --owner suryasticsai --base main \"Fix the duplicate counter bug\"\n```"
+      ]
+    },
+    'Parsh': {
+      intro: "🪓 I am Parsh, the Bug Killer. I specialize in identifying and eliminating bugs, errors, and code smells.\n\nGive me a mission like **'Fix the duplicate counter bug'** and I'll hunt it down instantly!\n\n🔧 I use ESLint, Aider, and my own rule‑based logic to keep your code pristine."
+    },
+    'Krish': {
+      intro: "🪈 I am Krish, the Feature Inventor. I design and implement new capabilities, from simple UI tweaks to complex modules.\n\nTell me what you want to add – like **'Add a to‑do list feature'** – and I'll write the code, handle the logic, and even add localStorage persistence.\n\n✨ I love building things from scratch!"
+    },
+    'Parth': {
+      intro: "☸️ I am Parth, The Driver. I analyze your mission and decide who should handle it – Parsh for bugs, Krish for features.\n\nI route tasks, orchestrate the workflow, and ensure the right agent is on the job. I'm the brain behind the operation! 🧭"
+    }
   };
 
-  tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      tabBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      Object.keys(panels).forEach(key => {
-        panels[key].classList.toggle('active', key === btn.dataset.tab);
-      });
-    });
-  });
-
-  // ─── Agent emojis for messages ────────────────────────
-  const agentMap = {
-    'VisCarma': { emoji: '🔱', cls: 'vis' },
-    'Parsh':   { emoji: '🪓', cls: 'parsh' },
-    'Krish':   { emoji: '🪈', cls: 'krish' },
-    'Parth':   { emoji: '☸️', cls: 'parth' },
-    'System':  { emoji: '⚙️', cls: 'system' }
-  };
-
-  // ─── Helper functions ──────────────────────────────────
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+  function switchToChatTab() {
+    const chatTab = document.querySelector('.tab-btn[data-tab="chat"]');
+    if (chatTab && !chatTab.classList.contains('active')) chatTab.click();
   }
 
-  function renderMessageContent(text) {
+  function addMessage(agentName, text) {
+    const agentMap = {
+      'VisCarma': { emoji: '🔱', cls: 'vis' },
+      'Parsh':   { emoji: '🪓', cls: 'parsh' },
+      'Krish':   { emoji: '🪈', cls: 'krish' },
+      'Parth':   { emoji: '☸️', cls: 'parth' },
+      'System':  { emoji: '⚙️', cls: 'system' }
+    };
+    const info = agentMap[agentName] || agentMap['System'];
+    const time = new Date().toLocaleTimeString();
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${agentName === 'System' ? 'system' : ''}`;
+    const avatar = document.createElement('div');
+    avatar.className = `avatar avatar-${info.cls}`;
+    avatar.textContent = info.emoji;
+    const bubble = document.createElement('div');
+    bubble.className = `bubble bubble-${info.cls}`;
+    const sender = document.createElement('div');
+    sender.className = 'sender';
+    sender.innerHTML = `${info.emoji} ${agentName} <span class="time">${time}</span>`;
+    const content = document.createElement('div');
+    content.className = 'content';
     const parts = text.split(/(```[^`]*```)/g);
     let html = '';
     for (let part of parts) {
@@ -863,22 +822,32 @@ document.addEventListener('DOMContentLoaded', function() {
         html += `<span class="content-text">${escapeHtml(part).replace(/\n/g, '<br>')}</span>`;
       }
     }
-    return html;
+    content.innerHTML = html;
+    bubble.appendChild(sender); bubble.appendChild(content);
+    msgDiv.appendChild(avatar); msgDiv.appendChild(bubble);
+    chatMessages.appendChild(msgDiv);
+    messageCount++;
+    messageCountSpan.textContent = `${messageCount} messages`;
+    if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
+    if (agentName !== 'System') {
+      setAgentActive(agentName, true);
+      clearTimeout(window['timeout_' + agentName]);
+      window['timeout_' + agentName] = setTimeout(() => {
+        setAgentActive(agentName, false);
+      }, 2000);
+    }
   }
 
-  function detectAgent(text) {
-    if (text.includes('Agent Parsh')) return 'Parsh';
-    if (text.includes('Agent Krish')) return 'Krish';
-    if (text.includes('Agent Parth')) return 'Parth';
-    if (text.includes('VisCarma') || text.includes('🔱') || text.includes('Mission')) return 'VisCarma';
-    return 'System';
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   function setAgentActive(agentName, active) {
     if (typeof window.setAgentActive === 'function') {
       window.setAgentActive(agentName, active);
     } else {
-      // Fallback if avatars.js didn't load properly
       const map = { VisCarma: 'Vis', Parsh: 'Parsh', Krish: 'Krish', Parth: 'Parth' };
       const key = map[agentName];
       const dot = document.getElementById('status' + key);
@@ -888,36 +857,89 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  function addMessage(agentName, text) {
-    const info = agentMap[agentName] || agentMap['System'];
-    const time = new Date().toLocaleTimeString();
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message ${agentName === 'System' ? 'system' : ''}`;
-    const avatar = document.createElement('div');
-    avatar.className = `avatar avatar-${info.cls}`;
-    avatar.textContent = info.emoji;
-    const bubble = document.createElement('div');
-    bubble.className = `bubble bubble-${info.cls}`;
-    const sender = document.createElement('div');
-    sender.className = 'sender';
-    sender.innerHTML = `${info.emoji} ${agentName} <span class="time">${time}</span>`;
-    const content = document.createElement('div');
-    content.className = 'content';
-    content.innerHTML = renderMessageContent(text);
-    bubble.appendChild(sender); bubble.appendChild(content);
-    msgDiv.appendChild(avatar); msgDiv.appendChild(bubble);
-    chatMessages.appendChild(msgDiv);
-    messageCount++;
-    messageCountSpan.textContent = `${messageCount} messages`;
-    if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
+  // ─── Clickable avatars ─────────────────────────────────
+  document.querySelectorAll('.agent-item').forEach(item => {
+    item.addEventListener('click', function(e) {
+      if (e.target.closest('.mission-form') || e.target.closest('button')) return;
+      const agentName = this.dataset.agent;
+      if (!agentName) return;
+      switchToChatTab();
+      const info = agentIntro[agentName];
+      if (!info) return;
+      if (agentName === 'VisCarma') {
+        if (window['visCarmaTimeout']) clearTimeout(window['visCarmaTimeout']);
+        addMessage(agentName, info.intro);
+        const steps = info.install;
+        let delay = 800;
+        steps.forEach((step, index) => {
+          window['visCarmaTimeout'] = setTimeout(() => {
+            addMessage(agentName, step);
+          }, delay);
+          delay += 800;
+        });
+      } else {
+        addMessage(agentName, info.intro);
+      }
+    });
+  });
 
-    if (agentName !== 'System') {
-      setAgentActive(agentName, true);
-      clearTimeout(window['timeout_' + agentName]);
-      window['timeout_' + agentName] = setTimeout(() => {
-        setAgentActive(agentName, false);
-      }, 2000);
-    }
+  // ─── Setup button ──────────────────────────────────────
+  setupBtn.addEventListener('click', function() {
+    switchToChatTab();
+    clearChat();
+    addMessage('System', '⚙️ Starting setup... Please wait.');
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    eventSource = new EventSource('/setup');
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'output') processOutput(data.content);
+        else if (data.type === 'error') addMessage('System', '❌ ERROR: ' + data.content);
+        else if (data.type === 'done') {
+          addMessage('VisCarma', data.content);
+          eventSource.close();
+          eventSource = null;
+        }
+      } catch (err) { console.error(err); }
+    };
+    eventSource.onerror = () => {
+      if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+        addMessage('System', '⚠️ Setup connection closed.');
+        eventSource = null;
+      }
+    };
+  });
+
+  // ─── Footer toggle ──────────────────────────────────────
+  footerToggle.addEventListener('click', () => {
+    footerVisible = !footerVisible;
+    footerContent.classList.toggle('hidden', !footerVisible);
+    footerArrow.classList.toggle('collapsed', !footerVisible);
+  });
+
+  // ─── Tab switching ──────────────────────────────────────
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const panels = {
+        chat: document.getElementById('panel-chat'),
+        docs: document.getElementById('panel-docs'),
+        prototype: document.getElementById('panel-prototype')
+      };
+      Object.keys(panels).forEach(key => {
+        panels[key].classList.toggle('active', key === btn.dataset.tab);
+      });
+    });
+  });
+
+  // ─── Chat functions ──────────────────────────────────────
+  function detectAgent(text) {
+    if (text.includes('Agent Parsh')) return 'Parsh';
+    if (text.includes('Agent Krish')) return 'Krish';
+    if (text.includes('Agent Parth')) return 'Parth';
+    if (text.includes('VisCarma') || text.includes('🔱') || text.includes('Mission')) return 'VisCarma';
+    return 'System';
   }
 
   function processOutput(chunk) {
@@ -942,6 +964,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const dot = document.getElementById('status'+k);
       if (dot) dot.className = 'status-dot idle';
     });
+    if (window['visCarmaTimeout']) clearTimeout(window['visCarmaTimeout']);
   }
 
   function launchMission() {
@@ -950,14 +973,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const branch = document.getElementById('branch').value.trim();
     const prompt = document.getElementById('prompt').value.trim();
     if (!prompt) { alert('Enter a mission prompt.'); return; }
-
     launchBtn.disabled = true; launchBtn.textContent = 'Running...';
     clearChat();
     connectionStatus.textContent = '⏳ Connecting...';
     connectionStatus.style.color = '#f39c12';
-
     const url = `/stream?repo=${encodeURIComponent(repo)}&owner=${encodeURIComponent(owner)}&branch=${encodeURIComponent(branch)}&prompt=${encodeURIComponent(prompt)}`;
-
     if (eventSource) { eventSource.close(); eventSource = null; }
     eventSource = new EventSource(url);
     eventSource.onmessage = (event) => {
@@ -975,15 +995,16 @@ document.addEventListener('DOMContentLoaded', function() {
       } catch (err) { console.error(err); }
     };
     eventSource.onerror = () => {
-      if (eventSource.readyState === EventSource.CLOSED) {
+      if (eventSource && eventSource.readyState === EventSource.CLOSED) {
         connectionStatus.textContent = '⚠️ Disconnected';
         connectionStatus.style.color = '#e74c3c';
         launchBtn.disabled = false; launchBtn.textContent = '🚀 Launch Mission';
+        eventSource = null;
       }
     };
   }
 
-  // ─── Event listeners ──────────────────────────────────
+  // ─── Event listeners ────────────────────────────────────
   document.querySelector('.mission-form').addEventListener('submit', e => {
     e.preventDefault();
     launchMission();
@@ -996,10 +1017,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
   });
 
-  // ─── Initial message ──────────────────────────────────
-  addMessage('VisCarma', '🔱 VisCarma is ready. Enter a mission to begin.');
+  addMessage('VisCarma', '🔱 VisCarma is ready. Enter a mission or click any avatar to learn more.');
 
-  // Clean up
   window.addEventListener('beforeunload', () => {
     if (eventSource) eventSource.close();
   });
