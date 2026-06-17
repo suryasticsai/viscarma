@@ -22,8 +22,8 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: process.env.NODE_ENV === 'production', // Set to true only in production
-    sameSite: 'lax',
+    secure: true,        // required for HTTPS
+    sameSite: 'none',    // required for cross-origin redirect from GitHub
     maxAge: 24 * 60 * 60 * 1000
   }
 }));
