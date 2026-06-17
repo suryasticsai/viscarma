@@ -3,19 +3,26 @@ const session = require('express-session');
 const axios = require('axios');
 const { spawn } = require('child_process');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 9000;
 
 const OAUTH_ENABLED = !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 
+// ─── Determine the public host (for OAuth redirect) ───
+function getHost(req) {
+  // Use Render's public URL if available, otherwise fallback to request host
+  return process.env.RENDER_EXTERNAL_URL 
+    ? new URL(process.env.RENDER_EXTERNAL_URL).host
+    : req.get('host');
+}
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: true,
+    secure: process.env.NODE_ENV === 'production', // Set to true only in production
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000
   }
@@ -34,15 +41,21 @@ app.get('/api/auth/status', (req, res) => {
 if (OAUTH_ENABLED) {
   app.get('/auth/github', (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
-    const redirectUri = `https://${req.get('host')}/auth/github/callback`;
+    const host = getHost(req);
+    const redirectUri = `https://${host}/auth/github/callback`;
     const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo`;
+    console.log(`Redirecting to GitHub: ${githubAuthUrl}`);
     res.redirect(githubAuthUrl);
   });
 
   app.get('/auth/github/callback', async (req, res) => {
     const code = req.query.code;
-    if (!code) return res.status(400).send('Missing code');
+    if (!code) {
+      console.error('Missing code in callback');
+      return res.status(400).send('Missing code');
+    }
     try {
+      console.log('Exchanging code for token...');
       const tokenResponse = await axios.post(
         'https://github.com/login/oauth/access_token',
         {
@@ -53,14 +66,22 @@ if (OAUTH_ENABLED) {
         { headers: { Accept: 'application/json' } }
       );
       const accessToken = tokenResponse.data.access_token;
+      if (!accessToken) {
+        console.error('No access token received');
+        return res.status(500).send('No access token');
+      }
+      console.log('Access token obtained');
       req.session.githubToken = accessToken;
       req.session.save((err) => {
-        if (err) console.error('Session save error:', err);
+        if (err) {
+          console.error('Session save error:', err);
+          return res.status(500).send('Session save failed');
+        }
         res.redirect('/');
       });
     } catch (err) {
       console.error('OAuth error:', err.response?.data || err.message);
-      res.status(500).send('OAuth failed');
+      res.status(500).send(`OAuth failed: ${err.message}`);
     }
   });
 
@@ -70,7 +91,9 @@ if (OAUTH_ENABLED) {
 
   app.get('/api/repos', async (req, res) => {
     const token = req.session.githubToken;
-    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+    if (!token) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
     try {
       const response = await axios.get('https://api.github.com/user/repos', {
         headers: { Authorization: `Bearer ${token}` },
@@ -95,7 +118,6 @@ if (OAUTH_ENABLED) {
   app.get('/api/repos', (req, res) => res.status(404).json({ error: 'OAuth not configured' }));
 }
 
-// ─── Streaming mission – now uses dynamic repo path ────
 app.get('/stream', async (req, res) => {
   const { repo, owner, branch, prompt } = req.query;
   if (!prompt || !repo || !owner) {
@@ -103,13 +125,7 @@ app.get('/stream', async (req, res) => {
     return;
   }
 
-  // Determine the local path for the selected repo
-  // We assume all repos are cloned under ~/projects/<repo>
-  // You can change this to any base directory you prefer.
-  const repoPath = path.join(__dirname, '..', repo);  // e.g., ../viscarma-test
-  // If the repo is not cloned locally, you can optionally clone it here.
-  // For now, we'll just pass the path and assume it exists.
-
+  const repoPath = path.join(__dirname, '..', repo);
   let userToken = req.session.githubToken || process.env.GITHUB_TOKEN;
   if (!userToken) {
     res.status(401).json({ error: 'No GitHub token available' });
@@ -126,7 +142,7 @@ app.get('/stream', async (req, res) => {
     '--repo', repo,
     '--owner', owner,
     '--base', branch || 'main',
-    '--repo-path', repoPath,   // 👈 Pass the dynamic path
+    '--repo-path', repoPath,
     prompt
   ];
 
