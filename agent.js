@@ -7,7 +7,7 @@ const { queryModel } = require('./lib/model');
 const { applyChangesAndOpenPR } = require('./lib/git');
 const { trySimpleFix } = require('./lib/rules');
 const { runAider } = require('./lib/aider');
-const CONFIG = require('./config/visCarma.json');
+const CONFIG = require('./config/viscarma.json');
 
 // ──────────────────────────────────────────────
 //  Helper: parse --key value arguments
@@ -62,12 +62,10 @@ async function interactiveConfig() {
 // ──────────────────────────────────────────────
 //  Agent Parsh – Bug Killer
 // ──────────────────────────────────────────────
-async function agentParsh(prompt, config, sourceFiles) {
+async function agentParsh(prompt, config) {
   console.log('🐛 Agent Parsh is hunting bugs...');
   const message = `Fix the bug: ${prompt}`;
-  // Pass all JS/HTML files to Aider
-  const targetFiles = Object.keys(sourceFiles).filter(f => f.endsWith('.js') || f.endsWith('.html'));
-  const changed = runAider(config.repoPath, message, targetFiles);
+  const changed = runAider(config.repoPath, message);
   if (changed) {
     const changes = detectChanges(config.repoPath);
     if (changes.length > 0) {
@@ -81,11 +79,10 @@ async function agentParsh(prompt, config, sourceFiles) {
 // ──────────────────────────────────────────────
 //  Agent Krish – Feature Inventor
 // ──────────────────────────────────────────────
-async function agentKrish(prompt, config, sourceFiles) {
+async function agentKrish(prompt, config) {
   console.log('🚀 Agent Krish is building new features...');
   const message = `Implement the feature: ${prompt}`;
-  const targetFiles = Object.keys(sourceFiles).filter(f => f.endsWith('.js') || f.endsWith('.html'));
-  const changed = runAider(config.repoPath, message, targetFiles);
+  const changed = runAider(config.repoPath, message);
   if (changed) {
     const changes = detectChanges(config.repoPath);
     if (changes.length > 0) {
@@ -99,19 +96,19 @@ async function agentKrish(prompt, config, sourceFiles) {
 // ──────────────────────────────────────────────
 //  Agent Parth – The Driver (Orchestrator)
 // ──────────────────────────────────────────────
-async function agentParth(prompt, config, sourceFiles) {
+async function agentParth(prompt, config) {
   console.log('🧭 Agent Parth is analyzing the mission...');
 
   const lower = prompt.toLowerCase();
   if (lower.includes('bug') || lower.includes('fix') || lower.includes('error') || lower.includes('issue')) {
     console.log('🔀 Routing to Agent Parsh (Bug Killer)');
-    return await agentParsh(prompt, config, sourceFiles);
+    return await agentParsh(prompt, config);
   } else if (lower.includes('feature') || lower.includes('new') || lower.includes('add') || lower.includes('implement')) {
     console.log('🔀 Routing to Agent Krish (Feature Inventor)');
-    return await agentKrish(prompt, config, sourceFiles);
+    return await agentKrish(prompt, config);
   } else {
     console.log('⚠️ Mission type unclear. Trying Agent Parsh as fallback.');
-    return await agentParsh(prompt, config, sourceFiles);
+    return await agentParsh(prompt, config);
   }
 }
 
@@ -125,7 +122,10 @@ function detectChanges(repoPath) {
     const parts = line.trim().split(/\s+/);
     if (parts.length >= 2) {
       const file = parts[1];
-      changed.push(file);
+      const fullPath = path.join(repoPath, file);
+      if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+        changed.push(file);
+      }
     }
   });
   return changed;
@@ -139,6 +139,13 @@ async function runMission(prompt, dynamicConfig = null) {
   console.log(`⏱️  Mission started at ${missionStart.toLocaleTimeString()}`);
 
   const config = dynamicConfig || CONFIG;
+
+  // ─── Override repoPath if --repo-path was provided ────
+  const args = parseArgs(process.argv);
+  if (args['repo-path']) {
+    config.repoPath = args['repo-path'];
+    console.log(`📁 Using repo path: ${config.repoPath}`);
+  }
 
   console.log(`🕵️ VisCarma embarking on mission: "${prompt}"`);
   console.log(`🎯 Target: ${config.github.owner}/${config.github.repo} (branch: ${config.github.baseBranch})`);
@@ -182,7 +189,7 @@ async function runMission(prompt, dynamicConfig = null) {
   }
 
   // ─── Route to the appropriate agent ─────────────────
-  const prUrl = await agentParth(prompt, config, sourceFiles);
+  const prUrl = await agentParth(prompt, config);
 
   const missionEnd = new Date();
   const duration = Math.round((missionEnd - missionStart) / 1000);
@@ -268,10 +275,7 @@ if (require.main === module) {
       result = await runMission(mission, dynamicConfig);
     } else {
       console.log(`🕵️ Running agent ${agentFunc.name} directly...`);
-      // Need sourceFiles – read them first
-      const config = dynamicConfig || CONFIG;
-      const sourceFiles = getSourceFiles(config.repoPath);
-      result = await agentFunc(mission, config, sourceFiles);
+      result = await agentFunc(mission, dynamicConfig);
     }
 
     if (result) console.log(`✅ PR: ${result}`);
