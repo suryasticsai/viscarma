@@ -3,7 +3,6 @@ const session = require('express-session');
 const axios = require('axios');
 const { spawn } = require('child_process');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 9000;
@@ -33,6 +32,7 @@ app.get('/api/auth/status', (req, res) => {
 
 // ─── OAuth routes (only if enabled) ──────────────────────
 if (OAUTH_ENABLED) {
+  // 1. Redirect to GitHub login
   app.get('/auth/github', (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
     const redirectUri = `https://${req.get('host')}/auth/github/callback`;
@@ -40,6 +40,7 @@ if (OAUTH_ENABLED) {
     res.redirect(githubAuthUrl);
   });
 
+  // 2. GitHub callback – exchange code for token
   app.get('/auth/github/callback', async (req, res) => {
     const code = req.query.code;
     if (!code) {
@@ -64,13 +65,14 @@ if (OAUTH_ENABLED) {
     }
   });
 
+  // 3. Logout – destroy session
   app.get('/auth/logout', (req, res) => {
     req.session.destroy(() => {
       res.redirect('/');
     });
   });
 
-  // ─── API: list repositories (only if OAuth enabled) ────
+  // 4. API: list user repositories (requires authentication)
   app.get('/api/repos', async (req, res) => {
     const token = req.session.githubToken;
     if (!token) {
@@ -94,23 +96,23 @@ if (OAUTH_ENABLED) {
     }
   });
 } else {
-  // OAuth not enabled – return 404 for OAuth endpoints
+  // OAuth not configured – return 404 for OAuth endpoints
   app.get('/auth/github', (req, res) => res.status(404).send('OAuth not configured'));
   app.get('/auth/github/callback', (req, res) => res.status(404).send('OAuth not configured'));
   app.get('/auth/logout', (req, res) => res.status(404).send('OAuth not configured'));
   app.get('/api/repos', (req, res) => res.status(404).json({ error: 'OAuth not configured' }));
 }
 
-// ─── Streaming mission (works for both online and offline) ──
+// ─── Streaming mission (works for online and offline) ──
 app.get('/stream', async (req, res) => {
-  // Determine repo and owner from query params or session
+  // Get repo, owner, branch, prompt from query params
   const { repo, owner, branch, prompt } = req.query;
   if (!prompt || !repo || !owner) {
     res.status(400).json({ error: 'Missing repo, owner, or prompt' });
     return;
   }
 
-  // Use the user's token if logged in, otherwise fallback to environment token (if any)
+  // Use the user's GitHub token if logged in, otherwise fallback to environment token (if any)
   let userToken = req.session.githubToken || process.env.GITHUB_TOKEN;
   if (!userToken) {
     res.status(401).json({ error: 'No GitHub token available' });
@@ -155,13 +157,12 @@ app.get('/stream', async (req, res) => {
   });
 });
 
-// ─── Setup endpoint (optional) ──────────────────────────
+// ─── Setup endpoint (optional – returns 404 if not implemented) ──
 app.get('/setup', (req, res) => {
-  // If you have a setup script, keep it; otherwise return 404
   res.status(404).send('Setup not available');
 });
 
-// ─── Serve the main HTML ─────────────────────────────────
+// ─── Serve the main HTML (fallback) ─────────────────────
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
