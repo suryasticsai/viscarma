@@ -8,6 +8,9 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 9000;
 
+// ─── Check if OAuth is configured ────────────────────────
+const OAUTH_ENABLED = !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
+
 // ─── Session middleware ──────────────────────────────────
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
@@ -19,92 +22,104 @@ app.use(session({
 // ─── Static files ────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── OAuth routes ────────────────────────────────────────
-
-// 1. Start OAuth flow
-app.get('/auth/github', (req, res) => {
-  const clientId = process.env.GITHUB_CLIENT_ID;
-  const redirectUri = `https://${req.get('host')}/auth/github/callback`;
-  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo`;
-  res.redirect(githubAuthUrl);
-});
-
-// 2. OAuth callback
-app.get('/auth/github/callback', async (req, res) => {
-  const code = req.query.code;
-  if (!code) {
-    return res.status(400).send('Missing code');
-  }
-  try {
-    const tokenResponse = await axios.post(
-      'https://github.com/login/oauth/access_token',
-      {
-        client_id: process.env.GITHUB_CLIENT_ID,
-        client_secret: process.env.GITHUB_CLIENT_SECRET,
-        code,
-      },
-      { headers: { Accept: 'application/json' } }
-    );
-    const accessToken = tokenResponse.data.access_token;
-    req.session.githubToken = accessToken;
-    res.redirect('/');
-  } catch (err) {
-    console.error('OAuth error:', err.response?.data || err.message);
-    res.status(500).send('OAuth failed');
-  }
-});
-
-// 3. Logout
-app.get('/auth/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.redirect('/');
+// ─── API: auth status ────────────────────────────────────
+app.get('/api/auth/status', (req, res) => {
+  const isLoggedIn = !!req.session.githubToken;
+  res.json({
+    oauthEnabled: OAUTH_ENABLED,
+    authenticated: isLoggedIn,
   });
 });
 
-// ─── API: list repositories ──────────────────────────────
-app.get('/api/repos', async (req, res) => {
-  const token = req.session.githubToken;
-  if (!token) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-  try {
-    const response = await axios.get('https://api.github.com/user/repos', {
-      headers: { Authorization: `Bearer ${token}` },
-      params: { sort: 'updated', per_page: 100 }
+// ─── OAuth routes (only if enabled) ──────────────────────
+if (OAUTH_ENABLED) {
+  app.get('/auth/github', (req, res) => {
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const redirectUri = `https://${req.get('host')}/auth/github/callback`;
+    const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo`;
+    res.redirect(githubAuthUrl);
+  });
+
+  app.get('/auth/github/callback', async (req, res) => {
+    const code = req.query.code;
+    if (!code) {
+      return res.status(400).send('Missing code');
+    }
+    try {
+      const tokenResponse = await axios.post(
+        'https://github.com/login/oauth/access_token',
+        {
+          client_id: process.env.GITHUB_CLIENT_ID,
+          client_secret: process.env.GITHUB_CLIENT_SECRET,
+          code,
+        },
+        { headers: { Accept: 'application/json' } }
+      );
+      const accessToken = tokenResponse.data.access_token;
+      req.session.githubToken = accessToken;
+      res.redirect('/');
+    } catch (err) {
+      console.error('OAuth error:', err.response?.data || err.message);
+      res.status(500).send('OAuth failed');
+    }
+  });
+
+  app.get('/auth/logout', (req, res) => {
+    req.session.destroy(() => {
+      res.redirect('/');
     });
-    // Return name, owner, and full_name for display
-    const repos = response.data.map(repo => ({
-      name: repo.name,
-      owner: repo.owner.login,
-      full_name: repo.full_name,
-      private: repo.private,
-    }));
-    res.json(repos);
-  } catch (err) {
-    console.error('Repo fetch error:', err.response?.data || err.message);
-    res.status(500).json({ error: 'Failed to fetch repos' });
-  }
-});
+  });
 
-// ─── Streaming mission (with user token) ────────────────
+  // ─── API: list repositories (only if OAuth enabled) ────
+  app.get('/api/repos', async (req, res) => {
+    const token = req.session.githubToken;
+    if (!token) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    try {
+      const response = await axios.get('https://api.github.com/user/repos', {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { sort: 'updated', per_page: 100 }
+      });
+      const repos = response.data.map(repo => ({
+        name: repo.name,
+        owner: repo.owner.login,
+        full_name: repo.full_name,
+        private: repo.private,
+      }));
+      res.json(repos);
+    } catch (err) {
+      console.error('Repo fetch error:', err.response?.data || err.message);
+      res.status(500).json({ error: 'Failed to fetch repos' });
+    }
+  });
+} else {
+  // OAuth not enabled – return 404 for OAuth endpoints
+  app.get('/auth/github', (req, res) => res.status(404).send('OAuth not configured'));
+  app.get('/auth/github/callback', (req, res) => res.status(404).send('OAuth not configured'));
+  app.get('/auth/logout', (req, res) => res.status(404).send('OAuth not configured'));
+  app.get('/api/repos', (req, res) => res.status(404).json({ error: 'OAuth not configured' }));
+}
+
+// ─── Streaming mission (works for both online and offline) ──
 app.get('/stream', async (req, res) => {
-  const userToken = req.session.githubToken;
-  if (!userToken) {
-    res.status(401).json({ error: 'Not authenticated' });
-    return;
-  }
-
+  // Determine repo and owner from query params or session
   const { repo, owner, branch, prompt } = req.query;
-  if (!prompt || !repo) {
-    res.status(400).json({ error: 'Missing repo or prompt' });
+  if (!prompt || !repo || !owner) {
+    res.status(400).json({ error: 'Missing repo, owner, or prompt' });
     return;
   }
 
-  // Build the agent command with the repo and owner
-  // We'll pass the user's token as environment variable to the child process
+  // Use the user's token if logged in, otherwise fallback to environment token (if any)
+  let userToken = req.session.githubToken || process.env.GITHUB_TOKEN;
+  if (!userToken) {
+    res.status(401).json({ error: 'No GitHub token available' });
+    return;
+  }
+
   const env = {
     ...process.env,
-    GITHUB_TOKEN: userToken,      // the user's token overrides any server token
+    GITHUB_TOKEN: userToken,
   };
 
   const args = [
@@ -140,9 +155,10 @@ app.get('/stream', async (req, res) => {
   });
 });
 
-// ─── Setup endpoint (optional, still uses system env) ────
+// ─── Setup endpoint (optional) ──────────────────────────
 app.get('/setup', (req, res) => {
-  // ... keep your existing setup if needed
+  // If you have a setup script, keep it; otherwise return 404
+  res.status(404).send('Setup not available');
 });
 
 // ─── Serve the main HTML ─────────────────────────────────
@@ -152,4 +168,5 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🕵️ VisCarma running at http://localhost:${PORT}`);
+  console.log(`🔐 OAuth mode: ${OAUTH_ENABLED ? 'ONLINE' : 'OFFLINE'}`);
 });
