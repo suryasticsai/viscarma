@@ -9,39 +9,50 @@ const PORT = process.env.PORT || 9000;
 
 const OAUTH_ENABLED = !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 
-// ─── Determine the public host (for OAuth redirect) ───
-function getHost(req) {
-  // Use Render's public URL if available, otherwise fallback to request host
-  return process.env.RENDER_EXTERNAL_URL 
-    ? new URL(process.env.RENDER_EXTERNAL_URL).host
-    : req.get('host');
-}
-
+// ─── Session configuration ──────────────────────────────
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
   saveUninitialized: false,
-  cookie: { 
-    secure: true,        // required for HTTPS
-    sameSite: 'none',    // required for cross-origin redirect from GitHub
-    maxAge: 24 * 60 * 60 * 1000
+  cookie: {
+    secure: true,          // required for HTTPS (Render)
+    sameSite: 'none',      // needed for cross-site redirect from GitHub
+    maxAge: 24 * 60 * 60 * 1000,
+    path: '/'              // ensure cookie is sent for all routes
   }
 }));
 
+// ─── Log session for debugging ─────────────────────────
+app.use((req, res, next) => {
+  console.log(`[Session] ID: ${req.sessionID}, Token: ${req.session.githubToken ? 'present' : 'missing'}`);
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ─── Auth status ────────────────────────────────────────
 app.get('/api/auth/status', (req, res) => {
   const isLoggedIn = !!req.session.githubToken;
+  console.log(`Auth status check: loggedIn=${isLoggedIn}`);
   res.json({
     oauthEnabled: OAUTH_ENABLED,
     authenticated: isLoggedIn,
   });
 });
 
+// ─── Debug session (optional) ──────────────────────────
+app.get('/api/debug-session', (req, res) => {
+  res.json({
+    sessionID: req.sessionID,
+    githubToken: req.session.githubToken ? 'present' : 'missing',
+    cookies: req.headers.cookie,
+  });
+});
+
 if (OAUTH_ENABLED) {
   app.get('/auth/github', (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
-    const host = getHost(req);
+    const host = req.get('host');
     const redirectUri = `https://${host}/auth/github/callback`;
     const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo`;
     console.log(`Redirecting to GitHub: ${githubAuthUrl}`);
@@ -71,12 +82,17 @@ if (OAUTH_ENABLED) {
         return res.status(500).send('No access token');
       }
       console.log('Access token obtained');
+      
+      // Store token in session
       req.session.githubToken = accessToken;
+      
+      // Save session explicitly and redirect
       req.session.save((err) => {
         if (err) {
           console.error('Session save error:', err);
           return res.status(500).send('Session save failed');
         }
+        console.log('Session saved successfully, redirecting to /');
         res.redirect('/');
       });
     } catch (err) {
@@ -92,6 +108,7 @@ if (OAUTH_ENABLED) {
   app.get('/api/repos', async (req, res) => {
     const token = req.session.githubToken;
     if (!token) {
+      console.log('Repos request: no token');
       return res.status(401).json({ error: 'Not authenticated' });
     }
     try {
@@ -118,6 +135,7 @@ if (OAUTH_ENABLED) {
   app.get('/api/repos', (req, res) => res.status(404).json({ error: 'OAuth not configured' }));
 }
 
+// ─── Streaming mission ──────────────────────────────────
 app.get('/stream', async (req, res) => {
   const { repo, owner, branch, prompt } = req.query;
   if (!prompt || !repo || !owner) {
