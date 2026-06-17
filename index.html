@@ -1,1159 +1,1009 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VisCarma – DevAIne Agent</title>
-    <style>
-        /* ─── Base ─── */
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            background: #1e1e2f;
-            color: #e0e0e0;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VisCarma – DevAIne Agent</title>
+  <!-- Include avatars script -->
+  <script src="avatars.js" defer></script>
+  <style>
+    /* ─── Base ─── */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0f0f1a;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
 
-        /* ─── Topbar ─── */
-        .topbar {
-            background: #2a2a3e;
-            padding: 12px 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px solid #3a3a5a;
-            flex-shrink: 0;
-        }
-        .topbar h1 {
-            font-size: 1.5rem;
-            color: #d4af37;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .topbar h1 span { font-size: 1.8rem; }
-        .topbar-actions {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-        }
-        .topbar-actions button {
-            background: #3a3a5a;
-            border: none;
-            color: #ccc;
-            padding: 6px 14px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: background 0.2s;
-        }
-        .topbar-actions button:hover { background: #4a4a6a; }
-        .topbar-actions button.danger:hover { background: #8b2f3a; }
-        .topbar-actions button.about-btn {
-            background: #d4af37;
-            color: #1a1a1a;
-            font-weight: 600;
-        }
-        .topbar-actions button.about-btn:hover { background: #b8962c; }
+    .bg-glow {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(circle at 10% 20%, rgba(212,175,55,0.04), transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(212,175,55,0.04), transparent 40%),
+        radial-gradient(circle at 50% 50%, rgba(212,175,55,0.02), transparent 70%);
+    }
 
-        /* ─── Main layout ─── */
-        .app {
-            display: flex;
-            flex: 1;
-            overflow: hidden;
-        }
+    .topbar {
+      position: relative;
+      z-index: 10;
+      background: #1a1a2e;
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #3a3a5a;
+      flex-shrink: 0;
+      backdrop-filter: blur(8px);
+    }
+    .topbar h1 {
+      font-size: 1.6rem;
+      color: #d4af37;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      letter-spacing: 0.5px;
+    }
+    .topbar h1 span { font-size: 2rem; }
+    .topbar h1 small {
+      font-size: 1rem;
+      font-weight: 400;
+      color: #888;
+      margin-left: 4px;
+    }
+    .topbar-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .topbar-actions button {
+      background: #2a2a44;
+      border: 1px solid #3a3a5a;
+      color: #ccc;
+      padding: 6px 16px;
+      border-radius: 24px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      font-weight: 500;
+    }
+    .topbar-actions button:hover {
+      background: #3a3a5a;
+      border-color: #d4af37;
+      color: #fff;
+    }
+    .topbar-actions button.danger:hover {
+      background: #8b2f3a;
+      border-color: #e74c3c;
+    }
+    .topbar-actions button.tab-btn {
+      background: transparent;
+      border: none;
+      color: #888;
+      font-weight: 600;
+      padding: 6px 18px;
+      border-bottom: 3px solid transparent;
+      border-radius: 0;
+    }
+    .topbar-actions button.tab-btn:hover {
+      color: #d4af37;
+      border-bottom-color: #d4af37;
+    }
+    .topbar-actions button.tab-btn.active {
+      color: #d4af37;
+      border-bottom-color: #d4af37;
+    }
 
-        /* ─── Sidebar ─── */
-        .sidebar {
-            width: 270px;
-            background: #25253a;
-            padding: 20px 16px;
-            border-right: 1px solid #3a3a5a;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            flex-shrink: 0;
-            overflow-y: auto;
-        }
-        .sidebar .agent-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .sidebar .agent-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 8px 12px;
-            border-radius: 12px;
-            background: #2e2e48;
-            border-left: 4px solid #555;
-            transition: background 0.2s, border-color 0.3s;
-        }
-        .sidebar .agent-item canvas.avatar-canvas {
-            width: 48px;
-            height: 52px;
-            border-radius: 50%;
-            flex-shrink: 0;
-            background: transparent;
-        }
-        .sidebar .agent-item .info { flex: 1; }
-        .sidebar .agent-item .info .name { font-weight: 600; font-size: 0.95rem; }
-        .sidebar .agent-item .info .role { font-size: 0.75rem; color: #999; }
-        .sidebar .agent-item .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #4caf50;
-            flex-shrink: 0;
-            transition: background 0.3s, box-shadow 0.3s;
-        }
-        .sidebar .agent-item .status-dot.idle { background: #777; }
-        .sidebar .agent-item .status-dot.pulse {
-            background: #f1c40f;
-            box-shadow: 0 0 12px #f1c40f;
-            animation: pulse-dot 1s infinite;
-        }
-        @keyframes pulse-dot {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.3); opacity: 0.7; }
-            100% { transform: scale(1); opacity: 1; }
-        }
+    .app {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
 
-        .agent-vis { border-left-color: #d4af37; }
-        .agent-parsh { border-left-color: #e74c3c; }
-        .agent-krish { border-left-color: #2ecc71; }
-        .agent-parth { border-left-color: #3498db; }
+    .sidebar {
+      width: 280px;
+      background: #16162a;
+      padding: 16px 14px;
+      border-right: 1px solid #2a2a44;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+    .sidebar .agent-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .sidebar .agent-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      background: #1e1e36;
+      border-left: 4px solid #555;
+      transition: all 0.2s;
+    }
+    .sidebar .agent-item:hover {
+      background: #2a2a48;
+      border-left-color: #d4af37;
+    }
+    .sidebar .agent-item canvas.avatar-canvas {
+      width: 48px;
+      height: 52px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: transparent;
+    }
+    .sidebar .agent-item .info { flex: 1; }
+    .sidebar .agent-item .info .name { font-weight: 600; font-size: 0.95rem; }
+    .sidebar .agent-item .info .role { font-size: 0.75rem; color: #999; }
+    .sidebar .agent-item .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #4caf50;
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+    .sidebar .agent-item .status-dot.idle { background: #555; }
+    .sidebar .agent-item .status-dot.pulse {
+      background: #f1c40f;
+      box-shadow: 0 0 16px #f1c40f;
+      animation: pulse-dot 1s infinite;
+    }
+    @keyframes pulse-dot {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.4); opacity: 0.6; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .agent-vis { border-left-color: #d4af37; }
+    .agent-parsh { border-left-color: #e74c3c; }
+    .agent-krish { border-left-color: #2ecc71; }
+    .agent-parth { border-left-color: #3498db; }
 
-        .mission-form {
-            background: #1e1e32;
-            border-radius: 10px;
-            padding: 16px;
-            margin-top: auto;
-            border: 1px solid #3a3a5a;
-        }
-        .mission-form label {
-            font-size: 0.8rem;
-            color: #aaa;
-            display: block;
-            margin-top: 8px;
-        }
-        .mission-form input,
-        .mission-form textarea {
-            width: 100%;
-            background: #2a2a44;
-            border: 1px solid #444;
-            border-radius: 6px;
-            color: #e0e0e0;
-            padding: 8px 10px;
-            font-size: 0.9rem;
-            margin-top: 4px;
-            font-family: inherit;
-        }
-        .mission-form textarea { resize: vertical; min-height: 70px; }
-        .mission-form button {
-            width: 100%;
-            margin-top: 12px;
-            padding: 10px;
-            background: #d4af37;
-            color: #1a1a1a;
-            font-weight: bold;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: background 0.2s;
-        }
-        .mission-form button:hover { background: #b8962c; }
-        .mission-form button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+    .mission-form {
+      background: #1a1a32;
+      border-radius: 14px;
+      padding: 16px;
+      border: 1px solid #2a2a48;
+      margin-top: 4px;
+    }
+    .mission-form label {
+      font-size: 0.75rem;
+      color: #aaa;
+      display: block;
+      margin-top: 6px;
+      letter-spacing: 0.3px;
+      font-weight: 600;
+    }
+    .mission-form input,
+    .mission-form textarea {
+      width: 100%;
+      background: #0f0f22;
+      border: 1px solid #2a2a44;
+      border-radius: 8px;
+      color: #e0e0e0;
+      padding: 8px 10px;
+      font-size: 0.9rem;
+      margin-top: 3px;
+      font-family: inherit;
+      transition: border 0.2s;
+    }
+    .mission-form input:focus,
+    .mission-form textarea:focus {
+      outline: none;
+      border-color: #d4af37;
+    }
+    .mission-form textarea { resize: vertical; min-height: 60px; }
+    .mission-form button {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      background: #d4af37;
+      color: #0f0f1a;
+      font-weight: 700;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+    .mission-form button:hover { background: #b8962c; transform: scale(1.01); }
+    .mission-form button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
 
-        /* ─── Chat ─── */
-        .chat {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: #181825;
-            overflow: hidden;
-        }
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .message {
-            display: flex;
-            gap: 12px;
-            align-items: flex-start;
-            animation: fadeIn 0.15s ease;
-        }
-        .message .avatar {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 0.9rem;
-            color: #fff;
-            flex-shrink: 0;
-            margin-top: 2px;
-        }
-        .message .bubble {
-            background: #2a2a44;
-            padding: 10px 14px;
-            border-radius: 12px 12px 12px 4px;
-            max-width: 85%;
-            word-wrap: break-word;
-            line-height: 1.5;
-            font-size: 0.95rem;
-        }
-        .message .bubble .sender {
-            font-weight: 600;
-            font-size: 0.85rem;
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .message .bubble .sender .time {
-            font-weight: normal;
-            color: #888;
-            font-size: 0.7rem;
-        }
-        .message .bubble .content {
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-        .code-block {
-            background: #0d0d1a;
-            border-radius: 8px;
-            padding: 12px 16px;
-            margin: 8px 0;
-            overflow-x: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 0.85rem;
-            border: 1px solid #3a3a5a;
-            position: relative;
-        }
-        .code-block .lang-tag {
-            position: absolute;
-            top: 6px;
-            right: 10px;
-            font-size: 0.7rem;
-            color: #888;
-            background: #222;
-            padding: 2px 8px;
-            border-radius: 12px;
-        }
-        .code-block pre {
-            margin: 0;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-        .avatar-vis { background: #d4af37; color: #1a1a1a; }
-        .avatar-parsh { background: #e74c3c; }
-        .avatar-krish { background: #2ecc71; }
-        .avatar-parth { background: #3498db; }
-        .avatar-system { background: #555; }
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #12121f;
+      overflow: hidden;
+      position: relative;
+    }
 
-        .bubble-vis { border-left: 4px solid #d4af37; }
-        .bubble-parsh { border-left: 4px solid #e74c3c; }
-        .bubble-krish { border-left: 4px solid #2ecc71; }
-        .bubble-parth { border-left: 4px solid #3498db; }
-        .bubble-system { border-left: 4px solid #777; }
+    .tab-panel {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 32px;
+    }
+    .tab-panel.active {
+      display: flex;
+      flex-direction: column;
+    }
 
-        .message.system .bubble { background: #1e1e32; border-left: 4px solid #888; }
-        .message.system .avatar { background: #555; }
+    #panel-chat .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 4px 16px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    #panel-chat .message {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      animation: fadeIn 0.2s ease;
+    }
+    #panel-chat .message .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 0.9rem;
+      color: #fff;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    #panel-chat .message .bubble {
+      background: #1e1e36;
+      padding: 10px 16px;
+      border-radius: 14px 14px 14px 4px;
+      max-width: 85%;
+      word-wrap: break-word;
+      line-height: 1.6;
+      font-size: 0.95rem;
+      border-left: 3px solid transparent;
+    }
+    #panel-chat .message .bubble .sender {
+      font-weight: 600;
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #panel-chat .message .bubble .sender .time {
+      font-weight: normal;
+      color: #777;
+      font-size: 0.7rem;
+    }
+    #panel-chat .message .bubble .content {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #panel-chat .code-block {
+      background: #0a0a18;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 8px 0;
+      overflow-x: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 0.85rem;
+      border: 1px solid #2a2a44;
+      position: relative;
+    }
+    #panel-chat .code-block .lang-tag {
+      position: absolute;
+      top: 6px;
+      right: 10px;
+      font-size: 0.7rem;
+      color: #888;
+      background: #1a1a2e;
+      padding: 2px 10px;
+      border-radius: 12px;
+    }
+    #panel-chat .code-block pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+    .avatar-vis { background: #d4af37; color: #1a1a1a; }
+    .avatar-parsh { background: #e74c3c; }
+    .avatar-krish { background: #2ecc71; }
+    .avatar-parth { background: #3498db; }
+    .avatar-system { background: #555; }
+    .bubble-vis { border-left-color: #d4af37; }
+    .bubble-parsh { border-left-color: #e74c3c; }
+    .bubble-krish { border-left-color: #2ecc71; }
+    .bubble-parth { border-left-color: #3498db; }
+    .bubble-system { border-left-color: #888; }
+    #panel-chat .message.system .bubble { background: #1a1a2e; border-left-color: #888; }
+    #panel-chat .message.system .avatar { background: #555; }
+    @keyframes fadeIn {
+      0% { opacity: 0; transform: translateY(6px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
 
-        @keyframes fadeIn {
-            0% { opacity: 0; transform: translateY(6px); }
-            100% { opacity: 1; transform: translateY(0); }
-        }
+    #panel-chat .chat-status {
+      padding: 8px 0;
+      font-size: 0.8rem;
+      color: #666;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #1a1a2e;
+      margin-top: 8px;
+    }
 
-        .chat-messages::-webkit-scrollbar,
-        .sidebar::-webkit-scrollbar {
-            width: 6px;
-        }
-        .chat-messages::-webkit-scrollbar-track,
-        .sidebar::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        .chat-messages::-webkit-scrollbar-thumb,
-        .sidebar::-webkit-scrollbar-thumb {
-            background: #4a4a6a;
-            border-radius: 8px;
-        }
-        .chat-messages::-webkit-scrollbar-thumb:hover {
-            background: #5a5a7a;
-        }
+    #panel-docs {
+      color: #ccc;
+      line-height: 1.7;
+    }
+    #panel-docs h2 {
+      color: #d4af37;
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    #panel-docs h3 {
+      color: #f0d060;
+      font-size: 1.4rem;
+      margin-top: 2rem;
+      margin-bottom: 0.5rem;
+      border-bottom: 1px solid #2a2a44;
+      padding-bottom: 6px;
+    }
+    #panel-docs h4 {
+      color: #d4af37;
+      font-size: 1.1rem;
+      margin-top: 1.5rem;
+      margin-bottom: 0.3rem;
+    }
+    #panel-docs p { margin-bottom: 1rem; }
+    #panel-docs ul, #panel-docs ol { padding-left: 1.8rem; margin-bottom: 1rem; }
+    #panel-docs li { margin-bottom: 0.4rem; }
+    #panel-docs code {
+      background: #1a1a2e;
+      padding: 2px 10px;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+      color: #f0d060;
+      border: 1px solid #2a2a44;
+    }
+    #panel-docs pre {
+      background: #0a0a18;
+      padding: 1rem 1.5rem;
+      border-radius: 10px;
+      overflow-x: auto;
+      border: 1px solid #2a2a44;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+      color: #d4d4d4;
+      margin: 1rem 0;
+    }
+    #panel-docs .badge {
+      display: inline-block;
+      background: #d4af37;
+      color: #0f0f1a;
+      padding: 2px 14px;
+      border-radius: 20px;
+      font-weight: 600;
+      font-size: 0.75rem;
+      margin-right: 6px;
+    }
+    .agent-grid-docs {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .agent-card-docs {
+      background: #1a1a32;
+      border-radius: 14px;
+      padding: 1.2rem 1rem;
+      border-left: 5px solid #d4af37;
+      transition: transform 0.2s;
+    }
+    .agent-card-docs:hover { transform: translateY(-4px); }
+    .agent-card-docs .emoji { font-size: 2rem; display: block; }
+    .agent-card-docs .name { font-weight: 700; font-size: 1.1rem; color: #f0d060; }
+    .agent-card-docs .role { font-size: 0.85rem; color: #aaa; }
 
-        /* ─── Footer ─── */
-        .footer {
-            background: #1a1a2e;
-            border-top: 1px solid #2a2a44;
-            flex-shrink: 0;
-            font-size: 0.8rem;
-            color: #888;
-            transition: all 0.2s;
-        }
-        .footer .footer-toggle {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 4px 0;
-            cursor: pointer;
-            color: #666;
-            font-size: 1rem;
-            user-select: none;
-        }
-        .footer .footer-toggle:hover { color: #aaa; }
-        .footer .footer-toggle .arrow { transition: transform 0.2s; }
-        .footer .footer-toggle .arrow.collapsed { transform: rotate(-90deg); }
-        .footer .footer-content {
-            padding: 8px 24px 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 8px;
-            transition: max-height 0.3s ease, opacity 0.2s;
-            max-height: 200px;
-            opacity: 1;
-            overflow: hidden;
-        }
-        .footer .footer-content.hidden {
-            max-height: 0;
-            opacity: 0;
-            padding: 0 24px;
-        }
-        .footer a {
-            color: #d4af37;
-            text-decoration: none;
-            transition: color 0.2s;
-        }
-        .footer a:hover { color: #f0d060; text-decoration: underline; }
-        .footer .links {
-            display: flex;
-            gap: 16px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .footer .divider { color: #444; }
-        .footer .powered {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
+    #panel-prototype {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    #panel-prototype .demo-card {
+      background: #1a1a32;
+      border-radius: 16px;
+      padding: 1.8rem 2rem;
+      border: 1px solid #2a2a48;
+      transition: all 0.3s;
+    }
+    #panel-prototype .demo-card:hover {
+      border-color: #d4af37;
+      box-shadow: 0 8px 30px rgba(212,175,55,0.08);
+    }
+    #panel-prototype .demo-card h3 {
+      color: #d4af37;
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #panel-prototype .demo-card p {
+      color: #bbb;
+      line-height: 1.6;
+    }
+    #panel-prototype .demo-card .demo-badge {
+      display: inline-block;
+      background: #2a2a48;
+      color: #d4af37;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-top: 8px;
+    }
 
-        /* ─── About Modal ─── */
-        .modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.7);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            backdrop-filter: blur(4px);
-        }
-        .modal-overlay.open { display: flex; }
-        .modal-content {
-            background: #2a2a44;
-            border-radius: 16px;
-            padding: 32px 40px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            border: 1px solid #4a4a6a;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-            position: relative;
-        }
-        .modal-content h2 {
-            color: #d4af37;
-            font-size: 1.8rem;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .modal-content h3 {
-            color: #d4af37;
-            font-size: 1.2rem;
-            margin-top: 20px;
-            margin-bottom: 8px;
-            border-bottom: 1px solid #3a3a5a;
-            padding-bottom: 4px;
-        }
-        .modal-content p, .modal-content li {
-            color: #ccc;
-            line-height: 1.6;
-            font-size: 0.95rem;
-        }
-        .modal-content ul {
-            padding-left: 20px;
-        }
-        .modal-content .close-btn {
-            position: absolute;
-            top: 12px;
-            right: 16px;
-            background: none;
-            border: none;
-            color: #aaa;
-            font-size: 1.8rem;
-            cursor: pointer;
-            transition: color 0.2s;
-        }
-        .modal-content .close-btn:hover { color: #fff; }
-        .modal-content .author-link {
-            color: #d4af37;
-            text-decoration: none;
-            font-weight: 600;
-        }
-        .modal-content .author-link:hover { text-decoration: underline; }
+    .footer {
+      background: #12122a;
+      border-top: 1px solid #1a1a36;
+      flex-shrink: 0;
+      font-size: 0.8rem;
+      color: #666;
+      transition: all 0.2s;
+    }
+    .footer .footer-toggle {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 4px 0;
+      cursor: pointer;
+      color: #555;
+      font-size: 1rem;
+      user-select: none;
+    }
+    .footer .footer-toggle:hover { color: #aaa; }
+    .footer .footer-toggle .arrow { transition: transform 0.2s; display: inline-block; }
+    .footer .footer-toggle .arrow.collapsed { transform: rotate(-90deg); }
+    .footer .footer-content {
+      padding: 8px 28px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      transition: max-height 0.3s ease, opacity 0.2s, padding 0.3s;
+      max-height: 200px;
+      opacity: 1;
+      overflow: hidden;
+    }
+    .footer .footer-content.hidden {
+      max-height: 0;
+      opacity: 0;
+      padding: 0 28px;
+    }
+    .footer a {
+      color: #d4af37;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer a:hover { color: #f0d060; text-decoration: underline; }
+    .footer .links {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .footer .divider { color: #444; }
+    .footer .powered {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
 
-        @media (max-width: 768px) {
-            .app { flex-direction: column; }
-            .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #3a3a5a; max-height: 340px; }
-            .chat-messages { padding: 12px; }
-            .message .bubble { max-width: 95%; }
-            .modal-content { padding: 24px 20px; }
-            .footer .footer-content { flex-direction: column; align-items: flex-start; }
-        }
-    </style>
+    .sidebar::-webkit-scrollbar,
+    #panel-chat .chat-messages::-webkit-scrollbar,
+    #panel-docs::-webkit-scrollbar,
+    #panel-prototype::-webkit-scrollbar {
+      width: 5px;
+    }
+    .sidebar::-webkit-scrollbar-track,
+    #panel-chat .chat-messages::-webkit-scrollbar-track,
+    #panel-docs::-webkit-scrollbar-track,
+    #panel-prototype::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .sidebar::-webkit-scrollbar-thumb,
+    #panel-chat .chat-messages::-webkit-scrollbar-thumb,
+    #panel-docs::-webkit-scrollbar-thumb,
+    #panel-prototype::-webkit-scrollbar-thumb {
+      background: #3a3a5a;
+      border-radius: 10px;
+    }
+    .sidebar::-webkit-scrollbar-thumb:hover,
+    #panel-chat .chat-messages::-webkit-scrollbar-thumb:hover,
+    #panel-docs::-webkit-scrollbar-thumb:hover,
+    #panel-prototype::-webkit-scrollbar-thumb:hover {
+      background: #4a4a6a;
+    }
+
+    @media (max-width: 768px) {
+      .app { flex-direction: column; }
+      .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #2a2a44; max-height: 300px; }
+      .topbar { flex-wrap: wrap; gap: 8px; }
+      .topbar-actions { flex-wrap: wrap; }
+      .tab-panel { padding: 16px; }
+      .agent-grid-docs { grid-template-columns: 1fr; }
+      #panel-prototype .demo-card { padding: 1.2rem; }
+      .footer .footer-content { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
 </head>
 <body>
 
+<div class="bg-glow"></div>
+
+<!-- ─── Topbar ─── -->
 <div class="topbar">
-    <h1><span>🕵️</span> VisCarma <span style="font-size:1rem;color:#aaa;font-weight:400;">DevAIne Agent</span></h1>
-    <div class="topbar-actions">
-        <button class="about-btn" id="aboutBtn">📖 About</button>
-        <button id="clearBtn" class="danger">🗑️ Clear Chat</button>
-        <button id="scrollLockBtn">🔒 Scroll Lock</button>
-    </div>
+  <h1>
+    <span>🔱</span> VisCarma
+    <small>DevAIne Agent</small>
+  </h1>
+  <div class="topbar-actions">
+    <button class="tab-btn active" data-tab="chat">📡 Mission</button>
+    <button class="tab-btn" data-tab="docs">📖 Docs</button>
+    <button class="tab-btn" data-tab="prototype">🚀 Prototype</button>
+    <button id="clearBtn" class="danger">🗑️ Clear</button>
+    <button id="scrollLockBtn">🔒 Scroll Lock</button>
+  </div>
 </div>
 
+<!-- ─── Main App ─── -->
 <div class="app">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-        <div class="agent-list">
-            <div class="agent-item agent-vis" data-agent="VisCarma">
-                <canvas class="avatar-canvas" id="avatarVis" width="60" height="65"></canvas>
-                <div class="info">
-                    <div class="name">👑 VisCarma</div>
-                    <div class="role">Supreme Commander</div>
-                </div>
-                <div class="status-dot idle" id="statusVis"></div>
-            </div>
-            <div class="agent-item agent-parsh" data-agent="Parsh">
-                <canvas class="avatar-canvas" id="avatarParsh" width="60" height="65"></canvas>
-                <div class="info">
-                    <div class="name">🐛 Parsh</div>
-                    <div class="role">Bug Killer</div>
-                </div>
-                <div class="status-dot idle" id="statusParsh"></div>
-            </div>
-            <div class="agent-item agent-krish" data-agent="Krish">
-                <canvas class="avatar-canvas" id="avatarKrish" width="60" height="65"></canvas>
-                <div class="info">
-                    <div class="name">🚀 Krish</div>
-                    <div class="role">Feature Inventor</div>
-                </div>
-                <div class="status-dot idle" id="statusKrish"></div>
-            </div>
-            <div class="agent-item agent-parth" data-agent="Parth">
-                <canvas class="avatar-canvas" id="avatarParth" width="60" height="65"></canvas>
-                <div class="info">
-                    <div class="name">🧭 Parth</div>
-                    <div class="role">The Driver</div>
-                </div>
-                <div class="status-dot idle" id="statusParth"></div>
-            </div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="agent-list">
+      <div class="agent-item agent-vis" data-agent="VisCarma">
+        <canvas class="avatar-canvas" id="avatarVis" width="60" height="65"></canvas>
+        <div class="info">
+          <div class="name">🔱 VisCarma</div>
+          <div class="role">Supreme Commander</div>
         </div>
-
-        <div class="mission-form">
-            <label for="repo">GitHub Repo</label>
-            <input type="text" id="repo" value="viscarma-test">
-            <label for="owner">Owner</label>
-            <input type="text" id="owner" value="suryasticsai">
-            <label for="branch">Base Branch</label>
-            <input type="text" id="branch" value="main">
-            <label for="prompt">Mission</label>
-            <textarea id="prompt" rows="2">Add a to-do list feature to index.html</textarea>
-            <button type="submit" id="launchBtn">🚀 Launch Mission</button>
+        <div class="status-dot idle" id="statusVis"></div>
+      </div>
+      <div class="agent-item agent-parsh" data-agent="Parsh">
+        <canvas class="avatar-canvas" id="avatarParsh" width="60" height="65"></canvas>
+        <div class="info">
+          <div class="name">🪓 Parsh</div>
+          <div class="role">Bug Killer</div>
         </div>
-    </aside>
-
-    <!-- Chat -->
-    <main class="chat">
-        <div class="chat-messages" id="chatMessages"></div>
-        <div style="padding: 8px 24px; background: #1a1a2e; border-top: 1px solid #2a2a44; font-size:0.8rem; color:#666; display:flex; justify-content:space-between;">
-            <span id="connectionStatus">⚪ Disconnected</span>
-            <span id="messageCount">0 messages</span>
+        <div class="status-dot idle" id="statusParsh"></div>
+      </div>
+      <div class="agent-item agent-krish" data-agent="Krish">
+        <canvas class="avatar-canvas" id="avatarKrish" width="60" height="65"></canvas>
+        <div class="info">
+          <div class="name">🪈 Krish</div>
+          <div class="role">Feature Inventor</div>
         </div>
-
-        <!-- Footer -->
-        <div class="footer">
-            <div class="footer-toggle" id="footerToggle">
-                <span class="arrow" id="footerArrow">▼</span>
-                <span style="margin-left:6px;">dyāvāpṛthivī janayan deva ekaḥ</span>
-            </div>
-            <div class="footer-content" id="footerContent">
-                <div class="links">
-                    <span>🕵️ VisCarma v1.0</span>
-                    <span class="divider">|</span>
-                    <span>Built by <a href="https://github.com/suryasticsai" target="_blank">Surya Sai Varakala</a></span>
-                    <span class="divider">|</span>
-                    <a href="https://github.com/suryasticsai/viscarma" target="#">📦 VisCarMA</a>
-                    <a href="https://github.com/suryasticsai/SprintAnalyzer" target="_blank">🧪 SprintAnalyzer</a>
-                    <a href="https://github.com/suryasticsai/alkembic" target="_blank">🔧 AlkembicNeo</a>
-		    <a href="https://github.com/suryasticsai/ScrumLens" target="_blank">👁 ScrumLens</a>
-                </div>
-                <div class="powered">
-                    <span>⚡ Powered by</span>
-                    <a href="https://ollama.com" target="_blank" style="color:#6c6c8a;">Ollama</a>
-                    <span>+</span>
-                    <a href="https://aider.chat" target="_blank" style="color:#6c6c8a;">Aider</a>
-                    <span>+</span>
-                    <a href="https://playwright.dev" target="_blank" style="color:#6c6c8a;">Playwright</a>
-                </div>
-            </div>
+        <div class="status-dot idle" id="statusKrish"></div>
+      </div>
+      <div class="agent-item agent-parth" data-agent="Parth">
+        <canvas class="avatar-canvas" id="avatarParth" width="60" height="65"></canvas>
+        <div class="info">
+          <div class="name">☸️ Parth</div>
+          <div class="role">The Driver</div>
         </div>
-    </main>
-</div>
-
-<!-- ─── About Modal ─── -->
-<div class="modal-overlay" id="aboutModal">
-    <div class="modal-content">
-        <button class="close-btn" id="closeAbout">✕</button>
-        <h2>🕵️ About VisCarma</h2>
-        <p><strong>VisCarma</strong> is an autonomous AI agent team that fixes bugs, invents features, and orchestrates code changes on your GitHub repositories. It uses a multi-agent system powered by Ollama, Aider, and Playwright – all running locally on your machine.</p>
-
-        <h3>🤖 The Agents</h3>
-        <ul>
-            <li><strong>VisCarma</strong> – Supreme Commander: oversees missions and provides final approval.</li>
-            <li><strong>Parsh</strong> – Bug Killer: identifies and eliminates code bugs and errors.</li>
-            <li><strong>Krish</strong> – Feature Inventor: designs and implements new capabilities.</li>
-            <li><strong>Parth</strong> – The Driver: routes tasks to the right agent and orchestrates the workflow.</li>
-        </ul>
-
-        <h3>📖 How to Use</h3>
-        <ol>
-            <li>Enter the GitHub repo name, owner, and base branch (defaults are pre-filled).</li>
-            <li>Write a mission prompt (e.g., "Fix all ESLint issues", "Add a to-do list").</li>
-            <li>Click <strong>Launch Mission</strong> – watch the agents collaborate in real-time.</li>
-            <li>A pull request will be opened on your repo with the changes.</li>
-        </ol>
-
-        <h3>🧑‍💻 Made by</h3>
-        <p><a href="https://github.com/suryasticsai" target="_blank" class="author-link">Surya Sai Varakala</a> – built with ❤️ for the developer community.<br>
-        Source code: <a href="https://github.com/suryasticsai/viscarma" target="_blank" class="author-link">github.com/suryasticsai/viscarma</a></p>
+        <div class="status-dot idle" id="statusParth"></div>
+      </div>
     </div>
+
+    <!-- Mission Form -->
+    <div class="mission-form">
+      <label for="repo">GitHub Repo</label>
+      <input type="text" id="repo" value="viscarma-test">
+      <label for="owner">Owner</label>
+      <input type="text" id="owner" value="suryasticsai">
+      <label for="branch">Base Branch</label>
+      <input type="text" id="branch" value="main">
+      <label for="prompt">Mission</label>
+      <textarea id="prompt" rows="2">Add a to-do list feature to index.html</textarea>
+      <button type="submit" id="launchBtn">🚀 Launch Mission</button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="main-content">
+
+    <!-- Tab: Chat -->
+    <div id="panel-chat" class="tab-panel active">
+      <div class="chat-messages" id="chatMessages">
+        <!-- Messages injected here -->
+      </div>
+      <div class="chat-status">
+        <span id="connectionStatus">⚪ Disconnected</span>
+        <span id="messageCount">0 messages</span>
+      </div>
+    </div>
+
+    <!-- Tab: Docs -->
+    <div id="panel-docs" class="tab-panel">
+      <h2>📖 Technical Documentation</h2>
+      <p><strong>VisCarma</strong> is a multi‑agent system that autonomously improves your codebase. It combines the power of large language models (via Ollama) with battle‑tested tools like <strong>Aider</strong>, <strong>ESLint</strong>, and <strong>Playwright</strong> to fix bugs, add features, and orchestrate GitHub pull requests – all offline and private.</p>
+
+      <h3>🤖 The Agents</h3>
+      <div class="agent-grid-docs">
+        <div class="agent-card-docs" style="border-left-color:#d4af37;">
+          <span class="emoji">🔱</span>
+          <div class="name">VisCarma</div>
+          <div class="role">Supreme Commander</div>
+          <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Oversees missions and provides final approval.</p>
+        </div>
+        <div class="agent-card-docs" style="border-left-color:#e74c3c;">
+          <span class="emoji">🪓</span>
+          <div class="name">Parsh</div>
+          <div class="role">Bug Killer</div>
+          <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Identifies and eliminates bugs and errors.</p>
+        </div>
+        <div class="agent-card-docs" style="border-left-color:#2ecc71;">
+          <span class="emoji">🪈</span>
+          <div class="name">Krish</div>
+          <div class="role">Feature Inventor</div>
+          <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Designs and implements new capabilities.</p>
+        </div>
+        <div class="agent-card-docs" style="border-left-color:#3498db;">
+          <span class="emoji">☸️</span>
+          <div class="name">Parth</div>
+          <div class="role">The Driver</div>
+          <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Routes tasks and orchestrates the workflow.</p>
+        </div>
+      </div>
+
+      <h3>🧩 Agentic Patterns Used</h3>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem;">
+        <span class="badge">Prompt Chaining</span>
+        <span class="badge">Routing</span>
+        <span class="badge">Parallelization</span>
+        <span class="badge">Reflection</span>
+        <span class="badge">Tool Use</span>
+        <span class="badge">Planning</span>
+        <span class="badge">Multi-Agent Collaboration</span>
+        <span class="badge">Guardrails</span>
+        <span class="badge">Evaluation & Monitoring</span>
+      </div>
+
+      <h3>⚙️ Tech Stack</h3>
+      <p>Node.js · Python (Aider) · Ollama · qwen2.5-coder:7b · Aider · ESLint · Playwright · Octokit · HTML/CSS/JS</p>
+
+      <h3>📦 Quick Install</h3>
+      <pre><code>git clone https://github.com/suryasticsai/viscarma.git
+cd viscarma
+npm install
+python -m pip install aider-chat
+node server.js</code></pre>
+      <p>Then open <a href="http://localhost:9000" target="_blank" style="color:#d4af37;">http://localhost:9000</a></p>
+
+      <h3>🚀 Usage</h3>
+      <ol>
+        <li>Enter repo, owner, branch, and a mission prompt.</li>
+        <li>Click <strong>Launch Mission</strong> – watch the agents collaborate in real‑time.</li>
+        <li>A pull request will be opened on your repo.</li>
+      </ol>
+    </div>
+
+    <!-- Tab: Prototype -->
+    <div id="panel-prototype" class="tab-panel">
+      <h2 style="color:#d4af37; font-size:2rem; margin-bottom:0.2rem;">🚀 Prototype Showcase</h2>
+      <p style="color:#aaa; margin-bottom:1.5rem;">Interactive demos of VisCarma's core capabilities.</p>
+
+      <div class="demo-card">
+        <h3>⚡ Bug Fix – Duplicate Declaration</h3>
+        <p>Given the prompt <code>"Fix the duplicate counter bug"</code>, VisCarma (via Parsh) instantly removes the duplicate <code>let counter</code> line.</p>
+        <div class="demo-badge">✅ Works live</div>
+      </div>
+
+      <div class="demo-card">
+        <h3>✨ Feature Add – To‑Do List</h3>
+        <p>Prompt: <code>"Add a to‑do list feature to index.html"</code>. Krish generates full HTML+JS with localStorage persistence.</p>
+        <div class="demo-badge">✅ Works live</div>
+      </div>
+
+      <div class="demo-card">
+        <h3>🧹 ESLint Auto‑Fix</h3>
+        <p>Before any AI, ESLint runs <code>--fix</code> to correct missing semicolons, <code>var</code> → <code>let</code>, and unused variables.</p>
+        <div class="demo-badge">✅ Runs automatically</div>
+      </div>
+
+      <div class="demo-card">
+        <h3>🧠 Critic Reflection</h3>
+        <p>After Aider applies a change, a separate <strong>Critic Agent</strong> reviews it. If flawed, it requests a refined fix – mimicking human pair‑review.</p>
+        <div class="demo-badge">✅ Integrated</div>
+      </div>
+
+      <div class="demo-card" style="border-color:#d4af37;">
+        <h3>🕵️ Real‑time Chat Dashboard</h3>
+        <p>All agent communications stream live with typing effects, agent avatars, and code blocks – built with SSE.</p>
+        <div class="demo-badge">✅ You're using it now!</div>
+      </div>
+    </div>
+  </div>
 </div>
 
+<!-- ─── Footer ─── -->
+<div class="footer">
+  <div class="footer-toggle" id="footerToggle">
+    <span class="arrow" id="footerArrow">▼</span>
+    <span style="margin-left:6px;">dyāvāpṛthivī janayan deva ekaḥ</span>
+  </div>
+  <div class="footer-content" id="footerContent">
+    <div class="links">
+      <span>🔱 VisCarma v1.0</span>
+      <span class="divider">|</span>
+      <span>Built by <a href="https://github.com/suryasticsai" target="_blank">Surya Sai Varakala</a></span>
+      <span class="divider">|</span>
+      <a href="https://github.com/suryasticsai/viscarma" target="_blank">📦 VisCarMA</a>
+      <a href="https://github.com/suryasticsai/SprintAnalyzer" target="_blank">🧪 SprintAnalyzer</a>
+      <a href="https://github.com/suryasticsai/alkembic" target="_blank">🔧 AlkembicNeo</a>
+      <a href="https://github.com/suryasticsai/ScrumLens" target="_blank">👁 ScrumLens</a>
+    </div>
+    <div class="powered">
+      <span>⚡ Powered by</span>
+      <a href="https://ollama.com" target="_blank" style="color:#6c6c8a;">Ollama</a>
+      <span>+</span>
+      <a href="https://aider.chat" target="_blank" style="color:#6c6c8a;">Aider</a>
+      <span>+</span>
+      <a href="https://playwright.dev" target="_blank" style="color:#6c6c8a;">Playwright</a>
+    </div>
+  </div>
+</div>
+
+<!-- ─── JavaScript ────────────────────────────────────────── -->
 <script>
-// ──────────────────────────────────────────────────────────────
-//  ANIMATED CHARACTER DRAWING (adapted from Indian Mythology)
-// ──────────────────────────────────────────────────────────────
-
-const HEROES = [
-  // VisCarma → Krishna (blue/gold)
-  {
-    id: 'avatarVis',
-    skinColor: '#4A6FA5',
-    robeColor: '#FAC775',
-    robeColor2: '#BA7517',
-    hairColor: '#1a1240',
-    ornamentColor: '#EF9F27',
-    eyeColor: '#fff',
-    idleAnim: 'sway',
-    actionAnim: 'playFlute',
-    flutePeacock: '#1D9E75',
-    tilakColor: '#fff',
-  },
-  // Parsh → Parashurama (amber/warrior)
-  {
-    id: 'avatarParsh',
-    skinColor: '#D4845A',
-    robeColor: '#BA7517',
-    robeColor2: '#854F0B',
-    hairColor: '#2C1810',
-    ornamentColor: '#EF9F27',
-    eyeColor: '#1a0a00',
-    idleAnim: 'breathe',
-    actionAnim: 'swingAxe',
-    axeColor: '#888780',
-    axeHandle: '#5F4020',
-    tilakColor: '#E24B4A',
-  },
-  // Krish → Arjuna (purple/hero)
-  {
-    id: 'avatarKrish',
-    skinColor: '#C8956A',
-    robeColor: '#534AB7',
-    robeColor2: '#3C3489',
-    hairColor: '#1a1240',
-    ornamentColor: '#EF9F27',
-    eyeColor: '#1a0a00',
-    idleAnim: 'stand',
-    actionAnim: 'drawBow',
-    bowColor: '#854F0B',
-    arrowColor: '#888780',
-    tilakColor: '#E24B4A',
-  },
-  // Parth → Charioteer (teal/orange)
-  {
-    id: 'avatarParth',
-    skinColor: '#3D8B8B',
-    robeColor: '#F39C12',
-    robeColor2: '#D35400',
-    hairColor: '#1a1240',
-    ornamentColor: '#F1C40F',
-    eyeColor: '#fff',
-    idleAnim: 'sway',
-    actionAnim: 'playFlute',
-    flutePeacock: '#1D9E75',
-    tilakColor: '#F1C40F',
-  }
-];
-
-const states = HEROES.map(() => ({
-  t: Math.random() * Math.PI * 2,
-  action: false,
-  actionT: 0,
-  eyeBlink: 0,
-  blinkTimer: Math.random() * 180 + 60,
-  active: false,
-}));
-
-// ─── Drawing functions ──────────────────────────────────────
-
-function drawKrishna(ctx, h, s, w=60, hh=65) {
-  const cx = w/2, cy = hh/2 + 5;
-  const sway = Math.sin(s.t * 0.035) * 4;
-  const flute = s.action;
-  const fluteT = s.actionT;
-
-  ctx.clearRect(0, 0, w, hh);
-  ctx.save();
-  ctx.translate(cx + sway * 0.3, cy);
-
-  // Body
-  ctx.beginPath();
-  ctx.moveTo(-16, 8); ctx.lineTo(16, 8); ctx.lineTo(20, 40); ctx.lineTo(-20, 40); ctx.closePath();
-  ctx.fillStyle = h.robeColor; ctx.fill();
-  ctx.beginPath(); ctx.rect(-20, 28, 40, 6); ctx.fillStyle = h.robeColor2; ctx.fill();
-  for (let i=0;i<3;i++) { ctx.beginPath(); ctx.moveTo(-20,30+i*2); ctx.lineTo(20,30+i*2); ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=0.6; ctx.stroke(); }
-
-  // Peacock feather
-  ctx.save();
-  ctx.translate(8, -38);
-  ctx.rotate(-0.3);
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,18);
-  ctx.strokeStyle = h.flutePeacock; ctx.lineWidth=1.2; ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(0,1,5,7,0,0,Math.PI*2);
-  ctx.strokeStyle = h.flutePeacock; ctx.lineWidth=1.2; ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(0,1,2.5,4,0,0,Math.PI*2);
-  ctx.fillStyle = '#185FA5'; ctx.fill();
-  ctx.beginPath(); ctx.arc(0,1,1.2,0,Math.PI*2);
-  ctx.fillStyle = '#000'; ctx.fill();
-  ctx.restore();
-
-  // Arms
-  if (!flute) {
-    ctx.beginPath(); ctx.moveTo(-16,11); ctx.lineTo(-30,24); ctx.lineTo(-25,27); ctx.lineTo(-12,14);
-    ctx.fillStyle = h.skinColor; ctx.fill();
-    ctx.beginPath(); ctx.moveTo(16,11); ctx.lineTo(30,24); ctx.lineTo(25,27); ctx.lineTo(12,14);
-    ctx.fillStyle = h.skinColor; ctx.fill();
-    ctx.beginPath(); ctx.moveTo(-24,28); ctx.lineTo(24,28);
-    ctx.strokeStyle='#5F4020'; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.stroke();
-  } else {
-    const armAng = Math.min(fluteT/20, 1);
-    ctx.save(); ctx.translate(-16,11); ctx.rotate(-armAng*0.6);
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-14,12); ctx.lineTo(-10,14); ctx.lineTo(4,4);
-    ctx.fillStyle = h.skinColor; ctx.fill(); ctx.restore();
-    ctx.save(); ctx.translate(16,11); ctx.rotate(armAng*0.6);
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(14,12); ctx.lineTo(10,14); ctx.lineTo(-4,4);
-    ctx.fillStyle = h.skinColor; ctx.fill(); ctx.restore();
-    ctx.save();
-    ctx.translate(0, -8 + (1-armAng)*16);
-    ctx.rotate(-0.2);
-    ctx.beginPath(); ctx.moveTo(-22,0); ctx.lineTo(22,0);
-    ctx.strokeStyle='#5F4020'; ctx.lineWidth=3; ctx.lineCap='round'; ctx.stroke();
-    for (let i=-3;i<=3;i++) { ctx.beginPath(); ctx.arc(i*5.5, -1.2, 1.2, 0, Math.PI*2); ctx.fillStyle='#3a2010'; ctx.fill(); }
-    if (fluteT > 20) {
-      const noteAlpha = Math.min((fluteT-20)/15, 0.8);
-      const noteY = -((fluteT-20)*1.4) % 32;
-      ctx.fillStyle = `rgba(24,95,165,${noteAlpha})`;
-      ctx.font = 'bold 11px sans-serif';
-      ctx.fillText('♪', 16, noteY-6);
-      ctx.fillText('♫', -24, noteY-14);
-    }
-    ctx.restore();
+// ─── After avatars.js loads, initialize the dashboard ────
+document.addEventListener('DOMContentLoaded', function() {
+  // Avatars are animated by animateAvatars() defined in avatars.js
+  // but we need to call it after the page loads.
+  if (typeof animateAvatars === 'function') {
+    animateAvatars();
   }
 
-  // Neck & head
-  ctx.beginPath(); ctx.ellipse(0,3,6,4,0,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(0,-13,14,16,0,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
+  // ─── DOM refs ──────────────────────────────────────────
+  const chatMessages = document.getElementById('chatMessages');
+  const launchBtn = document.getElementById('launchBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const scrollLockBtn = document.getElementById('scrollLockBtn');
+  const connectionStatus = document.getElementById('connectionStatus');
+  const messageCountSpan = document.getElementById('messageCount');
+  const footerToggle = document.getElementById('footerToggle');
+  const footerContent = document.getElementById('footerContent');
+  const footerArrow = document.getElementById('footerArrow');
 
-  // Crown
-  ctx.beginPath();
-  ctx.moveTo(-12,-24); ctx.lineTo(-14,-40); ctx.lineTo(-6,-34); ctx.lineTo(0,-44);
-  ctx.lineTo(6,-34); ctx.lineTo(14,-40); ctx.lineTo(12,-24);
-  ctx.fillStyle = h.ornamentColor; ctx.fill();
+  let eventSource = null;
+  let messageCount = 0;
+  let scrollLock = false;
+  let messageBuffer = '';
+  let footerVisible = true;
 
-  // Tilak
-  ctx.beginPath(); ctx.rect(-1.2,-24,2.4,6); ctx.fillStyle=h.tilakColor; ctx.fill();
-
-  // Eyes
-  const blink = s.eyeBlink > 0;
-  if (!blink) {
-    ctx.beginPath(); ctx.ellipse(-6,-13,3.5,3,0,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
-    ctx.beginPath(); ctx.ellipse(6,-13,3.5,3,0,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
-    ctx.beginPath(); ctx.arc(-6,-13,2,0,Math.PI*2); ctx.fillStyle='#1a0a40'; ctx.fill();
-    ctx.beginPath(); ctx.arc(6,-13,2,0,Math.PI*2); ctx.fillStyle='#1a0a40'; ctx.fill();
-  } else {
-    ctx.beginPath(); ctx.moveTo(-9,-13); ctx.lineTo(-3,-13); ctx.strokeStyle='#1a0a40'; ctx.lineWidth=1.5; ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(3,-13); ctx.lineTo(9,-13); ctx.stroke();
-  }
-
-  // Smile
-  ctx.beginPath(); ctx.arc(0,-6,4.5,0.15,Math.PI-0.15);
-  ctx.strokeStyle='#0C3A6A'; ctx.lineWidth=1.5; ctx.stroke();
-
-  // Necklace
-  for (let i=-2;i<=2;i++) {
-    ctx.beginPath(); ctx.arc(i*4,1,2.2,0,Math.PI*2);
-    ctx.fillStyle = i%2===0 ? h.ornamentColor : '#fff'; ctx.fill();
-  }
-
-  // Feet
-  ctx.beginPath(); ctx.ellipse(-7,40,6,4,-0.2,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(7,40,6,4,0.2,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(-7,43,7,2.5,0,0,Math.PI*2); ctx.fillStyle=h.ornamentColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(7,43,7,2.5,0,0,Math.PI*2); ctx.fillStyle=h.ornamentColor; ctx.fill();
-
-  ctx.restore();
-}
-
-function drawParashurama(ctx, h, s, w=60, hh=65) {
-  const cx = w/2, cy = hh/2 + 5;
-  const breath = Math.sin(s.t * 0.04) * 1.5;
-  const swing = s.action ? Math.sin(s.actionT * 0.12) * 30 : 0;
-  ctx.clearRect(0, 0, w, hh);
-  ctx.save();
-  ctx.translate(cx, cy + breath);
-
-  // Body
-  ctx.beginPath();
-  ctx.moveTo(-17,8); ctx.lineTo(17,8); ctx.lineTo(22,40); ctx.lineTo(-22,40); ctx.closePath();
-  ctx.fillStyle = h.robeColor; ctx.fill();
-  ctx.beginPath(); ctx.moveTo(-22,40); ctx.lineTo(22,40);
-  ctx.strokeStyle = h.robeColor2; ctx.lineWidth=1.5; ctx.stroke();
-  ctx.beginPath(); ctx.rect(-18,22,36,6); ctx.fillStyle = h.ornamentColor; ctx.fill();
-
-  // Arms
-  ctx.beginPath(); ctx.moveTo(-17,10); ctx.lineTo(-30,28); ctx.lineTo(-26,30); ctx.lineTo(-14,14);
-  ctx.fillStyle = h.skinColor; ctx.fill();
-  ctx.save(); ctx.translate(17,12);
-  ctx.rotate((swing * Math.PI) / 180);
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(16,18); ctx.lineTo(18,16); ctx.lineTo(2,-2);
-  ctx.fillStyle = h.skinColor; ctx.fill();
-  ctx.beginPath(); ctx.moveTo(16,18); ctx.lineTo(30,40);
-  ctx.strokeStyle = h.axeHandle; ctx.lineWidth=3; ctx.lineCap='round'; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(30,40); ctx.lineTo(38,30); ctx.lineTo(42,36); ctx.lineTo(36,42);
-  ctx.fillStyle = h.axeColor; ctx.fill();
-  ctx.strokeStyle='#444'; ctx.lineWidth=0.8; ctx.stroke();
-  ctx.restore();
-
-  // Neck & head
-  ctx.beginPath(); ctx.ellipse(0,3,6,4,0,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(0,-13,15,17,0,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-
-  // Hair (matted)
-  ctx.beginPath();
-  ctx.moveTo(-13,-18); ctx.bezierCurveTo(-16,-36,0,-42,0,-42);
-  ctx.bezierCurveTo(0,-42,16,-36,13,-18);
-  ctx.fillStyle = h.hairColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(0,-40,7,5,0,0,Math.PI*2);
-  ctx.fillStyle = h.hairColor; ctx.fill();
-
-  // Tilak
-  ctx.beginPath(); ctx.moveTo(0,-24); ctx.lineTo(-2.5,-18); ctx.lineTo(2.5,-18);
-  ctx.fillStyle = h.tilakColor; ctx.fill();
-
-  // Eyes
-  const blink = s.eyeBlink > 0;
-  if (!blink) {
-    ctx.beginPath(); ctx.ellipse(-6,-13,3.5,3,0,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
-    ctx.beginPath(); ctx.ellipse(6,-13,3.5,3,0,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
-    ctx.beginPath(); ctx.arc(-6,-13,2,0,Math.PI*2); ctx.fillStyle=h.eyeColor; ctx.fill();
-    ctx.beginPath(); ctx.arc(6,-13,2,0,Math.PI*2); ctx.fillStyle=h.eyeColor; ctx.fill();
-  } else {
-    ctx.beginPath(); ctx.moveTo(-9,-13); ctx.lineTo(-3,-13); ctx.strokeStyle=h.eyeColor; ctx.lineWidth=1.5; ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(3,-13); ctx.lineTo(9,-13); ctx.stroke();
-  }
-
-  // Beard
-  ctx.beginPath();
-  ctx.moveTo(-12,-4); ctx.bezierCurveTo(-14,3,-8,9,0,11);
-  ctx.bezierCurveTo(8,9,14,3,12,-4);
-  ctx.strokeStyle = h.hairColor; ctx.lineWidth=1.5; ctx.stroke();
-
-  // Necklace
-  for (let i=-2;i<=2;i++) {
-    ctx.beginPath(); ctx.arc(i*4.5,1,2,0,Math.PI*2);
-    ctx.fillStyle = h.ornamentColor; ctx.fill();
-  }
-
-  // Feet
-  ctx.beginPath(); ctx.ellipse(-8,40,6,4,-0.2,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(8,40,6,4,0.2,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-
-  ctx.restore();
-}
-
-function drawArjuna(ctx, h, s, w=60, hh=65) {
-  const cx = w/2, cy = hh/2 + 5;
-  const breath = Math.sin(s.t * 0.033) * 1.2;
-  const draw = s.action;
-  const drawAmt = s.action ? Math.min(s.actionT/30, 1) : 0;
-  ctx.clearRect(0, 0, w, hh);
-  ctx.save();
-  ctx.translate(cx, cy + breath);
-
-  // Body
-  ctx.beginPath();
-  ctx.moveTo(-18,8); ctx.lineTo(18,8); ctx.lineTo(23,40); ctx.lineTo(-23,40); ctx.closePath();
-  ctx.fillStyle = h.robeColor; ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(0,16,13,11,0,0,Math.PI*2);
-  ctx.fillStyle = h.robeColor2; ctx.fill();
-  ctx.strokeStyle=h.ornamentColor; ctx.lineWidth=1.2; ctx.stroke();
-  ctx.beginPath(); ctx.rect(-18,24,36,6); ctx.fillStyle=h.ornamentColor; ctx.fill();
-
-  // Bow
-  const bowX = 24; const bowPull = drawAmt * 18;
-  ctx.save();
-  ctx.translate(bowX, 0);
-  ctx.beginPath(); ctx.moveTo(0,-24);
-  ctx.bezierCurveTo(12 + bowPull*0.3, -10, 12 + bowPull*0.3, 10, 0, 24);
-  ctx.strokeStyle = h.bowColor; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0,-24); ctx.lineTo(-bowPull*0.8,0); ctx.lineTo(0,24);
-  ctx.strokeStyle='#C8956A'; ctx.lineWidth=1; ctx.stroke();
-  if (drawAmt > 0.1) {
-    const ax = -bowPull*0.75;
-    ctx.beginPath(); ctx.moveTo(ax,0); ctx.lineTo(ax+40,0);
-    ctx.strokeStyle=h.arrowColor; ctx.lineWidth=1.5; ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(ax+40,0); ctx.lineTo(ax+35,-3); ctx.lineTo(ax+35,3); ctx.closePath();
-    ctx.fillStyle=h.arrowColor; ctx.fill();
-    ctx.beginPath(); ctx.moveTo(ax+2,0); ctx.lineTo(ax-3,-5); ctx.lineTo(ax,0);
-    ctx.fillStyle=h.robeColor; ctx.fill();
-    ctx.beginPath(); ctx.moveTo(ax+2,0); ctx.lineTo(ax-3,5); ctx.lineTo(ax,0);
-    ctx.fillStyle=h.robeColor2; ctx.fill();
-  }
-  ctx.restore();
-
-  // Arms (simplified)
-  ctx.save(); ctx.translate(-17,12); ctx.rotate(-0.2 - drawAmt*0.2);
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-12,16); ctx.lineTo(-8,18); ctx.lineTo(4,4);
-  ctx.fillStyle = h.skinColor; ctx.fill();
-  ctx.restore();
-  ctx.save(); ctx.translate(17,12); ctx.rotate(drawAmt*0.4);
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(12,12); ctx.lineTo(10,14); ctx.lineTo(-2,2);
-  ctx.fillStyle = h.skinColor; ctx.fill();
-  ctx.restore();
-
-  // Neck & head
-  ctx.beginPath(); ctx.ellipse(0,3,6,4,0,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(0,-13,14,16,0,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-
-  // Crown
-  ctx.beginPath(); ctx.rect(-13,-28,26,8); ctx.fillStyle=h.ornamentColor; ctx.fill();
-  ctx.beginPath(); ctx.rect(-14,-32,28,5); ctx.fillStyle=h.robeColor; ctx.fill();
-  ctx.beginPath(); ctx.arc(0,-30,3,0,Math.PI*2); ctx.fillStyle='#97C459'; ctx.fill();
-  ctx.strokeStyle=h.ornamentColor; ctx.lineWidth=0.8; ctx.stroke();
-
-  // Tilak
-  ctx.beginPath(); ctx.moveTo(0,-22); ctx.lineTo(-2.5,-16); ctx.lineTo(2.5,-16);
-  ctx.fillStyle=h.tilakColor; ctx.fill();
-
-  // Eyes
-  const blink = s.eyeBlink > 0;
-  if (!blink) {
-    ctx.beginPath(); ctx.ellipse(-6,-13,3.5,3,0,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
-    ctx.beginPath(); ctx.ellipse(6,-13,3.5,3,0,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
-    ctx.beginPath(); ctx.arc(-6,-13,2,0,Math.PI*2); ctx.fillStyle=h.eyeColor; ctx.fill();
-    ctx.beginPath(); ctx.arc(6,-13,2,0,Math.PI*2); ctx.fillStyle=h.eyeColor; ctx.fill();
-    if (drawAmt > 0.3) {
-      ctx.beginPath(); ctx.moveTo(-9,-16); ctx.lineTo(-3,-16); ctx.strokeStyle='#8B4513'; ctx.lineWidth=1.5; ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(3,-16); ctx.lineTo(9,-16); ctx.stroke();
-    }
-  } else {
-    ctx.beginPath(); ctx.moveTo(-9,-13); ctx.lineTo(-3,-13); ctx.strokeStyle=h.eyeColor; ctx.lineWidth=1.5; ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(3,-13); ctx.lineTo(9,-13); ctx.stroke();
-  }
-
-  // Mouth
-  ctx.beginPath(); ctx.arc(0,-6,4,0.1,Math.PI-0.1);
-  ctx.strokeStyle='#8B4513'; ctx.lineWidth=1.2; ctx.stroke();
-
-  // Necklace
-  for (let i=-2;i<=2;i++) {
-    ctx.beginPath(); ctx.arc(i*4.5,1,2.2,0,Math.PI*2);
-    ctx.fillStyle = h.ornamentColor; ctx.fill();
-  }
-
-  // Feet
-  ctx.beginPath(); ctx.ellipse(-8,40,6,4,-0.2,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(8,40,6,4,0.2,0,Math.PI*2); ctx.fillStyle=h.skinColor; ctx.fill();
-
-  ctx.restore();
-}
-
-const drawMap = {
-  'avatarVis': drawKrishna,
-  'avatarParsh': drawParashurama,
-  'avatarKrish': drawArjuna,
-  'avatarParth': drawKrishna, // reuse Krishna but colors differ
-};
-
-// ─── Animation loop ────────────────────────────────────────
-function animateAvatars() {
-  HEROES.forEach((h, i) => {
-    const s = states[i];
-    s.t += 1;
-    s.blinkTimer--;
-    if (s.blinkTimer <= 0) {
-      s.eyeBlink = 6;
-      s.blinkTimer = Math.random() * 180 + 80;
-    }
-    if (s.eyeBlink > 0) s.eyeBlink--;
-    if (s.action) {
-      s.actionT++;
-      if (s.actionT > 90) { s.action = false; s.actionT = 0; }
-    }
-    const canvas = document.getElementById(h.id);
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const drawFn = drawMap[h.id] || drawKrishna;
-    drawFn(ctx, h, s, canvas.width, canvas.height);
+  // ─── Footer toggle ────────────────────────────────────
+  footerToggle.addEventListener('click', () => {
+    footerVisible = !footerVisible;
+    footerContent.classList.toggle('hidden', !footerVisible);
+    footerArrow.classList.toggle('collapsed', !footerVisible);
   });
-  requestAnimationFrame(animateAvatars);
-}
 
-// ─── Agent status control ──────────────────────────────────
-function setAgentActive(agentName, active) {
-  const map = { VisCarma: 'Vis', Parsh: 'Parsh', Krish: 'Krish', Parth: 'Parth' };
-  const key = map[agentName];
-  const dot = document.getElementById('status' + key);
-  if (dot) {
-    dot.className = 'status-dot' + (active ? ' pulse' : ' idle');
-  }
-  const idx = HEROES.findIndex(h => h.id === 'avatar' + key);
-  if (idx !== -1 && active && !states[idx].action) {
-    states[idx].action = true;
-    states[idx].actionT = 0;
-  }
-}
+  // ─── Tab switching ────────────────────────────────────
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const panels = {
+    chat: document.getElementById('panel-chat'),
+    docs: document.getElementById('panel-docs'),
+    prototype: document.getElementById('panel-prototype')
+  };
 
-// ─── Detect agent from chat text ──────────────────────────
-function detectAgent(text) {
-  if (text.includes('Agent Parsh')) return 'Parsh';
-  if (text.includes('Agent Krish')) return 'Krish';
-  if (text.includes('Agent Parth')) return 'Parth';
-  if (text.includes('VisCarma') || text.includes('🕵️') || text.includes('Mission')) return 'VisCarma';
-  return 'System';
-}
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      Object.keys(panels).forEach(key => {
+        panels[key].classList.toggle('active', key === btn.dataset.tab);
+      });
+    });
+  });
 
-// ─── DOM logic for chat ────────────────────────────────────
-const chatMessages = document.getElementById('chatMessages');
-const launchBtn = document.getElementById('launchBtn');
-const clearBtn = document.getElementById('clearBtn');
-const scrollLockBtn = document.getElementById('scrollLockBtn');
-const connectionStatus = document.getElementById('connectionStatus');
-const messageCountSpan = document.getElementById('messageCount');
-const aboutBtn = document.getElementById('aboutBtn');
-const aboutModal = document.getElementById('aboutModal');
-const closeAbout = document.getElementById('closeAbout');
-const footerToggle = document.getElementById('footerToggle');
-const footerContent = document.getElementById('footerContent');
-const footerArrow = document.getElementById('footerArrow');
-
-let eventSource = null;
-let messageCount = 0;
-let scrollLock = false;
-let messageBuffer = '';
-let footerVisible = true;
-
-// ─── Footer toggle ────────────────────────────────────────
-footerToggle.addEventListener('click', () => {
-  footerVisible = !footerVisible;
-  footerContent.classList.toggle('hidden', !footerVisible);
-  footerArrow.classList.toggle('collapsed', !footerVisible);
-});
-
-// ─── About modal ──────────────────────────────────────────
-function openAbout() { aboutModal.classList.add('open'); }
-function closeAboutModal() { aboutModal.classList.remove('open'); }
-aboutBtn.addEventListener('click', openAbout);
-closeAbout.addEventListener('click', closeAboutModal);
-aboutModal.addEventListener('click', (e) => {
-  if (e.target === aboutModal) closeAboutModal();
-});
-
-// ─── Escape HTML ──────────────────────────────────────────
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function renderMessageContent(text) {
-  const parts = text.split(/(```[^`]*```)/g);
-  let html = '';
-  for (let part of parts) {
-    if (part.startsWith('```') && part.endsWith('```')) {
-      const code = part.slice(3, -3).trim();
-      let lang = '', codeContent = code;
-      const firstLine = code.split('\n')[0];
-      if (firstLine && firstLine.match(/^[a-zA-Z0-9_+-]+$/)) {
-        lang = firstLine;
-        codeContent = code.split('\n').slice(1).join('\n');
-      }
-      html += `<div class="code-block"><span class="lang-tag">${lang || 'code'}</span><pre>${escapeHtml(codeContent)}</pre></div>`;
-    } else {
-      html += `<span class="content-text">${escapeHtml(part).replace(/\n/g, '<br>')}</span>`;
-    }
-  }
-  return html;
-}
-
-function addMessage(agentName, text) {
+  // ─── Agent emojis for messages ────────────────────────
   const agentMap = {
-    'VisCarma': { emoji: '👑', cls: 'vis' },
+    'VisCarma': { emoji: '🔱', cls: 'vis' },
     'Parsh':   { emoji: '🪓', cls: 'parsh' },
-    'Krish':   { emoji: '🚀', cls: 'krish' },
-    'Parth':   { emoji: '🧭', cls: 'parth' },
+    'Krish':   { emoji: '🪈', cls: 'krish' },
+    'Parth':   { emoji: '☸️', cls: 'parth' },
     'System':  { emoji: '⚙️', cls: 'system' }
   };
-  const info = agentMap[agentName] || agentMap['System'];
-  const time = new Date().toLocaleTimeString();
-  const msgDiv = document.createElement('div');
-  msgDiv.className = `message ${agentName === 'System' ? 'system' : ''}`;
-  const avatar = document.createElement('div');
-  avatar.className = `avatar avatar-${info.cls}`;
-  avatar.textContent = info.emoji;
-  const bubble = document.createElement('div');
-  bubble.className = `bubble bubble-${info.cls}`;
-  const sender = document.createElement('div');
-  sender.className = 'sender';
-  sender.innerHTML = `${info.emoji} ${agentName} <span class="time">${time}</span>`;
-  const content = document.createElement('div');
-  content.className = 'content';
-  content.innerHTML = renderMessageContent(text);
-  bubble.appendChild(sender); bubble.appendChild(content);
-  msgDiv.appendChild(avatar); msgDiv.appendChild(bubble);
-  chatMessages.appendChild(msgDiv);
-  messageCount++;
-  messageCountSpan.textContent = `${messageCount} messages`;
-  if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
 
-  if (agentName !== 'System') {
-    setAgentActive(agentName, true);
-    clearTimeout(window['timeout_' + agentName]);
-    window['timeout_' + agentName] = setTimeout(() => {
-      setAgentActive(agentName, false);
-    }, 2000);
+  // ─── Helper functions ──────────────────────────────────
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
-}
 
-function processOutput(chunk) {
-  messageBuffer += chunk;
-  const lines = messageBuffer.split('\n');
-  messageBuffer = lines.pop() || '';
-  for (const line of lines) {
-    if (line.trim() === '') continue;
-    const agent = detectAgent(line);
-    addMessage(agent, line);
+  function renderMessageContent(text) {
+    const parts = text.split(/(```[^`]*```)/g);
+    let html = '';
+    for (let part of parts) {
+      if (part.startsWith('```') && part.endsWith('```')) {
+        const code = part.slice(3, -3).trim();
+        let lang = '', codeContent = code;
+        const firstLine = code.split('\n')[0];
+        if (firstLine && firstLine.match(/^[a-zA-Z0-9_+-]+$/)) {
+          lang = firstLine;
+          codeContent = code.split('\n').slice(1).join('\n');
+        }
+        html += `<div class="code-block"><span class="lang-tag">${lang || 'code'}</span><pre>${escapeHtml(codeContent)}</pre></div>`;
+      } else {
+        html += `<span class="content-text">${escapeHtml(part).replace(/\n/g, '<br>')}</span>`;
+      }
+    }
+    return html;
   }
-}
 
-function clearChat() {
-  chatMessages.innerHTML = '';
-  messageCount = 0;
-  messageCountSpan.textContent = '0 messages';
-  connectionStatus.textContent = '⚪ Disconnected';
-  connectionStatus.style.color = '#666';
-  messageBuffer = '';
-  ['Vis','Parsh','Krish','Parth'].forEach(k => {
-    const dot = document.getElementById('status'+k);
-    if (dot) dot.className = 'status-dot idle';
-  });
-}
+  function detectAgent(text) {
+    if (text.includes('Agent Parsh')) return 'Parsh';
+    if (text.includes('Agent Krish')) return 'Krish';
+    if (text.includes('Agent Parth')) return 'Parth';
+    if (text.includes('VisCarma') || text.includes('🔱') || text.includes('Mission')) return 'VisCarma';
+    return 'System';
+  }
 
-function launchMission() {
-  const repo = document.getElementById('repo').value.trim();
-  const owner = document.getElementById('owner').value.trim();
-  const branch = document.getElementById('branch').value.trim();
-  const prompt = document.getElementById('prompt').value.trim();
-  if (!prompt) { alert('Enter a mission prompt.'); return; }
+  function setAgentActive(agentName, active) {
+    if (typeof window.setAgentActive === 'function') {
+      window.setAgentActive(agentName, active);
+    } else {
+      // Fallback if avatars.js didn't load properly
+      const map = { VisCarma: 'Vis', Parsh: 'Parsh', Krish: 'Krish', Parth: 'Parth' };
+      const key = map[agentName];
+      const dot = document.getElementById('status' + key);
+      if (dot) {
+        dot.className = 'status-dot' + (active ? ' pulse' : ' idle');
+      }
+    }
+  }
 
-  launchBtn.disabled = true; launchBtn.textContent = 'Running...';
-  clearChat();
-  connectionStatus.textContent = '⏳ Connecting...';
-  connectionStatus.style.color = '#f39c12';
+  function addMessage(agentName, text) {
+    const info = agentMap[agentName] || agentMap['System'];
+    const time = new Date().toLocaleTimeString();
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${agentName === 'System' ? 'system' : ''}`;
+    const avatar = document.createElement('div');
+    avatar.className = `avatar avatar-${info.cls}`;
+    avatar.textContent = info.emoji;
+    const bubble = document.createElement('div');
+    bubble.className = `bubble bubble-${info.cls}`;
+    const sender = document.createElement('div');
+    sender.className = 'sender';
+    sender.innerHTML = `${info.emoji} ${agentName} <span class="time">${time}</span>`;
+    const content = document.createElement('div');
+    content.className = 'content';
+    content.innerHTML = renderMessageContent(text);
+    bubble.appendChild(sender); bubble.appendChild(content);
+    msgDiv.appendChild(avatar); msgDiv.appendChild(bubble);
+    chatMessages.appendChild(msgDiv);
+    messageCount++;
+    messageCountSpan.textContent = `${messageCount} messages`;
+    if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
 
-  const url = `/stream?repo=${encodeURIComponent(repo)}&owner=${encodeURIComponent(owner)}&branch=${encodeURIComponent(branch)}&prompt=${encodeURIComponent(prompt)}`;
+    if (agentName !== 'System') {
+      setAgentActive(agentName, true);
+      clearTimeout(window['timeout_' + agentName]);
+      window['timeout_' + agentName] = setTimeout(() => {
+        setAgentActive(agentName, false);
+      }, 2000);
+    }
+  }
 
-  if (eventSource) { eventSource.close(); eventSource = null; }
-  eventSource = new EventSource(url);
-  eventSource.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'output') processOutput(data.content);
-      else if (data.type === 'error') addMessage('System', '❌ ERROR: ' + data.content);
-      else if (data.type === 'done') {
-        addMessage('VisCarma', '✅ Mission complete.');
-        connectionStatus.textContent = '✅ Done';
-        connectionStatus.style.color = '#4caf50';
-        eventSource.close();
+  function processOutput(chunk) {
+    messageBuffer += chunk;
+    const lines = messageBuffer.split('\n');
+    messageBuffer = lines.pop() || '';
+    for (const line of lines) {
+      if (line.trim() === '') continue;
+      const agent = detectAgent(line);
+      addMessage(agent, line);
+    }
+  }
+
+  function clearChat() {
+    chatMessages.innerHTML = '';
+    messageCount = 0;
+    messageCountSpan.textContent = '0 messages';
+    connectionStatus.textContent = '⚪ Disconnected';
+    connectionStatus.style.color = '#666';
+    messageBuffer = '';
+    ['Vis','Parsh','Krish','Parth'].forEach(k => {
+      const dot = document.getElementById('status'+k);
+      if (dot) dot.className = 'status-dot idle';
+    });
+  }
+
+  function launchMission() {
+    const repo = document.getElementById('repo').value.trim();
+    const owner = document.getElementById('owner').value.trim();
+    const branch = document.getElementById('branch').value.trim();
+    const prompt = document.getElementById('prompt').value.trim();
+    if (!prompt) { alert('Enter a mission prompt.'); return; }
+
+    launchBtn.disabled = true; launchBtn.textContent = 'Running...';
+    clearChat();
+    connectionStatus.textContent = '⏳ Connecting...';
+    connectionStatus.style.color = '#f39c12';
+
+    const url = `/stream?repo=${encodeURIComponent(repo)}&owner=${encodeURIComponent(owner)}&branch=${encodeURIComponent(branch)}&prompt=${encodeURIComponent(prompt)}`;
+
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    eventSource = new EventSource(url);
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'output') processOutput(data.content);
+        else if (data.type === 'error') addMessage('System', '❌ ERROR: ' + data.content);
+        else if (data.type === 'done') {
+          addMessage('VisCarma', '✅ Mission complete.');
+          connectionStatus.textContent = '✅ Done';
+          connectionStatus.style.color = '#4caf50';
+          eventSource.close();
+          launchBtn.disabled = false; launchBtn.textContent = '🚀 Launch Mission';
+        }
+      } catch (err) { console.error(err); }
+    };
+    eventSource.onerror = () => {
+      if (eventSource.readyState === EventSource.CLOSED) {
+        connectionStatus.textContent = '⚠️ Disconnected';
+        connectionStatus.style.color = '#e74c3c';
         launchBtn.disabled = false; launchBtn.textContent = '🚀 Launch Mission';
       }
-    } catch (err) { console.error(err); }
-  };
-  eventSource.onerror = () => {
-    if (eventSource.readyState === EventSource.CLOSED) {
-      connectionStatus.textContent = '⚠️ Disconnected';
-      connectionStatus.style.color = '#e74c3c';
-      launchBtn.disabled = false; launchBtn.textContent = '🚀 Launch Mission';
-    }
-  };
-}
+    };
+  }
 
-// ─── Event listeners ──────────────────────────────────────
-document.querySelector('.mission-form').addEventListener('submit', e => { e.preventDefault(); launchMission(); });
-clearBtn.addEventListener('click', clearChat);
-scrollLockBtn.addEventListener('click', () => {
-  scrollLock = !scrollLock;
-  scrollLockBtn.textContent = scrollLock ? '🔓 Scroll Unlocked' : '🔒 Scroll Lock';
-  if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
-});
+  // ─── Event listeners ──────────────────────────────────
+  document.querySelector('.mission-form').addEventListener('submit', e => {
+    e.preventDefault();
+    launchMission();
+  });
 
-window.addEventListener('load', () => {
-  addMessage('VisCarma', '🕵️ VisCarma is ready. Enter a mission to begin.');
-  animateAvatars();
+  clearBtn.addEventListener('click', clearChat);
+  scrollLockBtn.addEventListener('click', () => {
+    scrollLock = !scrollLock;
+    scrollLockBtn.textContent = scrollLock ? '🔓 Scroll Unlocked' : '🔒 Scroll Lock';
+    if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
+  });
+
+  // ─── Initial message ──────────────────────────────────
+  addMessage('VisCarma', '🔱 VisCarma is ready. Enter a mission to begin.');
+
+  // Clean up
+  window.addEventListener('beforeunload', () => {
+    if (eventSource) eventSource.close();
+  });
 });
-window.addEventListener('beforeunload', () => { if (eventSource) eventSource.close(); });
 </script>
 </body>
 </html>
