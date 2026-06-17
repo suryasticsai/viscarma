@@ -9,7 +9,7 @@ VisCarma is a self‑hosted, offline, multi‑modal AI agent that infiltrates yo
 **Zero cloud. Zero keys. Zero traces.**  
 You own the entire loop.
 
-Live : 🌐 https://suryasticsai.github.io/viscarma/ 
+Live : 🌐 https://viscarma.onrender.com
 
 ---
 
