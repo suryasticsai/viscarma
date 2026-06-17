@@ -60,6 +60,7 @@
       gap: 10px;
       align-items: center;
       flex-wrap: wrap;
+      margin-left: auto;  /* push to right */
     }
     .topbar-actions button {
       background: #2a2a44;
@@ -106,6 +107,64 @@
     .topbar-actions button.tab-btn.active {
       color: #d4af37;
       border-bottom-color: #d4af37;
+    }
+    /* ─── Auth in topbar ─── */
+    #auth-topbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-left: 10px;
+    }
+    #auth-topbar .user-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #ccc;
+      font-size: 0.9rem;
+    }
+    #auth-topbar .user-info .avatar-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #d4af37;
+      color: #0f0f1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 0.8rem;
+    }
+    #auth-topbar button {
+      background: #2a2a44;
+      border: 1px solid #3a3a5a;
+      color: #ccc;
+      padding: 4px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+    }
+    #auth-topbar button:hover {
+      background: #3a3a5a;
+      border-color: #d4af37;
+      color: #fff;
+    }
+    #auth-topbar button.login-btn {
+      background: #d4af37;
+      color: #0f0f1a;
+      font-weight: 600;
+      border-color: #d4af37;
+    }
+    #auth-topbar button.login-btn:hover {
+      background: #b8962c;
+    }
+    #auth-topbar #user-section {
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+    #auth-topbar #login-section {
+      display: block;
     }
 
     .app {
@@ -186,92 +245,6 @@
     .agent-krish { border-left-color: #2ecc71; }
     .agent-parth { border-left-color: #3498db; }
 
-    /* ─── Auth & repo sections ──────────────────────────── */
-    #auth-section {
-      background: #1a1a32;
-      border-radius: 14px;
-      padding: 14px 16px;
-      border: 1px solid #2a2a48;
-      margin-top: 4px;
-    }
-    #auth-section .auth-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    #auth-section .user-info {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    #auth-section .user-info span { font-size: 0.9rem; }
-    #auth-section .user-info .avatar-circle {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: #d4af37;
-      color: #0f0f1a;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 0.8rem;
-    }
-    #auth-section button {
-      background: #2a2a44;
-      border: 1px solid #3a3a5a;
-      color: #ccc;
-      padding: 4px 14px;
-      border-radius: 20px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      transition: all 0.2s;
-    }
-    #auth-section button:hover {
-      background: #3a3a5a;
-      border-color: #d4af37;
-      color: #fff;
-    }
-    #auth-section button.login-btn {
-      background: #d4af37;
-      color: #0f0f1a;
-      font-weight: 600;
-      border-color: #d4af37;
-    }
-    #auth-section button.login-btn:hover {
-      background: #b8962c;
-    }
-    #repo-select-section {
-      margin-top: 10px;
-    }
-    #repo-select-section label {
-      font-size: 0.75rem;
-      color: #aaa;
-      display: block;
-      margin-bottom: 4px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-    }
-    #repo-select-section select {
-      width: 100%;
-      background: #0f0f22;
-      border: 1px solid #2a2a44;
-      border-radius: 8px;
-      color: #e0e0e0;
-      padding: 6px 10px;
-      font-size: 0.9rem;
-      font-family: inherit;
-      transition: border 0.2s;
-    }
-    #repo-select-section select:focus {
-      outline: none;
-      border-color: #d4af37;
-    }
-    #repo-select-section .repo-owner-info {
-      font-size: 0.7rem;
-      color: #888;
-      margin-top: 4px;
-    }
     /* ─── Manual inputs (offline mode) ──────────────── */
     #manual-inputs {
       background: #1a1a32;
@@ -304,6 +277,44 @@
     #manual-inputs input:focus {
       outline: none;
       border-color: #d4af37;
+    }
+
+    /* ─── Repo dropdown in sidebar ─── */
+    #repo-select-section {
+      background: #1a1a32;
+      border-radius: 14px;
+      padding: 14px 16px;
+      border: 1px solid #2a2a48;
+      margin-top: 4px;
+      display: none;
+    }
+    #repo-select-section label {
+      font-size: 0.75rem;
+      color: #aaa;
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    #repo-select-section select {
+      width: 100%;
+      background: #0f0f22;
+      border: 1px solid #2a2a44;
+      border-radius: 8px;
+      color: #e0e0e0;
+      padding: 6px 10px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      transition: border 0.2s;
+    }
+    #repo-select-section select:focus {
+      outline: none;
+      border-color: #d4af37;
+    }
+    #repo-select-section .repo-owner-info {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 4px;
     }
 
     .mission-form {
@@ -749,6 +760,20 @@
     <button id="setupBtn" class="setup-btn">⚙️ Setup</button>
     <button id="clearBtn" class="danger">🗑️ Clear</button>
     <button id="scrollLockBtn">🔒 Scroll Lock</button>
+
+    <!-- ─── AUTH IN TOP-RIGHT ─── -->
+    <div id="auth-topbar">
+      <div id="login-section">
+        <button id="loginBtn" class="login-btn">🔑 Login</button>
+      </div>
+      <div id="user-section">
+        <div class="user-info">
+          <div class="avatar-circle" id="userAvatar">U</div>
+          <span id="userName">User</span>
+        </div>
+        <button id="logoutBtn">Logout</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -792,31 +817,17 @@
       </div>
     </div>
 
-    <!-- ─── Auth / Manual Section ────────────────────────── -->
-    <div id="auth-section" style="display:none;">
-      <div id="login-section">
-        <button id="loginBtn" class="login-btn" style="width:100%; padding:8px;">🔑 Login with GitHub</button>
-      </div>
-      <div id="user-section" style="display:none;">
-        <div class="auth-row">
-          <div class="user-info">
-            <div class="avatar-circle" id="userAvatar">U</div>
-            <span id="userName">User</span>
-          </div>
-          <button id="logoutBtn">Logout</button>
-        </div>
-        <div id="repo-select-section">
-          <label for="repoSelect">Select Repository</label>
-          <select id="repoSelect">
-            <option value="">— Loading —</option>
-          </select>
-          <div class="repo-owner-info" id="repoOwnerDisplay">Owner: —</div>
-          <input type="hidden" id="repoOwner" value="">
-        </div>
-      </div>
+    <!-- ─── Repo dropdown (appears after login) ────────── -->
+    <div id="repo-select-section">
+      <label for="repoSelect">Select Repository</label>
+      <select id="repoSelect">
+        <option value="">— Loading —</option>
+      </select>
+      <div class="repo-owner-info" id="repoOwnerDisplay">Owner: —</div>
+      <input type="hidden" id="repoOwner" value="">
     </div>
 
-    <!-- Manual inputs (offline mode) -->
+    <!-- ─── Manual inputs (offline mode) ────────────────── -->
     <div id="manual-inputs">
       <label for="manualRepo">Repository Name</label>
       <input type="text" id="manualRepo" value="viscarma-test">
@@ -938,8 +949,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   const loginSection = document.getElementById('login-section');
   const userSection = document.getElementById('user-section');
-  const authSection = document.getElementById('auth-section');
-  const manualInputs = document.getElementById('manual-inputs');
   const loginBtn = document.getElementById('loginBtn');
   const logoutBtn = document.getElementById('logoutBtn');
   const repoSelect = document.getElementById('repoSelect');
@@ -947,6 +956,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const repoOwnerDisplay = document.getElementById('repoOwnerDisplay');
   const userNameSpan = document.getElementById('userName');
   const userAvatar = document.getElementById('userAvatar');
+  const repoSelectSection = document.getElementById('repo-select-section');
+  const manualInputs = document.getElementById('manual-inputs');
 
   const manualRepo = document.getElementById('manualRepo');
   const manualOwner = document.getElementById('manualOwner');
@@ -1139,7 +1150,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ─── Button enable/disable logic ──────────────────────
   function updateLaunchButton() {
-    const onlineMode = authSection.style.display !== 'none';
+    const onlineMode = repoSelectSection.style.display !== 'none';
     let enabled = false;
 
     if (onlineMode) {
@@ -1159,21 +1170,14 @@ document.addEventListener('DOMContentLoaded', function() {
     launchBtn.disabled = !enabled;
   }
 
-  // Listen to changes that affect the button state
-  repoSelect.addEventListener('change', updateLaunchButton);
-  promptInput.addEventListener('input', updateLaunchButton);
-  manualRepo.addEventListener('input', updateLaunchButton);
-  manualOwner.addEventListener('input', updateLaunchButton);
-  branchInput.addEventListener('input', updateLaunchButton);
-
   // ─── Auth status check ──────────────────────────────────
   async function checkAuth() {
     try {
       const res = await fetch('/api/auth/status');
       const data = await res.json();
       if (data.oauthEnabled) {
-        // Online mode
-        authSection.style.display = 'block';
+        // Online mode – show repo dropdown, hide manual inputs
+        repoSelectSection.style.display = 'block';
         manualInputs.style.display = 'none';
         if (data.authenticated) {
           const reposRes = await fetch('/api/repos');
@@ -1187,8 +1191,8 @@ document.addEventListener('DOMContentLoaded', function() {
           showLoggedOut();
         }
       } else {
-        // Offline mode
-        authSection.style.display = 'none';
+        // Offline mode – hide repo dropdown, show manual inputs
+        repoSelectSection.style.display = 'none';
         manualInputs.style.display = 'block';
         manualRepo.value = 'viscarma-test';
         manualOwner.value = 'suryasticsai';
@@ -1197,7 +1201,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     } catch {
       // Fallback offline
-      authSection.style.display = 'none';
+      repoSelectSection.style.display = 'none';
       manualInputs.style.display = 'block';
       manualRepo.value = 'viscarma-test';
       manualOwner.value = 'suryasticsai';
@@ -1266,7 +1270,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const branch = branchInput.value.trim() || 'main';
     const prompt = promptInput.value.trim();
 
-    const onlineMode = authSection.style.display !== 'none';
+    const onlineMode = repoSelectSection.style.display !== 'none';
     if (onlineMode) {
       repo = repoSelect.value;
       owner = repoOwnerHidden.value;
