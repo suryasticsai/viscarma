@@ -7,7 +7,7 @@ const { runMission } = require('./agent');
 const PORT = 9000;
 
 const server = http.createServer(async (req, res) => {
-  // Serve static files (dashboard)
+  // ─── Serve static files (dashboard) ──────────────────
   if (req.method === 'GET' && req.url === '/') {
     const filePath = path.join(__dirname, 'public', 'index.html');
     try {
@@ -21,7 +21,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- NEW: Streaming endpoint ---
+  // ─── Streaming mission endpoint ──────────────────────
   if (req.method === 'GET' && req.url.startsWith('/stream')) {
     const urlParams = new URL(req.url, `http://${req.headers.host}`);
     const repo = urlParams.searchParams.get('repo') || 'viscarma-test';
@@ -35,14 +35,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Set SSE headers
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     });
 
-    // Build the command
     const args = [
       'agent.js',
       '--repo', repo,
@@ -54,13 +52,11 @@ const server = http.createServer(async (req, res) => {
     const agentProcess = spawn('node', args, { cwd: __dirname });
 
     agentProcess.stdout.on('data', (data) => {
-      const message = data.toString();
-      res.write(`data: ${JSON.stringify({ type: 'output', content: message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'output', content: data.toString() })}\n\n`);
     });
 
     agentProcess.stderr.on('data', (data) => {
-      const message = data.toString();
-      res.write(`data: ${JSON.stringify({ type: 'error', content: message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', content: data.toString() })}\n\n`);
     });
 
     agentProcess.on('close', (code) => {
@@ -71,11 +67,41 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Legacy POST /launch (keep if you want)
+  // ─── Setup streaming endpoint ────────────────────────
+  if (req.method === 'GET' && req.url === '/setup') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+
+    const setupProcess = spawn('bash', ['scripts/setup.sh'], {
+      cwd: __dirname,
+      env: process.env
+    });
+
+    setupProcess.stdout.on('data', (data) => {
+      res.write(`data: ${JSON.stringify({ type: 'output', content: data.toString() })}\n\n`);
+    });
+
+    setupProcess.stderr.on('data', (data) => {
+      res.write(`data: ${JSON.stringify({ type: 'error', content: data.toString() })}\n\n`);
+    });
+
+    setupProcess.on('close', (code) => {
+      const status = code === 0 ? '✅ Setup completed successfully.' : `❌ Setup exited with code ${code}.`;
+      res.write(`data: ${JSON.stringify({ type: 'done', content: status })}\n\n`);
+      res.end();
+    });
+
+    return;
+  }
+
+  // ─── Legacy POST /launch (optional) ──────────────────
   if (req.method === 'POST' && req.url === '/launch') {
-    // ... your existing launch logic (optional)
     res.writeHead(404);
     res.end('Use /stream for real-time output');
+    return;
   }
 
   res.writeHead(404);
