@@ -186,6 +186,93 @@
     .agent-krish { border-left-color: #2ecc71; }
     .agent-parth { border-left-color: #3498db; }
 
+    /* ─── Auth & repo sections ─── */
+    #auth-section {
+      background: #1a1a32;
+      border-radius: 14px;
+      padding: 14px 16px;
+      border: 1px solid #2a2a48;
+      margin-top: 4px;
+    }
+    #auth-section .auth-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #auth-section .user-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #auth-section .user-info span { font-size: 0.9rem; }
+    #auth-section .user-info .avatar-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #d4af37;
+      color: #0f0f1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 0.8rem;
+    }
+    #auth-section button {
+      background: #2a2a44;
+      border: 1px solid #3a3a5a;
+      color: #ccc;
+      padding: 4px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+    }
+    #auth-section button:hover {
+      background: #3a3a5a;
+      border-color: #d4af37;
+      color: #fff;
+    }
+    #auth-section button.login-btn {
+      background: #d4af37;
+      color: #0f0f1a;
+      font-weight: 600;
+      border-color: #d4af37;
+    }
+    #auth-section button.login-btn:hover {
+      background: #b8962c;
+    }
+    #repo-select-section {
+      margin-top: 10px;
+    }
+    #repo-select-section label {
+      font-size: 0.75rem;
+      color: #aaa;
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    #repo-select-section select {
+      width: 100%;
+      background: #0f0f22;
+      border: 1px solid #2a2a44;
+      border-radius: 8px;
+      color: #e0e0e0;
+      padding: 6px 10px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      transition: border 0.2s;
+    }
+    #repo-select-section select:focus {
+      outline: none;
+      border-color: #d4af37;
+    }
+    #repo-select-section .repo-owner-info {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 4px;
+    }
+
     .mission-form {
       background: #1a1a32;
       border-radius: 14px;
@@ -564,7 +651,7 @@
 
     @media (max-width: 768px) {
       .app { flex-direction: column; }
-      .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #2a2a44; max-height: 300px; }
+      .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #2a2a44; max-height: 400px; }
       .topbar { flex-wrap: wrap; gap: 8px; }
       .topbar-actions { flex-wrap: wrap; }
       .tab-panel { padding: 16px; }
@@ -634,12 +721,32 @@
       </div>
     </div>
 
-    <!-- Mission Form -->
+    <!-- ─── Auth + Repo Section ──────────────────────────── -->
+    <div id="auth-section">
+      <div id="login-section">
+        <button id="loginBtn" class="login-btn" style="width:100%; padding:8px;">🔑 Login with GitHub</button>
+      </div>
+      <div id="user-section" style="display:none;">
+        <div class="auth-row">
+          <div class="user-info">
+            <div class="avatar-circle" id="userAvatar">U</div>
+            <span id="userName">User</span>
+          </div>
+          <button id="logoutBtn">Logout</button>
+        </div>
+        <div id="repo-select-section">
+          <label for="repoSelect">Select Repository</label>
+          <select id="repoSelect">
+            <option value="">— Loading —</option>
+          </select>
+          <div class="repo-owner-info" id="repoOwnerDisplay">Owner: —</div>
+          <input type="hidden" id="repoOwner" value="">
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Mission Form ────────────────────────────────── -->
     <div class="mission-form">
-      <label for="repo">GitHub Repo</label>
-      <input type="text" id="repo" value="viscarma-test">
-      <label for="owner">Owner</label>
-      <input type="text" id="owner" value="suryasticsai">
       <label for="branch">Base Branch</label>
       <input type="text" id="branch" value="main">
       <label for="prompt">Mission</label>
@@ -738,6 +845,7 @@ node server.js</code></pre>
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof animateAvatars === 'function') animateAvatars();
 
+  // ─── DOM refs ──────────────────────────────────────────
   const chatMessages = document.getElementById('chatMessages');
   const launchBtn = document.getElementById('launchBtn');
   const clearBtn = document.getElementById('clearBtn');
@@ -749,12 +857,23 @@ document.addEventListener('DOMContentLoaded', function() {
   const footerArrow = document.getElementById('footerArrow');
   const setupBtn = document.getElementById('setupBtn');
 
+  const loginSection = document.getElementById('login-section');
+  const userSection = document.getElementById('user-section');
+  const loginBtn = document.getElementById('loginBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const repoSelect = document.getElementById('repoSelect');
+  const repoOwnerHidden = document.getElementById('repoOwner');
+  const repoOwnerDisplay = document.getElementById('repoOwnerDisplay');
+  const userNameSpan = document.getElementById('userName');
+  const userAvatar = document.getElementById('userAvatar');
+
   let eventSource = null;
   let messageCount = 0;
   let scrollLock = false;
   let messageBuffer = '';
   let footerVisible = true;
 
+  // ─── Agent intro messages (same as before) ─────────────
   const agentIntro = {
     'VisCarma': {
       intro: "🔱 I am VisCarma, the Supreme Architect and commander of this DevAIne team. I oversee all missions, delegate tasks, and ensure quality.\n\nI can guide you through the entire installation process. Click me again to see step-by-step instructions! 🛠️",
@@ -779,6 +898,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   };
 
+  // ─── Chat helper functions ──────────────────────────────
   function switchToChatTab() {
     const chatTab = document.querySelector('.tab-btn[data-tab="chat"]');
     if (chatTab && !chatTab.classList.contains('active')) chatTab.click();
@@ -857,83 +977,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // ─── Clickable avatars ─────────────────────────────────
-  document.querySelectorAll('.agent-item').forEach(item => {
-    item.addEventListener('click', function(e) {
-      if (e.target.closest('.mission-form') || e.target.closest('button')) return;
-      const agentName = this.dataset.agent;
-      if (!agentName) return;
-      switchToChatTab();
-      const info = agentIntro[agentName];
-      if (!info) return;
-      if (agentName === 'VisCarma') {
-        if (window['visCarmaTimeout']) clearTimeout(window['visCarmaTimeout']);
-        addMessage(agentName, info.intro);
-        const steps = info.install;
-        let delay = 800;
-        steps.forEach((step, index) => {
-          window['visCarmaTimeout'] = setTimeout(() => {
-            addMessage(agentName, step);
-          }, delay);
-          delay += 800;
-        });
-      } else {
-        addMessage(agentName, info.intro);
-      }
-    });
-  });
-
-  // ─── Setup button ──────────────────────────────────────
-  setupBtn.addEventListener('click', function() {
-    switchToChatTab();
-    clearChat();
-    addMessage('System', '⚙️ Starting setup... Please wait.');
-    if (eventSource) { eventSource.close(); eventSource = null; }
-    eventSource = new EventSource('/setup');
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'output') processOutput(data.content);
-        else if (data.type === 'error') addMessage('System', '❌ ERROR: ' + data.content);
-        else if (data.type === 'done') {
-          addMessage('VisCarma', data.content);
-          eventSource.close();
-          eventSource = null;
-        }
-      } catch (err) { console.error(err); }
-    };
-    eventSource.onerror = () => {
-      if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-        addMessage('System', '⚠️ Setup connection closed.');
-        eventSource = null;
-      }
-    };
-  });
-
-  // ─── Footer toggle ──────────────────────────────────────
-  footerToggle.addEventListener('click', () => {
-    footerVisible = !footerVisible;
-    footerContent.classList.toggle('hidden', !footerVisible);
-    footerArrow.classList.toggle('collapsed', !footerVisible);
-  });
-
-  // ─── Tab switching ──────────────────────────────────────
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const panels = {
-        chat: document.getElementById('panel-chat'),
-        docs: document.getElementById('panel-docs'),
-        prototype: document.getElementById('panel-prototype')
-      };
-      Object.keys(panels).forEach(key => {
-        panels[key].classList.toggle('active', key === btn.dataset.tab);
-      });
-    });
-  });
-
-  // ─── Chat functions ──────────────────────────────────────
   function detectAgent(text) {
     if (text.includes('Agent Parsh')) return 'Parsh';
     if (text.includes('Agent Krish')) return 'Krish';
@@ -967,17 +1010,130 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window['visCarmaTimeout']) clearTimeout(window['visCarmaTimeout']);
   }
 
+  // ─── Clickable avatars ─────────────────────────────────
+  document.querySelectorAll('.agent-item').forEach(item => {
+    item.addEventListener('click', function(e) {
+      if (e.target.closest('.mission-form') || e.target.closest('button')) return;
+      const agentName = this.dataset.agent;
+      if (!agentName) return;
+      switchToChatTab();
+      const info = agentIntro[agentName];
+      if (!info) return;
+      if (agentName === 'VisCarma') {
+        if (window['visCarmaTimeout']) clearTimeout(window['visCarmaTimeout']);
+        addMessage(agentName, info.intro);
+        const steps = info.install;
+        let delay = 800;
+        steps.forEach((step, index) => {
+          window['visCarmaTimeout'] = setTimeout(() => {
+            addMessage(agentName, step);
+          }, delay);
+          delay += 800;
+        });
+      } else {
+        addMessage(agentName, info.intro);
+      }
+    });
+  });
+
+  // ─── OAuth & repo logic ──────────────────────────────────
+
+  // Check auth status on load
+  async function checkAuth() {
+    try {
+      const res = await fetch('/api/repos');
+      if (res.ok) {
+        const repos = await res.json();
+        showLoggedIn(repos);
+      } else {
+        showLoggedOut();
+      }
+    } catch {
+      showLoggedOut();
+    }
+  }
+
+  function showLoggedOut() {
+    loginSection.style.display = 'block';
+    userSection.style.display = 'none';
+    repoSelect.innerHTML = '<option value="">— Please login —</option>';
+  }
+
+  function showLoggedIn(repos) {
+    loginSection.style.display = 'none';
+    userSection.style.display = 'block';
+
+    // Update user info – we could fetch user profile, but we just show a placeholder
+    userNameSpan.textContent = 'User';
+    userAvatar.textContent = 'U';
+
+    // Populate repo dropdown
+    repoSelect.innerHTML = '';
+    if (repos.length === 0) {
+      repoSelect.innerHTML = '<option value="">— No repos found —</option>';
+    } else {
+      repos.forEach(repo => {
+        const opt = document.createElement('option');
+        opt.value = repo.name;
+        opt.dataset.owner = repo.owner;
+        opt.textContent = repo.full_name + (repo.private ? ' 🔒' : '');
+        repoSelect.appendChild(opt);
+      });
+      // Set initial owner
+      if (repos.length > 0) {
+        const first = repos[0];
+        repoOwnerHidden.value = first.owner;
+        repoOwnerDisplay.textContent = `Owner: ${first.owner}`;
+      }
+      repoSelect.addEventListener('change', () => {
+        const selected = repoSelect.options[repoSelect.selectedIndex];
+        if (selected && selected.dataset.owner) {
+          repoOwnerHidden.value = selected.dataset.owner;
+          repoOwnerDisplay.textContent = `Owner: ${selected.dataset.owner}`;
+        }
+      });
+      // Trigger change to set owner
+      repoSelect.dispatchEvent(new Event('change'));
+    }
+  }
+
+  loginBtn.addEventListener('click', () => {
+    window.location.href = '/auth/github';
+  });
+
+  logoutBtn.addEventListener('click', () => {
+    window.location.href = '/auth/logout';
+  });
+
+  // ─── Launch mission (using selected repo) ────────────────
+
   function launchMission() {
-    const repo = document.getElementById('repo').value.trim();
-    const owner = document.getElementById('owner').value.trim();
-    const branch = document.getElementById('branch').value.trim();
+    const repo = repoSelect.value;
+    const owner = repoOwnerHidden.value;
+    const branch = document.getElementById('branch').value.trim() || 'main';
     const prompt = document.getElementById('prompt').value.trim();
-    if (!prompt) { alert('Enter a mission prompt.'); return; }
-    launchBtn.disabled = true; launchBtn.textContent = 'Running...';
+
+    if (!repo) {
+      alert('Please select a repository.');
+      return;
+    }
+    if (!owner) {
+      alert('Owner not found for the selected repo.');
+      return;
+    }
+    if (!prompt) {
+      alert('Enter a mission prompt.');
+      return;
+    }
+
+    launchBtn.disabled = true;
+    launchBtn.textContent = 'Running...';
     clearChat();
     connectionStatus.textContent = '⏳ Connecting...';
     connectionStatus.style.color = '#f39c12';
+
     const url = `/stream?repo=${encodeURIComponent(repo)}&owner=${encodeURIComponent(owner)}&branch=${encodeURIComponent(branch)}&prompt=${encodeURIComponent(prompt)}`;
+
     if (eventSource) { eventSource.close(); eventSource = null; }
     eventSource = new EventSource(url);
     eventSource.onmessage = (event) => {
@@ -990,7 +1146,8 @@ document.addEventListener('DOMContentLoaded', function() {
           connectionStatus.textContent = '✅ Done';
           connectionStatus.style.color = '#4caf50';
           eventSource.close();
-          launchBtn.disabled = false; launchBtn.textContent = '🚀 Launch Mission';
+          launchBtn.disabled = false;
+          launchBtn.textContent = '🚀 Launch Mission';
         }
       } catch (err) { console.error(err); }
     };
@@ -998,13 +1155,41 @@ document.addEventListener('DOMContentLoaded', function() {
       if (eventSource && eventSource.readyState === EventSource.CLOSED) {
         connectionStatus.textContent = '⚠️ Disconnected';
         connectionStatus.style.color = '#e74c3c';
-        launchBtn.disabled = false; launchBtn.textContent = '🚀 Launch Mission';
+        launchBtn.disabled = false;
+        launchBtn.textContent = '🚀 Launch Mission';
         eventSource = null;
       }
     };
   }
 
-  // ─── Event listeners ────────────────────────────────────
+  // ─── Setup button ──────────────────────────────────────
+  setupBtn.addEventListener('click', function() {
+    switchToChatTab();
+    clearChat();
+    addMessage('System', '⚙️ Starting setup... Please wait.');
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    eventSource = new EventSource('/setup');
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'output') processOutput(data.content);
+        else if (data.type === 'error') addMessage('System', '❌ ERROR: ' + data.content);
+        else if (data.type === 'done') {
+          addMessage('VisCarma', data.content);
+          eventSource.close();
+          eventSource = null;
+        }
+      } catch (err) { console.error(err); }
+    };
+    eventSource.onerror = () => {
+      if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+        addMessage('System', '⚠️ Setup connection closed.');
+        eventSource = null;
+      }
+    };
+  });
+
+  // ─── Event listeners ──────────────────────────────────
   document.querySelector('.mission-form').addEventListener('submit', e => {
     e.preventDefault();
     launchMission();
@@ -1017,8 +1202,35 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
   });
 
-  addMessage('VisCarma', '🔱 VisCarma is ready. Enter a mission or click any avatar to learn more.');
+  footerToggle.addEventListener('click', () => {
+    footerVisible = !footerVisible;
+    footerContent.classList.toggle('hidden', !footerVisible);
+    footerArrow.classList.toggle('collapsed', !footerVisible);
+  });
 
+  // ─── Tab switching ──────────────────────────────────
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const panels = {
+        chat: document.getElementById('panel-chat'),
+        docs: document.getElementById('panel-docs'),
+        prototype: document.getElementById('panel-prototype')
+      };
+      Object.keys(panels).forEach(key => {
+        panels[key].classList.toggle('active', key === btn.dataset.tab);
+      });
+    });
+  });
+
+  // ─── Initial messages ──────────────────────────────────
+  addMessage('VisCarma', '🔱 VisCarma is ready. Please log in with GitHub to start.');
+
+  // ─── Check auth after load ────────────────────────────
+  checkAuth();
+
+  // Clean up on page unload
   window.addEventListener('beforeunload', () => {
     if (eventSource) eventSource.close();
   });
