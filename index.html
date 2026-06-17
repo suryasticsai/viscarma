@@ -6,7 +6,7 @@
   <title>VisCarma – DevAIne Agent</title>
   <script src="avatars.js" defer></script>
   <style>
-    /* ─── All existing styles (keep exactly as before) ─── */
+    /* ─── Base ─── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       background: #0f0f1a;
@@ -273,7 +273,7 @@
       color: #888;
       margin-top: 4px;
     }
-    /* ─── Manual inputs (for offline mode) ──────────────── */
+    /* ─── Manual inputs (offline mode) ──────────────── */
     #manual-inputs {
       background: #1a1a32;
       border-radius: 14px;
@@ -354,9 +354,9 @@
       font-size: 1rem;
       transition: all 0.2s;
     }
-    .mission-form button:hover { background: #b8962c; transform: scale(1.01); }
+    .mission-form button:hover:not(:disabled) { background: #b8962c; transform: scale(1.01); }
     .mission-form button:disabled {
-      opacity: 0.5;
+      opacity: 0.4;
       cursor: not-allowed;
       transform: none;
     }
@@ -484,6 +484,38 @@
       margin-top: 8px;
     }
 
+    /* ─── Notification bar ──────────────────────────────── */
+    #notification {
+      position: fixed;
+      top: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #2a2a48;
+      border: 1px solid #d4af37;
+      color: #e0e0e0;
+      padding: 10px 24px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      z-index: 999;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+      display: none;
+      align-items: center;
+      gap: 12px;
+      backdrop-filter: blur(8px);
+      transition: opacity 0.3s;
+      max-width: 90%;
+    }
+    #notification .close-notif {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 0 4px;
+    }
+    #notification .close-notif:hover { color: #fff; }
+
+    /* ─── Docs & Prototype (unchanged) ─────────────────── */
     #panel-docs {
       color: #ccc;
       line-height: 1.7;
@@ -699,6 +731,12 @@
 
 <div class="bg-glow"></div>
 
+<!-- ─── Notification bar ─────────────────────────────────── -->
+<div id="notification">
+  <span id="notifMessage"></span>
+  <button class="close-notif" id="notifClose">✕</button>
+</div>
+
 <!-- ─── Topbar ─── -->
 <div class="topbar">
   <h1>
@@ -793,7 +831,7 @@
       <input type="text" id="branch" value="main">
       <label for="prompt">Mission</label>
       <textarea id="prompt" rows="2">Add a to-do list feature to index.html</textarea>
-      <button type="submit" id="launchBtn">🚀 Launch Mission</button>
+      <button type="submit" id="launchBtn" disabled>🚀 Launch Mission</button>
     </div>
   </aside>
 
@@ -913,12 +951,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
   const manualRepo = document.getElementById('manualRepo');
   const manualOwner = document.getElementById('manualOwner');
+  const branchInput = document.getElementById('branch');
+  const promptInput = document.getElementById('prompt');
 
-  let eventSource = null;
-  let messageCount = 0;
-  let scrollLock = false;
-  let messageBuffer = '';
-  let footerVisible = true;
+  // ─── Notification bar ──────────────────────────────────
+  const notif = document.getElementById('notification');
+  const notifMsg = document.getElementById('notifMessage');
+  const notifClose = document.getElementById('notifClose');
+  let notifTimeout = null;
+
+  function showNotification(msg, isError = false) {
+    notifMsg.textContent = msg;
+    notif.style.display = 'flex';
+    notif.style.borderColor = isError ? '#e74c3c' : '#d4af37';
+    if (notifTimeout) clearTimeout(notifTimeout);
+    notifTimeout = setTimeout(() => {
+      notif.style.display = 'none';
+    }, 5000);
+  }
+
+  notifClose.addEventListener('click', () => {
+    notif.style.display = 'none';
+    if (notifTimeout) clearTimeout(notifTimeout);
+  });
 
   // ─── Agent intro messages (same as before) ─────────────
   const agentIntro = {
@@ -1083,17 +1138,45 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
+  // ─── Button enable/disable logic ──────────────────────
+  function updateLaunchButton() {
+    const onlineMode = authSection.style.display !== 'none';
+    let enabled = false;
+
+    if (onlineMode) {
+      // Online mode: must be logged in, repo selected, prompt not empty
+      const loggedIn = userSection.style.display !== 'none';
+      const repoSelected = repoSelect.value && repoSelect.value !== '';
+      const promptFilled = promptInput.value.trim() !== '';
+      enabled = loggedIn && repoSelected && promptFilled;
+    } else {
+      // Offline mode: repo and owner filled, prompt not empty
+      const repoFilled = manualRepo.value.trim() !== '';
+      const ownerFilled = manualOwner.value.trim() !== '';
+      const promptFilled = promptInput.value.trim() !== '';
+      enabled = repoFilled && ownerFilled && promptFilled;
+    }
+
+    launchBtn.disabled = !enabled;
+  }
+
+  // Listen to changes that affect the button state
+  repoSelect.addEventListener('change', updateLaunchButton);
+  promptInput.addEventListener('input', updateLaunchButton);
+  manualRepo.addEventListener('input', updateLaunchButton);
+  manualOwner.addEventListener('input', updateLaunchButton);
+  branchInput.addEventListener('input', updateLaunchButton);
+
   // ─── Auth status check ──────────────────────────────────
   async function checkAuth() {
     try {
       const res = await fetch('/api/auth/status');
       const data = await res.json();
       if (data.oauthEnabled) {
-        // Online mode – show auth section
+        // Online mode
         authSection.style.display = 'block';
         manualInputs.style.display = 'none';
         if (data.authenticated) {
-          // User is logged in – fetch repos
           const reposRes = await fetch('/api/repos');
           if (reposRes.ok) {
             const repos = await reposRes.json();
@@ -1105,22 +1188,22 @@ document.addEventListener('DOMContentLoaded', function() {
           showLoggedOut();
         }
       } else {
-        // Offline mode – show manual inputs
+        // Offline mode
         authSection.style.display = 'none';
         manualInputs.style.display = 'block';
-        // Set default values
         manualRepo.value = 'viscarma-test';
         manualOwner.value = 'suryasticsai';
-        // Show a system message
         addMessage('System', '🔧 Running in offline mode. Enter repo and owner manually.');
+        updateLaunchButton();
       }
     } catch {
-      // If /api/auth/status fails, assume offline mode
+      // Fallback offline
       authSection.style.display = 'none';
       manualInputs.style.display = 'block';
       manualRepo.value = 'viscarma-test';
       manualOwner.value = 'suryasticsai';
       addMessage('System', '🔧 Running in offline mode. Enter repo and owner manually.');
+      updateLaunchButton();
     }
   }
 
@@ -1128,17 +1211,15 @@ document.addEventListener('DOMContentLoaded', function() {
     loginSection.style.display = 'block';
     userSection.style.display = 'none';
     repoSelect.innerHTML = '<option value="">— Please login —</option>';
+    updateLaunchButton();
   }
 
   function showLoggedIn(repos) {
     loginSection.style.display = 'none';
     userSection.style.display = 'block';
-
-    // Update user info (placeholder)
     userNameSpan.textContent = 'User';
     userAvatar.textContent = 'U';
 
-    // Populate repo dropdown
     repoSelect.innerHTML = '';
     if (repos.length === 0) {
       repoSelect.innerHTML = '<option value="">— No repos found —</option>';
@@ -1150,7 +1231,6 @@ document.addEventListener('DOMContentLoaded', function() {
         opt.textContent = repo.full_name + (repo.private ? ' 🔒' : '');
         repoSelect.appendChild(opt);
       });
-      // Set initial owner
       if (repos.length > 0) {
         const first = repos[0];
         repoOwnerHidden.value = first.owner;
@@ -1162,10 +1242,11 @@ document.addEventListener('DOMContentLoaded', function() {
           repoOwnerHidden.value = selected.dataset.owner;
           repoOwnerDisplay.textContent = `Owner: ${selected.dataset.owner}`;
         }
+        updateLaunchButton();
       });
-      // Trigger change to set owner
       repoSelect.dispatchEvent(new Event('change'));
     }
+    updateLaunchButton();
   }
 
   loginBtn.addEventListener('click', () => {
@@ -1177,34 +1258,27 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // ─── Launch mission ────────────────────────────────────
+  let eventSource = null;
+  let messageBuffer = '';
+  let messageCount = 0;
+
   function launchMission() {
     let repo, owner;
-    const branch = document.getElementById('branch').value.trim() || 'main';
-    const prompt = document.getElementById('prompt').value.trim();
+    const branch = branchInput.value.trim() || 'main';
+    const prompt = promptInput.value.trim();
 
-    // Determine if online mode (auth section visible) or offline (manual inputs)
-    if (authSection.style.display !== 'none') {
-      // Online mode – use dropdown
+    const onlineMode = authSection.style.display !== 'none';
+    if (onlineMode) {
       repo = repoSelect.value;
       owner = repoOwnerHidden.value;
     } else {
-      // Offline mode – use manual inputs
       repo = manualRepo.value.trim();
       owner = manualOwner.value.trim();
     }
 
-    if (!repo) {
-      alert('Please select or enter a repository.');
-      return;
-    }
-    if (!owner) {
-      alert('Please enter or select an owner.');
-      return;
-    }
-    if (!prompt) {
-      alert('Enter a mission prompt.');
-      return;
-    }
+    if (!repo) { showNotification('Please select or enter a repository.', true); return; }
+    if (!owner) { showNotification('Please enter or select an owner.', true); return; }
+    if (!prompt) { showNotification('Enter a mission prompt.', true); return; }
 
     launchBtn.disabled = true;
     launchBtn.textContent = 'Running...';
@@ -1228,6 +1302,7 @@ document.addEventListener('DOMContentLoaded', function() {
           eventSource.close();
           launchBtn.disabled = false;
           launchBtn.textContent = '🚀 Launch Mission';
+          updateLaunchButton();
         }
       } catch (err) { console.error(err); }
     };
@@ -1238,6 +1313,7 @@ document.addEventListener('DOMContentLoaded', function() {
         launchBtn.disabled = false;
         launchBtn.textContent = '🚀 Launch Mission';
         eventSource = null;
+        updateLaunchButton();
       }
     };
   }
@@ -1306,8 +1382,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ─── Initial messages ──────────────────────────────────
   addMessage('VisCarma', '🔱 VisCarma is ready. Loading configuration...');
-
-  // ─── Check auth after load ────────────────────────────
   checkAuth();
 
   // Clean up on page unload
