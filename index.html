@@ -60,7 +60,7 @@
       gap: 10px;
       align-items: center;
       flex-wrap: wrap;
-      margin-left: auto;  /* push to right */
+      margin-left: auto;
     }
     .topbar-actions button {
       background: #2a2a44;
@@ -108,6 +108,7 @@
       color: #d4af37;
       border-bottom-color: #d4af37;
     }
+
     /* ─── Auth in topbar ─── */
     #auth-topbar {
       display: flex;
@@ -154,6 +155,7 @@
       color: #0f0f1a;
       font-weight: 600;
       border-color: #d4af37;
+      padding: 6px 18px;
     }
     #auth-topbar button.login-btn:hover {
       background: #b8962c;
@@ -245,40 +247,6 @@
     .agent-krish { border-left-color: #2ecc71; }
     .agent-parth { border-left-color: #3498db; }
 
-    /* ─── Manual inputs (offline mode) ──────────────── */
-    #manual-inputs {
-      background: #1a1a32;
-      border-radius: 14px;
-      padding: 14px 16px;
-      border: 1px solid #2a2a48;
-      margin-top: 4px;
-      display: none;
-    }
-    #manual-inputs label {
-      font-size: 0.75rem;
-      color: #aaa;
-      display: block;
-      margin-top: 6px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-    }
-    #manual-inputs input {
-      width: 100%;
-      background: #0f0f22;
-      border: 1px solid #2a2a44;
-      border-radius: 8px;
-      color: #e0e0e0;
-      padding: 6px 10px;
-      font-size: 0.9rem;
-      margin-top: 3px;
-      font-family: inherit;
-      transition: border 0.2s;
-    }
-    #manual-inputs input:focus {
-      outline: none;
-      border-color: #d4af37;
-    }
-
     /* ─── Repo dropdown in sidebar ─── */
     #repo-select-section {
       background: #1a1a32;
@@ -315,6 +283,40 @@
       font-size: 0.7rem;
       color: #888;
       margin-top: 4px;
+    }
+
+    /* ─── Manual inputs (offline mode) ──────────────── */
+    #manual-inputs {
+      background: #1a1a32;
+      border-radius: 14px;
+      padding: 14px 16px;
+      border: 1px solid #2a2a48;
+      margin-top: 4px;
+      display: none;
+    }
+    #manual-inputs label {
+      font-size: 0.75rem;
+      color: #aaa;
+      display: block;
+      margin-top: 6px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    #manual-inputs input {
+      width: 100%;
+      background: #0f0f22;
+      border: 1px solid #2a2a44;
+      border-radius: 8px;
+      color: #e0e0e0;
+      padding: 6px 10px;
+      font-size: 0.9rem;
+      margin-top: 3px;
+      font-family: inherit;
+      transition: border 0.2s;
+    }
+    #manual-inputs input:focus {
+      outline: none;
+      border-color: #d4af37;
     }
 
     .mission-form {
@@ -525,7 +527,7 @@
     }
     #notification .close-notif:hover { color: #fff; }
 
-    /* ─── Docs & Prototype (unchanged) ─────────────────── */
+    /* ─── Docs & Prototype ───────────────────────────────── */
     #panel-docs {
       color: #ccc;
       line-height: 1.7;
@@ -985,7 +987,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (notifTimeout) clearTimeout(notifTimeout);
   });
 
-  // ─── Agent intro messages (same as before) ─────────────
+  // ─── Agent intro messages ──────────────────────────────
   const agentIntro = {
     'VisCarma': {
       intro: "🔱 I am VisCarma, the Supreme Architect and commander of this DevAIne team. I oversee all missions, delegate tasks, and ensure quality.\n\nI can guide you through the entire installation process. Click me again to see step-by-step instructions! 🛠️",
@@ -1170,11 +1172,19 @@ document.addEventListener('DOMContentLoaded', function() {
     launchBtn.disabled = !enabled;
   }
 
+  // Listen to changes
+  repoSelect.addEventListener('change', updateLaunchButton);
+  promptInput.addEventListener('input', updateLaunchButton);
+  manualRepo.addEventListener('input', updateLaunchButton);
+  manualOwner.addEventListener('input', updateLaunchButton);
+  branchInput.addEventListener('input', updateLaunchButton);
+
   // ─── Auth status check ──────────────────────────────────
   async function checkAuth() {
     try {
       const res = await fetch('/api/auth/status');
       const data = await res.json();
+      console.log('Auth status:', data);
       if (data.oauthEnabled) {
         // Online mode – show repo dropdown, hide manual inputs
         repoSelectSection.style.display = 'block';
@@ -1183,6 +1193,7 @@ document.addEventListener('DOMContentLoaded', function() {
           const reposRes = await fetch('/api/repos');
           if (reposRes.ok) {
             const repos = await reposRes.json();
+            console.log('Repos fetched:', repos.length);
             showLoggedIn(repos);
           } else {
             showLoggedOut();
@@ -1191,7 +1202,7 @@ document.addEventListener('DOMContentLoaded', function() {
           showLoggedOut();
         }
       } else {
-        // Offline mode – hide repo dropdown, show manual inputs
+        // Offline mode
         repoSelectSection.style.display = 'none';
         manualInputs.style.display = 'block';
         manualRepo.value = 'viscarma-test';
@@ -1199,7 +1210,8 @@ document.addEventListener('DOMContentLoaded', function() {
         addMessage('System', '🔧 Running in offline mode. Enter repo and owner manually.');
         updateLaunchButton();
       }
-    } catch {
+    } catch (err) {
+      console.error('Auth check error:', err);
       // Fallback offline
       repoSelectSection.style.display = 'none';
       manualInputs.style.display = 'block';
@@ -1214,12 +1226,15 @@ document.addEventListener('DOMContentLoaded', function() {
     loginSection.style.display = 'block';
     userSection.style.display = 'none';
     repoSelect.innerHTML = '<option value="">— Please login —</option>';
+    repoSelectSection.style.display = 'block';
     updateLaunchButton();
   }
 
   function showLoggedIn(repos) {
     loginSection.style.display = 'none';
-    userSection.style.display = 'block';
+    userSection.style.display = 'block';          // Show user + logout
+    repoSelectSection.style.display = 'block';    // Show repo dropdown
+
     userNameSpan.textContent = 'User';
     userAvatar.textContent = 'U';
 
@@ -1387,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', function() {
   addMessage('VisCarma', '🔱 VisCarma is ready. Loading configuration...');
   checkAuth();
 
-  // Clean up on page unload
+  // Clean up
   window.addEventListener('beforeunload', () => {
     if (eventSource) eventSource.close();
   });
