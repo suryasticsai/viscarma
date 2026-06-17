@@ -3,29 +3,26 @@ const session = require('express-session');
 const axios = require('axios');
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 9000;
 
-// ─── Check if OAuth is configured ────────────────────────
 const OAUTH_ENABLED = !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 
-// ─── Session middleware ──────────────────────────────────
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: true,           // Required for HTTPS (Render)
+    secure: true,
     sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000
   }
 }));
 
-// ─── Static files ────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── API: auth status ────────────────────────────────────
 app.get('/api/auth/status', (req, res) => {
   const isLoggedIn = !!req.session.githubToken;
   res.json({
@@ -34,7 +31,6 @@ app.get('/api/auth/status', (req, res) => {
   });
 });
 
-// ─── OAuth routes (only if enabled) ──────────────────────
 if (OAUTH_ENABLED) {
   app.get('/auth/github', (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
@@ -45,9 +41,7 @@ if (OAUTH_ENABLED) {
 
   app.get('/auth/github/callback', async (req, res) => {
     const code = req.query.code;
-    if (!code) {
-      return res.status(400).send('Missing code');
-    }
+    if (!code) return res.status(400).send('Missing code');
     try {
       const tokenResponse = await axios.post(
         'https://github.com/login/oauth/access_token',
@@ -60,7 +54,6 @@ if (OAUTH_ENABLED) {
       );
       const accessToken = tokenResponse.data.access_token;
       req.session.githubToken = accessToken;
-      // Force save session before redirect
       req.session.save((err) => {
         if (err) console.error('Session save error:', err);
         res.redirect('/');
@@ -72,16 +65,12 @@ if (OAUTH_ENABLED) {
   });
 
   app.get('/auth/logout', (req, res) => {
-    req.session.destroy(() => {
-      res.redirect('/');
-    });
+    req.session.destroy(() => res.redirect('/'));
   });
 
   app.get('/api/repos', async (req, res) => {
     const token = req.session.githubToken;
-    if (!token) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
     try {
       const response = await axios.get('https://api.github.com/user/repos', {
         headers: { Authorization: `Bearer ${token}` },
@@ -106,13 +95,20 @@ if (OAUTH_ENABLED) {
   app.get('/api/repos', (req, res) => res.status(404).json({ error: 'OAuth not configured' }));
 }
 
-// ─── Streaming mission ──────────────────────────────────
+// ─── Streaming mission – now uses dynamic repo path ────
 app.get('/stream', async (req, res) => {
   const { repo, owner, branch, prompt } = req.query;
   if (!prompt || !repo || !owner) {
     res.status(400).json({ error: 'Missing repo, owner, or prompt' });
     return;
   }
+
+  // Determine the local path for the selected repo
+  // We assume all repos are cloned under ~/projects/<repo>
+  // You can change this to any base directory you prefer.
+  const repoPath = path.join(__dirname, '..', repo);  // e.g., ../viscarma-test
+  // If the repo is not cloned locally, you can optionally clone it here.
+  // For now, we'll just pass the path and assume it exists.
 
   let userToken = req.session.githubToken || process.env.GITHUB_TOKEN;
   if (!userToken) {
@@ -130,6 +126,7 @@ app.get('/stream', async (req, res) => {
     '--repo', repo,
     '--owner', owner,
     '--base', branch || 'main',
+    '--repo-path', repoPath,   // 👈 Pass the dynamic path
     prompt
   ];
 
@@ -158,9 +155,7 @@ app.get('/stream', async (req, res) => {
   });
 });
 
-app.get('/setup', (req, res) => {
-  res.status(404).send('Setup not available');
-});
+app.get('/setup', (req, res) => res.status(404).send('Setup not available'));
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
