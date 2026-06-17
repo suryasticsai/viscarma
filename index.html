@@ -6,6 +6,7 @@
   <title>VisCarma – DevAIne Agent</title>
   <script src="avatars.js" defer></script>
   <style>
+    /* ─── All existing styles (keep exactly as before) ─── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       background: #0f0f1a;
@@ -186,7 +187,7 @@
     .agent-krish { border-left-color: #2ecc71; }
     .agent-parth { border-left-color: #3498db; }
 
-    /* ─── Auth & repo sections ─── */
+    /* ─── Auth & repo sections ──────────────────────────── */
     #auth-section {
       background: #1a1a32;
       border-radius: 14px;
@@ -271,6 +272,39 @@
       font-size: 0.7rem;
       color: #888;
       margin-top: 4px;
+    }
+    /* ─── Manual inputs (for offline mode) ──────────────── */
+    #manual-inputs {
+      background: #1a1a32;
+      border-radius: 14px;
+      padding: 14px 16px;
+      border: 1px solid #2a2a48;
+      margin-top: 4px;
+      display: none;
+    }
+    #manual-inputs label {
+      font-size: 0.75rem;
+      color: #aaa;
+      display: block;
+      margin-top: 6px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    #manual-inputs input {
+      width: 100%;
+      background: #0f0f22;
+      border: 1px solid #2a2a44;
+      border-radius: 8px;
+      color: #e0e0e0;
+      padding: 6px 10px;
+      font-size: 0.9rem;
+      margin-top: 3px;
+      font-family: inherit;
+      transition: border 0.2s;
+    }
+    #manual-inputs input:focus {
+      outline: none;
+      border-color: #d4af37;
     }
 
     .mission-form {
@@ -721,8 +755,8 @@
       </div>
     </div>
 
-    <!-- ─── Auth + Repo Section ──────────────────────────── -->
-    <div id="auth-section">
+    <!-- ─── Auth / Manual Section ────────────────────────── -->
+    <div id="auth-section" style="display:none;">
       <div id="login-section">
         <button id="loginBtn" class="login-btn" style="width:100%; padding:8px;">🔑 Login with GitHub</button>
       </div>
@@ -743,6 +777,14 @@
           <input type="hidden" id="repoOwner" value="">
         </div>
       </div>
+    </div>
+
+    <!-- Manual inputs (offline mode) -->
+    <div id="manual-inputs">
+      <label for="manualRepo">Repository Name</label>
+      <input type="text" id="manualRepo" value="viscarma-test">
+      <label for="manualOwner">Owner</label>
+      <input type="text" id="manualOwner" value="suryasticsai">
     </div>
 
     <!-- ─── Mission Form ────────────────────────────────── -->
@@ -859,6 +901,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   const loginSection = document.getElementById('login-section');
   const userSection = document.getElementById('user-section');
+  const authSection = document.getElementById('auth-section');
+  const manualInputs = document.getElementById('manual-inputs');
   const loginBtn = document.getElementById('loginBtn');
   const logoutBtn = document.getElementById('logoutBtn');
   const repoSelect = document.getElementById('repoSelect');
@@ -866,6 +910,9 @@ document.addEventListener('DOMContentLoaded', function() {
   const repoOwnerDisplay = document.getElementById('repoOwnerDisplay');
   const userNameSpan = document.getElementById('userName');
   const userAvatar = document.getElementById('userAvatar');
+
+  const manualRepo = document.getElementById('manualRepo');
+  const manualOwner = document.getElementById('manualOwner');
 
   let eventSource = null;
   let messageCount = 0;
@@ -1036,20 +1083,44 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  // ─── OAuth & repo logic ──────────────────────────────────
-
-  // Check auth status on load
+  // ─── Auth status check ──────────────────────────────────
   async function checkAuth() {
     try {
-      const res = await fetch('/api/repos');
-      if (res.ok) {
-        const repos = await res.json();
-        showLoggedIn(repos);
+      const res = await fetch('/api/auth/status');
+      const data = await res.json();
+      if (data.oauthEnabled) {
+        // Online mode – show auth section
+        authSection.style.display = 'block';
+        manualInputs.style.display = 'none';
+        if (data.authenticated) {
+          // User is logged in – fetch repos
+          const reposRes = await fetch('/api/repos');
+          if (reposRes.ok) {
+            const repos = await reposRes.json();
+            showLoggedIn(repos);
+          } else {
+            showLoggedOut();
+          }
+        } else {
+          showLoggedOut();
+        }
       } else {
-        showLoggedOut();
+        // Offline mode – show manual inputs
+        authSection.style.display = 'none';
+        manualInputs.style.display = 'block';
+        // Set default values
+        manualRepo.value = 'viscarma-test';
+        manualOwner.value = 'suryasticsai';
+        // Show a system message
+        addMessage('System', '🔧 Running in offline mode. Enter repo and owner manually.');
       }
     } catch {
-      showLoggedOut();
+      // If /api/auth/status fails, assume offline mode
+      authSection.style.display = 'none';
+      manualInputs.style.display = 'block';
+      manualRepo.value = 'viscarma-test';
+      manualOwner.value = 'suryasticsai';
+      addMessage('System', '🔧 Running in offline mode. Enter repo and owner manually.');
     }
   }
 
@@ -1063,7 +1134,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loginSection.style.display = 'none';
     userSection.style.display = 'block';
 
-    // Update user info – we could fetch user profile, but we just show a placeholder
+    // Update user info (placeholder)
     userNameSpan.textContent = 'User';
     userAvatar.textContent = 'U';
 
@@ -1105,20 +1176,29 @@ document.addEventListener('DOMContentLoaded', function() {
     window.location.href = '/auth/logout';
   });
 
-  // ─── Launch mission (using selected repo) ────────────────
-
+  // ─── Launch mission ────────────────────────────────────
   function launchMission() {
-    const repo = repoSelect.value;
-    const owner = repoOwnerHidden.value;
+    let repo, owner;
     const branch = document.getElementById('branch').value.trim() || 'main';
     const prompt = document.getElementById('prompt').value.trim();
 
+    // Determine if online mode (auth section visible) or offline (manual inputs)
+    if (authSection.style.display !== 'none') {
+      // Online mode – use dropdown
+      repo = repoSelect.value;
+      owner = repoOwnerHidden.value;
+    } else {
+      // Offline mode – use manual inputs
+      repo = manualRepo.value.trim();
+      owner = manualOwner.value.trim();
+    }
+
     if (!repo) {
-      alert('Please select a repository.');
+      alert('Please select or enter a repository.');
       return;
     }
     if (!owner) {
-      alert('Owner not found for the selected repo.');
+      alert('Please enter or select an owner.');
       return;
     }
     if (!prompt) {
@@ -1225,7 +1305,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // ─── Initial messages ──────────────────────────────────
-  addMessage('VisCarma', '🔱 VisCarma is ready. Please log in with GitHub to start.');
+  addMessage('VisCarma', '🔱 VisCarma is ready. Loading configuration...');
 
   // ─── Check auth after load ────────────────────────────
   checkAuth();
