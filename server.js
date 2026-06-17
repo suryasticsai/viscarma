@@ -15,7 +15,11 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production' }
+  cookie: { 
+    secure: true,           // Required for HTTPS (Render)
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
 }));
 
 // ─── Static files ────────────────────────────────────────
@@ -32,7 +36,6 @@ app.get('/api/auth/status', (req, res) => {
 
 // ─── OAuth routes (only if enabled) ──────────────────────
 if (OAUTH_ENABLED) {
-  // 1. Redirect to GitHub login
   app.get('/auth/github', (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
     const redirectUri = `https://${req.get('host')}/auth/github/callback`;
@@ -40,7 +43,6 @@ if (OAUTH_ENABLED) {
     res.redirect(githubAuthUrl);
   });
 
-  // 2. GitHub callback – exchange code for token
   app.get('/auth/github/callback', async (req, res) => {
     const code = req.query.code;
     if (!code) {
@@ -58,21 +60,23 @@ if (OAUTH_ENABLED) {
       );
       const accessToken = tokenResponse.data.access_token;
       req.session.githubToken = accessToken;
-      res.redirect('/');
+      // Force save session before redirect
+      req.session.save((err) => {
+        if (err) console.error('Session save error:', err);
+        res.redirect('/');
+      });
     } catch (err) {
       console.error('OAuth error:', err.response?.data || err.message);
       res.status(500).send('OAuth failed');
     }
   });
 
-  // 3. Logout – destroy session
   app.get('/auth/logout', (req, res) => {
     req.session.destroy(() => {
       res.redirect('/');
     });
   });
 
-  // 4. API: list user repositories (requires authentication)
   app.get('/api/repos', async (req, res) => {
     const token = req.session.githubToken;
     if (!token) {
@@ -96,23 +100,20 @@ if (OAUTH_ENABLED) {
     }
   });
 } else {
-  // OAuth not configured – return 404 for OAuth endpoints
   app.get('/auth/github', (req, res) => res.status(404).send('OAuth not configured'));
   app.get('/auth/github/callback', (req, res) => res.status(404).send('OAuth not configured'));
   app.get('/auth/logout', (req, res) => res.status(404).send('OAuth not configured'));
   app.get('/api/repos', (req, res) => res.status(404).json({ error: 'OAuth not configured' }));
 }
 
-// ─── Streaming mission (works for online and offline) ──
+// ─── Streaming mission ──────────────────────────────────
 app.get('/stream', async (req, res) => {
-  // Get repo, owner, branch, prompt from query params
   const { repo, owner, branch, prompt } = req.query;
   if (!prompt || !repo || !owner) {
     res.status(400).json({ error: 'Missing repo, owner, or prompt' });
     return;
   }
 
-  // Use the user's GitHub token if logged in, otherwise fallback to environment token (if any)
   let userToken = req.session.githubToken || process.env.GITHUB_TOKEN;
   if (!userToken) {
     res.status(401).json({ error: 'No GitHub token available' });
@@ -157,12 +158,10 @@ app.get('/stream', async (req, res) => {
   });
 });
 
-// ─── Setup endpoint (optional – returns 404 if not implemented) ──
 app.get('/setup', (req, res) => {
   res.status(404).send('Setup not available');
 });
 
-// ─── Serve the main HTML (fallback) ─────────────────────
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
