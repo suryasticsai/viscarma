@@ -15,37 +15,27 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: true,          // required for HTTPS (Render)
-    sameSite: 'none',      // needed for cross-site redirect from GitHub
+    secure: true,
+    sameSite: 'lax',          // ← changed from 'none' to 'lax'
     maxAge: 24 * 60 * 60 * 1000,
-    path: '/'              // ensure cookie is sent for all routes
+    path: '/',
+    domain: 'viscarma.onrender.com'   // ← explicit domain
   }
 }));
 
-// ─── Log session for debugging ─────────────────────────
+// ─── Logging middleware ─────────────────────────────────
 app.use((req, res, next) => {
-  console.log(`[Session] ID: ${req.sessionID}, Token: ${req.session.githubToken ? 'present' : 'missing'}`);
+  console.log(`[Session] ID: ${req.sessionID}, Token: ${req.session.githubToken ? 'present' : 'missing'}, Cookies: ${req.headers.cookie || 'none'}`);
   next();
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── Auth status ────────────────────────────────────────
 app.get('/api/auth/status', (req, res) => {
   const isLoggedIn = !!req.session.githubToken;
-  console.log(`Auth status check: loggedIn=${isLoggedIn}`);
   res.json({
     oauthEnabled: OAUTH_ENABLED,
     authenticated: isLoggedIn,
-  });
-});
-
-// ─── Debug session (optional) ──────────────────────────
-app.get('/api/debug-session', (req, res) => {
-  res.json({
-    sessionID: req.sessionID,
-    githubToken: req.session.githubToken ? 'present' : 'missing',
-    cookies: req.headers.cookie,
   });
 });
 
@@ -82,11 +72,20 @@ if (OAUTH_ENABLED) {
         return res.status(500).send('No access token');
       }
       console.log('Access token obtained');
-      
+
       // Store token in session
       req.session.githubToken = accessToken;
-      
-      // Save session explicitly and redirect
+
+      // ─── Manually set cookie as fallback ──────────────
+      res.cookie('github_token', accessToken, {
+        secure: true,
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000,
+        domain: 'viscarma.onrender.com',
+        path: '/'
+      });
+      console.log('Manual cookie set');
+
       req.session.save((err) => {
         if (err) {
           console.error('Session save error:', err);
@@ -102,11 +101,22 @@ if (OAUTH_ENABLED) {
   });
 
   app.get('/auth/logout', (req, res) => {
-    req.session.destroy(() => res.redirect('/'));
+    req.session.destroy(() => {
+      res.clearCookie('github_token', { domain: 'viscarma.onrender.com', path: '/' });
+      res.redirect('/');
+    });
   });
 
   app.get('/api/repos', async (req, res) => {
-    const token = req.session.githubToken;
+    // First check session, then fallback to manual cookie
+    let token = req.session.githubToken || req.cookies?.github_token;
+    if (!token) {
+      // If still no token, try to read from Authorization header (if client sends it)
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
+    }
     if (!token) {
       console.log('Repos request: no token');
       return res.status(401).json({ error: 'Not authenticated' });
@@ -144,7 +154,7 @@ app.get('/stream', async (req, res) => {
   }
 
   const repoPath = path.join(__dirname, '..', repo);
-  let userToken = req.session.githubToken || process.env.GITHUB_TOKEN;
+  let userToken = req.session.githubToken || req.cookies?.github_token || process.env.GITHUB_TOKEN;
   if (!userToken) {
     res.status(401).json({ error: 'No GitHub token available' });
     return;
