@@ -4,8 +4,9 @@
   "description": "The spy in your virtual space – offline AI agent for web apps",
   "main": "agent.js",
   "scripts": {
-    "start": "node agent.js"
-  },
+    "start": "node agent.js", 
+    "postinstall": "cp public/index.html ./"
+}, 
   "dependencies": {
     "@octokit/rest": "^20.1.1",
     "ollama": "^0.5.0",
