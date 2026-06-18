@@ -162,12 +162,14 @@ async function runMission(prompt, dynamicConfig = null) {
 
   const config = dynamicConfig || CONFIG;
 
-  // Override repoPath if --repo-path was provided
+  // ─── Parse CLI args ──────────────────────────────────
   const args = parseArgs(process.argv);
   if (args['repo-path']) {
     config.repoPath = args['repo-path'];
     console.log(`📁 Using repo path: ${config.repoPath}`);
   }
+  const username = args['username'] || 'unknown';
+  console.log(`👤 Username: ${username}`);
 
   console.log(`🕵️ VisCarma embarking on mission: "${prompt}"`);
   console.log(`🎯 Target: ${config.github.owner}/${config.github.repo} (branch: ${config.github.baseBranch})`);
@@ -181,7 +183,6 @@ async function runMission(prompt, dynamicConfig = null) {
       screenshotBase64 = captured.screenshotBase64;
       dom = captured.dom;
       consoleErrors = captured.consoleErrors;
-      // Save before screenshot
       if (screenshotBase64) {
         const filename = `before-${Date.now()}.png`;
         beforeScreenshotPath = saveScreenshot(screenshotBase64, filename);
@@ -198,7 +199,7 @@ async function runMission(prompt, dynamicConfig = null) {
   // Read all source files from the local clone
   const sourceFiles = getSourceFiles(config.repoPath);
 
-  // ─── TOOL USE: ESLint auto‑fix (Chapter 5) ─────────────
+  // ─── TOOL USE: ESLint auto‑fix ─────────────────────────
   try {
     console.log('🧹 Running ESLint auto‑fix on the repo...');
     execSync('npx eslint --fix .', { cwd: config.repoPath, stdio: 'inherit' });
@@ -212,7 +213,6 @@ async function runMission(prompt, dynamicConfig = null) {
   if (simpleFix && simpleFix.length > 0) {
     console.log('🔧 Simple bug detected — applying rule‑based fix...');
     const prUrl = await applyChangesAndOpenPR(config, simpleFix, effectivePrompt);
-    // After changes, capture after screenshot
     let afterScreenshotPath = null;
     if (config.appUrl) {
       try {
@@ -224,9 +224,9 @@ async function runMission(prompt, dynamicConfig = null) {
         }
       } catch (e) {}
     }
-    // Log mission
     saveLogEntry({
       agent: 'Rule-based',
+      username: username,
       prompt: effectivePrompt,
       success: !!prUrl,
       prUrl: prUrl || null,
@@ -240,6 +240,17 @@ async function runMission(prompt, dynamicConfig = null) {
     console.log(`⏱️  Mission ended at ${missionEnd.toLocaleTimeString()}`);
     console.log(`⌛ Total duration: ${duration} seconds`);
     console.log('🎯 Mission complete.');
+
+    // ─── Auto‑generate documentation ──────────────────────
+    if (prUrl) {
+      try {
+        const docPath = generateDocumentation();
+        console.log(`📄 Documentation generated at ${docPath}`);
+      } catch (e) {
+        console.error('Doc generation failed:', e);
+      }
+    }
+
     return prUrl;
   }
 
@@ -265,6 +276,7 @@ async function runMission(prompt, dynamicConfig = null) {
   // ─── Log mission ────────────────────────────────────────
   saveLogEntry({
     agent: agentName,
+    username: username,
     prompt: effectivePrompt,
     success: !!result,
     prUrl: result || null,
@@ -279,6 +291,17 @@ async function runMission(prompt, dynamicConfig = null) {
   console.log(`⏱️  Mission ended at ${missionEnd.toLocaleTimeString()}`);
   console.log(`⌛ Total duration: ${duration} seconds`);
   console.log('🎯 Mission complete.');
+
+  // ─── Auto‑generate documentation ──────────────────────
+  if (result) {
+    try {
+      const docPath = generateDocumentation();
+      console.log(`📄 Documentation generated at ${docPath}`);
+    } catch (e) {
+      console.error('Doc generation failed:', e);
+    }
+  }
+
   return result;
 }
 
@@ -311,7 +334,7 @@ if (require.main === module) {
 
     // ─── Special actions ──────────────────────────────────
 
-    // 1. Generate documentation
+    // 1. Generate documentation (standalone)
     if (args['generate-doc']) {
       console.log('📄 VisCarma is generating documentation...');
       const docPath = generateDocumentation();
@@ -333,7 +356,7 @@ if (require.main === module) {
 
     // ─── Normal mission flow ──────────────────────────────
 
-    const flags = ['repo', 'owner', 'base', 'app-url', 'repo-path', 'agent', 'action', 'pr-url', 'generate-doc'];
+    const flags = ['repo', 'owner', 'base', 'app-url', 'repo-path', 'agent', 'action', 'pr-url', 'generate-doc', 'username'];
     const missionWords = process.argv.slice(2).filter((_, i, arr) => {
       if (arr[i].startsWith('--')) {
         const key = arr[i].slice(2);
