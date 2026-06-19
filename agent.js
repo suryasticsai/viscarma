@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
@@ -66,7 +68,7 @@ async function interactiveConfig() {
 //  Agent Parsh – Bug Killer
 // ──────────────────────────────────────────────
 async function agentParsh(prompt, config) {
-  console.log('🪓 Agent Parsh is hunting bugs...');
+  console.log('🐛 Agent Parsh is hunting bugs...');
   const message = `Fix the bug: ${prompt}`;
   const changed = runAider(config.repoPath, message);
   if (changed) {
@@ -240,6 +242,7 @@ async function runMission(prompt, dynamicConfig = null) {
     console.log(`⏱️  Mission ended at ${missionEnd.toLocaleTimeString()}`);
     console.log(`⌛ Total duration: ${duration} seconds`);
     console.log('🎯 Mission complete.');
+
     if (prUrl) {
       try {
         const docPath = generateDocumentation();
@@ -248,6 +251,7 @@ async function runMission(prompt, dynamicConfig = null) {
         console.error('Doc generation failed:', e);
       }
     }
+
     return prUrl;
   }
 
@@ -270,6 +274,13 @@ async function runMission(prompt, dynamicConfig = null) {
     }
   }
 
+  // ─── Detect changed files (FIX) ────────────────────────
+  let changedFiles = [];
+  if (result) {
+    changedFiles = detectChanges(config.repoPath);
+    console.log(`📁 Changed files: ${changedFiles.join(', ') || 'none'}`);
+  }
+
   // ─── Log mission ────────────────────────────────────────
   saveLogEntry({
     agent: agentName,
@@ -279,7 +290,7 @@ async function runMission(prompt, dynamicConfig = null) {
     prUrl: result || null,
     beforeScreenshot: beforeScreenshotPath,
     afterScreenshot: afterScreenshotPath,
-    filesChanged: result ? ['unknown'] : [],
+    filesChanged: changedFiles,   // ✅ now actual file list
     error: null
   });
 
@@ -288,6 +299,7 @@ async function runMission(prompt, dynamicConfig = null) {
   console.log(`⏱️  Mission ended at ${missionEnd.toLocaleTimeString()}`);
   console.log(`⌛ Total duration: ${duration} seconds`);
   console.log('🎯 Mission complete.');
+
   if (result) {
     try {
       const docPath = generateDocumentation();
@@ -296,6 +308,7 @@ async function runMission(prompt, dynamicConfig = null) {
       console.error('Doc generation failed:', e);
     }
   }
+
   return result;
 }
 
@@ -328,7 +341,7 @@ if (require.main === module) {
 
     // ─── Special actions ──────────────────────────────────
 
-    // 1. Generate documentation
+    // 1. Generate documentation (standalone)
     if (args['generate-doc']) {
       console.log('📄 VisCarma is generating documentation...');
       const docPath = generateDocumentation();
