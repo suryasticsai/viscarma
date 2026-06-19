@@ -63,11 +63,16 @@ async function interactiveConfig() {
 }
 
 // ──────────────────────────────────────────────
-//  Agent Parsh – Bug Killer
+//  Agent Parsh – Bug Killer (with removal prompt)
 // ──────────────────────────────────────────────
 async function agentParsh(prompt, config) {
   console.log('🐛 Agent Parsh is hunting bugs...');
-  const message = `Fix the bug: ${prompt}`;
+  let message = prompt;
+  if (prompt.toLowerCase().includes('remove') || prompt.toLowerCase().includes('delete')) {
+    message = `Remove all <header> and <footer> elements from index.html. Delete the opening and closing tags and everything inside them. If they are already removed, do nothing.`;
+  } else {
+    message = `Fix the bug: ${prompt}`;
+  }
   const changed = runAider(config.repoPath, message);
   if (changed) {
     const changes = detectChanges(config.repoPath);
@@ -103,7 +108,10 @@ async function agentParth(prompt, config) {
   console.log('🧭 Agent Parth is analyzing the mission...');
 
   const lower = prompt.toLowerCase();
-  if (lower.includes('bug') || lower.includes('fix') || lower.includes('error') || lower.includes('issue')) {
+  if (lower.includes('remove') || lower.includes('delete') || lower.includes('clean')) {
+    console.log('🔀 Routing to Agent Parsh (Removal/Deletion)');
+    return await agentParsh(prompt, config);
+  } else if (lower.includes('bug') || lower.includes('fix') || lower.includes('error') || lower.includes('issue')) {
     console.log('🔀 Routing to Agent Parsh (Bug Killer)');
     return await agentParsh(prompt, config);
   } else if (lower.includes('feature') || lower.includes('new') || lower.includes('add') || lower.includes('implement')) {
@@ -241,7 +249,6 @@ async function runMission(prompt, dynamicConfig = null) {
     console.log(`⌛ Total duration: ${duration} seconds`);
     console.log('🎯 Mission complete.');
 
-    // ─── Auto‑generate documentation ──────────────────────
     if (prUrl) {
       try {
         const docPath = generateDocumentation();
@@ -273,6 +280,13 @@ async function runMission(prompt, dynamicConfig = null) {
     }
   }
 
+  // ─── Detect changed files ──────────────────────────────
+  let changedFiles = [];
+  if (result) {
+    changedFiles = detectChanges(config.repoPath);
+    console.log(`📁 Changed files: ${changedFiles.join(', ') || 'none'}`);
+  }
+
   // ─── Log mission ────────────────────────────────────────
   saveLogEntry({
     agent: agentName,
@@ -282,7 +296,7 @@ async function runMission(prompt, dynamicConfig = null) {
     prUrl: result || null,
     beforeScreenshot: beforeScreenshotPath,
     afterScreenshot: afterScreenshotPath,
-    filesChanged: result ? ['unknown'] : [],
+    filesChanged: changedFiles,
     error: null
   });
 
@@ -292,7 +306,6 @@ async function runMission(prompt, dynamicConfig = null) {
   console.log(`⌛ Total duration: ${duration} seconds`);
   console.log('🎯 Mission complete.');
 
-  // ─── Auto‑generate documentation ──────────────────────
   if (result) {
     try {
       const docPath = generateDocumentation();
