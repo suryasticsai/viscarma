@@ -1,5 +1,5 @@
 const express = require('express');
-const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const axios = require('axios');
 const { spawn } = require('child_process');
 const path = require('path');
@@ -9,33 +9,14 @@ const PORT = process.env.PORT || 9000;
 
 const OAUTH_ENABLED = !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 
-// ─── Session configuration ──────────────────────────────
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: true,
-    sameSite: 'lax',          // ← changed from 'none' to 'lax'
-    maxAge: 24 * 60 * 60 * 1000,
-    path: '/',
-    domain: 'viscarma.onrender.com'   // ← explicit domain
-  }
-}));
-
-// ─── Logging middleware ─────────────────────────────────
-app.use((req, res, next) => {
-  console.log(`[Session] ID: ${req.sessionID}, Token: ${req.session.githubToken ? 'present' : 'missing'}, Cookies: ${req.headers.cookie || 'none'}`);
-  next();
-});
-
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/auth/status', (req, res) => {
-  const isLoggedIn = !!req.session.githubToken;
+  const token = req.cookies.github_token;
   res.json({
     oauthEnabled: OAUTH_ENABLED,
-    authenticated: isLoggedIn,
+    authenticated: !!token,
   });
 });
 
@@ -45,18 +26,13 @@ if (OAUTH_ENABLED) {
     const host = req.get('host');
     const redirectUri = `https://${host}/auth/github/callback`;
     const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo`;
-    console.log(`Redirecting to GitHub: ${githubAuthUrl}`);
     res.redirect(githubAuthUrl);
   });
 
   app.get('/auth/github/callback', async (req, res) => {
     const code = req.query.code;
-    if (!code) {
-      console.error('Missing code in callback');
-      return res.status(400).send('Missing code');
-    }
+    if (!code) return res.status(400).send('Missing code');
     try {
-      console.log('Exchanging code for token...');
       const tokenResponse = await axios.post(
         'https://github.com/login/oauth/access_token',
         {
@@ -67,60 +43,30 @@ if (OAUTH_ENABLED) {
         { headers: { Accept: 'application/json' } }
       );
       const accessToken = tokenResponse.data.access_token;
-      if (!accessToken) {
-        console.error('No access token received');
-        return res.status(500).send('No access token');
-      }
-      console.log('Access token obtained');
-
-      // Store token in session
-      req.session.githubToken = accessToken;
-
-      // ─── Manually set cookie as fallback ──────────────
+      if (!accessToken) throw new Error('No access token');
       res.cookie('github_token', accessToken, {
         secure: true,
+        httpOnly: true,
         sameSite: 'lax',
         maxAge: 24 * 60 * 60 * 1000,
-        domain: 'viscarma.onrender.com',
-        path: '/'
+        path: '/',
+        domain: 'viscarma.onrender.com'   // remove for local testing
       });
-      console.log('Manual cookie set');
-
-      req.session.save((err) => {
-        if (err) {
-          console.error('Session save error:', err);
-          return res.status(500).send('Session save failed');
-        }
-        console.log('Session saved successfully, redirecting to /');
-        res.redirect('/');
-      });
+      res.redirect('/');
     } catch (err) {
-      console.error('OAuth error:', err.response?.data || err.message);
-      res.status(500).send(`OAuth failed: ${err.message}`);
+      console.error('OAuth error:', err.message);
+      res.status(500).send('OAuth failed');
     }
   });
 
   app.get('/auth/logout', (req, res) => {
-    req.session.destroy(() => {
-      res.clearCookie('github_token', { domain: 'viscarma.onrender.com', path: '/' });
-      res.redirect('/');
-    });
+    res.clearCookie('github_token', { path: '/' });
+    res.redirect('/');
   });
 
   app.get('/api/repos', async (req, res) => {
-    // First check session, then fallback to manual cookie
-    let token = req.session.githubToken || req.cookies?.github_token;
-    if (!token) {
-      // If still no token, try to read from Authorization header (if client sends it)
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.split(' ')[1];
-      }
-    }
-    if (!token) {
-      console.log('Repos request: no token');
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
+    const token = req.cookies.github_token;
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
     try {
       const response = await axios.get('https://api.github.com/user/repos', {
         headers: { Authorization: `Bearer ${token}` },
@@ -134,7 +80,7 @@ if (OAUTH_ENABLED) {
       }));
       res.json(repos);
     } catch (err) {
-      console.error('Repo fetch error:', err.response?.data || err.message);
+      console.error('Repo fetch error:', err.message);
       res.status(500).json({ error: 'Failed to fetch repos' });
     }
   });
@@ -145,16 +91,30 @@ if (OAUTH_ENABLED) {
   app.get('/api/repos', (req, res) => res.status(404).json({ error: 'OAuth not configured' }));
 }
 
+// ─── Helper to detect agent from output ────────────────
+function detectAgentFromLine(line) {
+  if (line.includes('Agent Parsh')) return 'Parsh';
+  if (line.includes('Agent Krish')) return 'Krish';
+  if (line.includes('Agent Parth')) return 'Parth';
+  if (line.includes('Aider') || line.includes('aider')) return 'Parth';
+  if (line.includes('✅ PR created')) return 'VisCarma';
+  if (line.includes('Mission complete')) return 'VisCarma';
+  if (line.includes('📸 After screenshot')) return 'VisCarma';
+  return 'System';
+}
+
 // ─── Streaming mission ──────────────────────────────────
 app.get('/stream', async (req, res) => {
   const { repo, owner, branch, prompt } = req.query;
+  const username = req.query.username || 'unknown';
+
   if (!prompt || !repo || !owner) {
     res.status(400).json({ error: 'Missing repo, owner, or prompt' });
     return;
   }
 
   const repoPath = path.join(__dirname, '..', repo);
-  let userToken = req.session.githubToken || req.cookies?.github_token || process.env.GITHUB_TOKEN;
+  let userToken = req.cookies?.github_token || process.env.GITHUB_TOKEN;
   if (!userToken) {
     res.status(401).json({ error: 'No GitHub token available' });
     return;
@@ -171,8 +131,11 @@ app.get('/stream', async (req, res) => {
     '--owner', owner,
     '--base', branch || 'main',
     '--repo-path', repoPath,
+    '--username', username,
     prompt
   ];
+
+  console.log('🚀 Launching agent with args:', args);
 
   const child = spawn('node', args, {
     cwd: __dirname,
@@ -185,15 +148,69 @@ app.get('/stream', async (req, res) => {
     'Connection': 'keep-alive',
   });
 
+  // ─── Buffer for code blocks ────────────────────────────
+  let buffer = '';
+  let inCodeBlock = false;
+  let codeBlockContent = '';
+
+  const sendMessage = (agentName, content) => {
+    res.write(`data: ${JSON.stringify({ type: 'output', content, agent: agentName })}\n\n`);
+  };
+
+  const processLine = (line) => {
+    const trimmed = line.trim();
+    if (trimmed === '') return;
+
+    // Detect code block start
+    if (trimmed.startsWith('```')) {
+      if (!inCodeBlock) {
+        inCodeBlock = true;
+        codeBlockContent = trimmed + '\n';
+      } else {
+        // Closing backticks
+        codeBlockContent += trimmed;
+        // Send the complete code block as one message
+        const agent = detectAgentFromLine(line);
+        sendMessage(agent, codeBlockContent);
+        inCodeBlock = false;
+        codeBlockContent = '';
+      }
+      return;
+    }
+
+    if (inCodeBlock) {
+      codeBlockContent += line + '\n';
+      return;
+    }
+
+    // Regular line – send immediately
+    const agent = detectAgentFromLine(line);
+    sendMessage(agent, line);
+  };
+
   child.stdout.on('data', (data) => {
-    res.write(`data: ${JSON.stringify({ type: 'output', content: data.toString() })}\n\n`);
+    const chunk = data.toString();
+    buffer += chunk;
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      processLine(line);
+    }
   });
 
   child.stderr.on('data', (data) => {
-    res.write(`data: ${JSON.stringify({ type: 'error', content: data.toString() })}\n\n`);
+    // Send error lines as System
+    const chunk = data.toString();
+    const lines = chunk.split('\n');
+    for (const line of lines) {
+      if (line.trim()) {
+        sendMessage('System', '❌ ERROR: ' + line);
+      }
+    }
   });
 
   child.on('close', (code) => {
+    if (buffer) processLine(buffer);
     res.write(`data: ${JSON.stringify({ type: 'done', content: `Process exited with code ${code}` })}\n\n`);
     res.end();
   });
