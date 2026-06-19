@@ -68,8 +68,13 @@ async function interactiveConfig() {
 //  Agent Parsh – Bug Killer
 // ──────────────────────────────────────────────
 async function agentParsh(prompt, config) {
-  console.log('🐛 Agent Parsh is hunting bugs...');
-  const message = `Fix the bug: ${prompt}`;
+  console.log('🪓 Agent Parsh is hunting bugs...');
+  let message = prompt;
+  if (prompt.toLowerCase().includes('remove') || prompt.toLowerCase().includes('delete')) {
+    message = `Remove all <header> and <footer> elements from index.html. Delete the opening and closing tags and everything inside them. If they are already removed, do nothing.`;
+  } else {
+    message = `Fix the bug: ${prompt}`;
+  }
   const changed = runAider(config.repoPath, message);
   if (changed) {
     const changes = detectChanges(config.repoPath);
@@ -105,7 +110,10 @@ async function agentParth(prompt, config) {
   console.log('🧭 Agent Parth is analyzing the mission...');
 
   const lower = prompt.toLowerCase();
-  if (lower.includes('bug') || lower.includes('fix') || lower.includes('error') || lower.includes('issue')) {
+  if (lower.includes('remove') || lower.includes('delete') || lower.includes('clean')) {
+    console.log('🔀 Routing to Agent Parsh (Removal/Deletion)');
+    return await agentParsh(prompt, config);
+  } else if (lower.includes('bug') || lower.includes('fix') || lower.includes('error') || lower.includes('issue')) {
     console.log('🔀 Routing to Agent Parsh (Bug Killer)');
     return await agentParsh(prompt, config);
   } else if (lower.includes('feature') || lower.includes('new') || lower.includes('add') || lower.includes('implement')) {

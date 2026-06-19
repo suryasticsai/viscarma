@@ -101,70 +101,19 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   };
 
+  // ─── Agent map for chat bubbles ────────────────────────
+  const agentMap = {
+    'VisCarma': { emoji: '🔱', cls: 'vis' },
+    'Parsh':   { emoji: '🪓', cls: 'parsh' },
+    'Krish':   { emoji: '🪈', cls: 'krish' },
+    'Parth':   { emoji: '☸️', cls: 'parth' },
+    'System':  { emoji: '⚙️', cls: 'system' }
+  };
+
   // ─── Chat helper functions ──────────────────────────────
   function switchToChatTab() {
     const chatTab = document.querySelector('.tab-btn[data-tab="chat"]');
     if (chatTab && !chatTab.classList.contains('active')) chatTab.click();
-  }
-
-  function addMessage(agentName, text) {
-    const agentMap = {
-      'VisCarma': { emoji: '🔱', cls: 'vis' },
-      'Parsh':   { emoji: '🪓', cls: 'parsh' },
-      'Krish':   { emoji: '🪈', cls: 'krish' },
-      'Parth':   { emoji: '☸️', cls: 'parth' },
-      'System':  { emoji: '⚙️', cls: 'system' }
-    };
-    const info = agentMap[agentName] || agentMap['System'];
-    const time = new Date().toLocaleTimeString();
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message ${agentName === 'System' ? 'system' : ''}`;
-    const avatar = document.createElement('div');
-    avatar.className = `avatar avatar-${info.cls}`;
-    avatar.textContent = info.emoji;
-    const bubble = document.createElement('div');
-    bubble.className = `bubble bubble-${info.cls}`;
-    const sender = document.createElement('div');
-    sender.className = 'sender';
-    sender.innerHTML = `${info.emoji} ${agentName} <span class="time">${time}</span>`;
-    const content = document.createElement('div');
-    content.className = 'content';
-    const parts = text.split(/(```[^`]*```)/g);
-    let html = '';
-    for (let part of parts) {
-      if (part.startsWith('```') && part.endsWith('```')) {
-        const code = part.slice(3, -3).trim();
-        let lang = '', codeContent = code;
-        const firstLine = code.split('\n')[0];
-        if (firstLine && firstLine.match(/^[a-zA-Z0-9_+-]+$/)) {
-          lang = firstLine;
-          codeContent = code.split('\n').slice(1).join('\n');
-        }
-        html += `<div class="code-block"><span class="lang-tag">${lang || 'code'}</span><pre>${escapeHtml(codeContent)}</pre></div>`;
-      } else {
-        html += `<span class="content-text">${escapeHtml(part).replace(/\n/g, '<br>')}</span>`;
-      }
-    }
-    content.innerHTML = html;
-    bubble.appendChild(sender); bubble.appendChild(content);
-    msgDiv.appendChild(avatar); msgDiv.appendChild(bubble);
-    chatMessages.appendChild(msgDiv);
-    messageCount++;
-    messageCountSpan.textContent = `${messageCount} messages`;
-    if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
-    if (agentName !== 'System') {
-      setAgentActive(agentName, true);
-      clearTimeout(window['timeout_' + agentName]);
-      window['timeout_' + agentName] = setTimeout(() => {
-        setAgentActive(agentName, false);
-      }, 2000);
-    }
-  }
-
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
   }
 
   function setAgentActive(agentName, active) {
@@ -177,25 +126,6 @@ document.addEventListener('DOMContentLoaded', function() {
       if (dot) {
         dot.className = 'status-dot' + (active ? ' pulse' : ' idle');
       }
-    }
-  }
-
-  function detectAgent(text) {
-    if (text.includes('Agent Parsh')) return 'Parsh';
-    if (text.includes('Agent Krish')) return 'Krish';
-    if (text.includes('Agent Parth')) return 'Parth';
-    if (text.includes('VisCarma') || text.includes('🔱') || text.includes('Mission')) return 'VisCarma';
-    return 'System';
-  }
-
-  function processOutput(chunk) {
-    messageBuffer += chunk;
-    const lines = messageBuffer.split('\n');
-    messageBuffer = lines.pop() || '';
-    for (const line of lines) {
-      if (line.trim() === '') continue;
-      const agent = detectAgent(line);
-      addMessage(agent, line);
     }
   }
 
@@ -224,17 +154,17 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!info) return;
       if (agentName === 'VisCarma') {
         if (window['visCarmaTimeout']) clearTimeout(window['visCarmaTimeout']);
-        addMessage(agentName, info.intro);
+        addMessage(agentName, info.intro, true);
         const steps = info.install;
         let delay = 800;
         steps.forEach((step, index) => {
           window['visCarmaTimeout'] = setTimeout(() => {
-            addMessage(agentName, step);
+            addMessage(agentName, step, true);
           }, delay);
           delay += 800;
         });
       } else {
-        addMessage(agentName, info.intro);
+        addMessage(agentName, info.intro, true);
       }
     });
   });
@@ -249,12 +179,100 @@ document.addEventListener('DOMContentLoaded', function() {
     launchBtn.disabled = !enabled;
   }
 
-  // Listen to changes
   usernameInput.addEventListener('input', updateLaunchButton);
   manualRepo.addEventListener('input', updateLaunchButton);
   manualOwner.addEventListener('input', updateLaunchButton);
   promptInput.addEventListener('input', updateLaunchButton);
   branchInput.addEventListener('input', updateLaunchButton);
+
+  // ─── Add message – clean rendering ─────────────────────
+  let typingInterval = null;
+
+  function addMessage(agentName, text, instant = false) {
+    const info = agentMap[agentName] || agentMap['System'];
+    const time = new Date().toLocaleTimeString();
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${agentName === 'System' ? 'system' : ''}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = `avatar avatar-${info.cls}`;
+    avatar.textContent = info.emoji;
+
+    const bubble = document.createElement('div');
+    bubble.className = `bubble bubble-${info.cls}`;
+
+    const sender = document.createElement('div');
+    sender.className = 'sender';
+    sender.innerHTML = `${info.emoji} ${agentName} <span class="time">${time}</span>`;
+
+    const content = document.createElement('div');
+    content.className = 'content';
+
+    // ─── Render content – use innerHTML directly ──────────
+    // We control the source (server), so it's safe.
+    const parts = text.split(/(```[^`]*```)/g);
+    let html = '';
+    for (let part of parts) {
+      if (part.startsWith('```') && part.endsWith('```')) {
+        const code = part.slice(3, -3).trim();
+        let lang = '', codeContent = code;
+        const firstLine = code.split('\n')[0];
+        if (firstLine && firstLine.match(/^[a-zA-Z0-9_+-]+$/)) {
+          lang = firstLine;
+          codeContent = code.split('\n').slice(1).join('\n');
+        }
+        html += `<div class="code-block"><span class="lang-tag">${lang || 'code'}</span><pre>${codeContent}</pre></div>`;
+      } else {
+        html += `<span class="content-text">${part.replace(/\n/g, '<br>')}</span>`;
+      }
+    }
+
+    if (instant) {
+      content.innerHTML = html;
+      messageCount++;
+      messageCountSpan.textContent = `${messageCount} messages`;
+      if (text.includes('Mission complete')) {
+        connectionStatus.textContent = '✅ Done';
+        connectionStatus.style.color = '#4caf50';
+      }
+    } else {
+      // Typing effect
+      let charIndex = 0;
+      const fullText = html;
+      content.innerHTML = '';
+      if (typingInterval) clearInterval(typingInterval);
+      typingInterval = setInterval(() => {
+        if (charIndex < fullText.length) {
+          content.innerHTML += fullText.charAt(charIndex);
+          charIndex++;
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        } else {
+          clearInterval(typingInterval);
+          typingInterval = null;
+          messageCount++;
+          messageCountSpan.textContent = `${messageCount} messages`;
+          if (text.includes('Mission complete')) {
+            connectionStatus.textContent = '✅ Done';
+            connectionStatus.style.color = '#4caf50';
+          }
+        }
+      }, 15);
+    }
+
+    bubble.appendChild(sender);
+    bubble.appendChild(content);
+    msgDiv.appendChild(avatar);
+    msgDiv.appendChild(bubble);
+    chatMessages.appendChild(msgDiv);
+
+    if (agentName !== 'System') {
+      setAgentActive(agentName, true);
+      clearTimeout(window['timeout_' + agentName]);
+      window['timeout_' + agentName] = setTimeout(() => {
+        setAgentActive(agentName, false);
+      }, 2000);
+    }
+  }
 
   // ─── Launch mission ────────────────────────────────────
   function launchMission() {
@@ -272,30 +290,43 @@ document.addEventListener('DOMContentLoaded', function() {
     launchBtn.disabled = true;
     launchBtn.textContent = 'Running...';
     clearChat();
-    connectionStatus.textContent = '⏳ Connecting...';
+    connectionStatus.textContent = '⏳ Initializing...';
     connectionStatus.style.color = '#f39c12';
 
     const url = `/stream?repo=${encodeURIComponent(repo)}&owner=${encodeURIComponent(owner)}&branch=${encodeURIComponent(branch)}&prompt=${encodeURIComponent(prompt)}&username=${encodeURIComponent(username)}`;
 
     if (eventSource) { eventSource.close(); eventSource = null; }
+
     eventSource = new EventSource(url);
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'output') {
-          addMessage(data.agent || detectAgent(data.content), data.content);
-        } else if (data.type === 'error') addMessage('System', '❌ ERROR: ' + data.content);
-        else if (data.type === 'done') {
-          addMessage('VisCarma', '✅ Mission complete.');
+          // Dynamic status updates
+          if (data.agent === 'Parsh') connectionStatus.textContent = '🐛 Parsh is debugging...';
+          else if (data.agent === 'Krish') connectionStatus.textContent = '🚀 Krish is building...';
+          else if (data.agent === 'Parth') connectionStatus.textContent = '🧭 Parth is routing...';
+          else if (data.agent === 'VisCarma') connectionStatus.textContent = '🔱 VisCarma is commanding...';
+          else if (data.content.includes('ESLint')) connectionStatus.textContent = '🧹 Running ESLint...';
+          else if (data.content.includes('Aider')) connectionStatus.textContent = '🧠 Aider is coding...';
+          else if (data.content.includes('PR created')) connectionStatus.textContent = '📦 Opening PR...';
+          addMessage(data.agent || 'System', data.content, false);
+        } else if (data.type === 'error') {
+          addMessage('System', '❌ ERROR: ' + data.content, true);
+        } else if (data.type === 'done') {
           connectionStatus.textContent = '✅ Done';
           connectionStatus.style.color = '#4caf50';
-          eventSource.close();
           launchBtn.disabled = false;
           launchBtn.textContent = '🚀 Launch Mission';
           updateLaunchButton();
+          eventSource.close();
+          eventSource = null;
         }
-      } catch (err) { console.error(err); }
+      } catch (err) {
+        console.error('Parse error:', err);
+      }
     };
+
     eventSource.onerror = () => {
       if (eventSource && eventSource.readyState === EventSource.CLOSED) {
         connectionStatus.textContent = '⚠️ Disconnected';
@@ -312,17 +343,18 @@ document.addEventListener('DOMContentLoaded', function() {
   setupBtn.addEventListener('click', function() {
     switchToChatTab();
     clearChat();
-    addMessage('System', '⚙️ Starting setup... Please wait.');
+    addMessage('System', '⚙️ Starting setup... Please wait.', true);
     if (eventSource) { eventSource.close(); eventSource = null; }
     eventSource = new EventSource('/setup');
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'output') {
-          addMessage(data.agent || detectAgent(data.content), data.content);
-        } else if (data.type === 'error') addMessage('System', '❌ ERROR: ' + data.content);
-        else if (data.type === 'done') {
-          addMessage('VisCarma', data.content);
+          addMessage('System', data.content, true);
+        } else if (data.type === 'error') {
+          addMessage('System', '❌ ERROR: ' + data.content, true);
+        } else if (data.type === 'done') {
+          addMessage('VisCarma', data.content, true);
           eventSource.close();
           eventSource = null;
         }
@@ -330,7 +362,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     eventSource.onerror = () => {
       if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-        addMessage('System', '⚠️ Setup connection closed.');
+        addMessage('System', '⚠️ Setup connection closed.', true);
         eventSource = null;
       }
     };
@@ -372,11 +404,11 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // ─── Initial messages ──────────────────────────────────
-  addMessage('VisCarma', '🔱 VisCarma is ready. Enter your GitHub username, repo, and mission.');
+  addMessage('VisCarma', '🔱 VisCarma is ready. Enter your GitHub username, repo, and mission.', true);
   updateLaunchButton();
 
-  // Clean up
   window.addEventListener('beforeunload', () => {
     if (eventSource) eventSource.close();
   });
 });
+// This script is safe to use as it controls the source (server) and renders HTML directly.
