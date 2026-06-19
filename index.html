@@ -1,743 +1,13 @@
+<!-- VisCarma v0.1.0 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VisCarma – DevAIne Agent</title>
+  <link rel="stylesheet" href="style.css">
   <script src="avatars.js" defer></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #0f0f1a;
-      color: #e0e0e0;
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    .bg-glow {
-      position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      pointer-events: none;
-      z-index: 0;
-      background:
-        radial-gradient(circle at 10% 20%, rgba(212,175,55,0.04), transparent 40%),
-        radial-gradient(circle at 90% 80%, rgba(212,175,55,0.04), transparent 40%),
-        radial-gradient(circle at 50% 50%, rgba(212,175,55,0.02), transparent 70%);
-    }
-    .topbar {
-      position: relative;
-      z-index: 10;
-      background: #1a1a2e;
-      padding: 12px 28px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid #3a3a5a;
-      flex-shrink: 0;
-      backdrop-filter: blur(8px);
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .topbar h1 {
-      font-size: 1.6rem;
-      color: #d4af37;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      letter-spacing: 0.5px;
-    }
-    .topbar h1 span { font-size: 2rem; }
-    .topbar h1 small {
-      font-size: 1rem;
-      font-weight: 400;
-      color: #888;
-      margin-left: 4px;
-    }
-    .topbar-actions {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-left: auto;
-    }
-    .topbar-actions button {
-      background: #2a2a44;
-      border: 1px solid #3a3a5a;
-      color: #ccc;
-      padding: 6px 16px;
-      border-radius: 24px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      transition: all 0.2s;
-      font-weight: 500;
-    }
-    .topbar-actions button:hover {
-      background: #3a3a5a;
-      border-color: #d4af37;
-      color: #fff;
-    }
-    .topbar-actions button.danger:hover {
-      background: #8b2f3a;
-      border-color: #e74c3c;
-    }
-    .topbar-actions button.setup-btn {
-      background: #2e7d32;
-      border-color: #4caf50;
-      color: #fff;
-    }
-    .topbar-actions button.setup-btn:hover {
-      background: #4caf50;
-      border-color: #66bb6a;
-    }
-    .topbar-actions button.tab-btn {
-      background: transparent;
-      border: none;
-      color: #888;
-      font-weight: 600;
-      padding: 6px 18px;
-      border-bottom: 3px solid transparent;
-      border-radius: 0;
-    }
-    .topbar-actions button.tab-btn:hover {
-      color: #d4af37;
-      border-bottom-color: #d4af37;
-    }
-    .topbar-actions button.tab-btn.active {
-      color: #d4af37;
-      border-bottom-color: #d4af37;
-    }
-
-    /* ─── Auth in topbar ─── */
-    #auth-topbar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-left: 10px;
-    }
-    #auth-topbar .user-info {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: #ccc;
-      font-size: 0.9rem;
-    }
-    #auth-topbar .user-info .avatar-circle {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: #d4af37;
-      color: #0f0f1a;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 0.8rem;
-    }
-    #auth-topbar button {
-      background: #2a2a44;
-      border: 1px solid #3a3a5a;
-      color: #ccc;
-      padding: 4px 14px;
-      border-radius: 20px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      transition: all 0.2s;
-    }
-    #auth-topbar button:hover {
-      background: #3a3a5a;
-      border-color: #d4af37;
-      color: #fff;
-    }
-    #auth-topbar button.login-btn {
-      background: #d4af37;
-      color: #0f0f1a;
-      font-weight: 600;
-      border-color: #d4af37;
-      padding: 6px 18px;
-    }
-    #auth-topbar button.login-btn:hover {
-      background: #b8962c;
-    }
-    #auth-topbar #user-section {
-      display: none;
-      align-items: center;
-      gap: 8px;
-    }
-    #auth-topbar #login-section {
-      display: block;
-    }
-
-    .app {
-      position: relative;
-      z-index: 10;
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-
-    .sidebar {
-      width: 280px;
-      background: #16162a;
-      padding: 16px 14px;
-      border-right: 1px solid #2a2a44;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      flex-shrink: 0;
-      overflow-y: auto;
-    }
-    .sidebar .agent-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .sidebar .agent-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 12px;
-      border-radius: 12px;
-      background: #1e1e36;
-      border-left: 4px solid #555;
-      transition: all 0.2s;
-      cursor: pointer;
-    }
-    .sidebar .agent-item:hover {
-      background: #2a2a48;
-      border-left-color: #d4af37;
-    }
-    .sidebar .agent-item:active {
-      transform: scale(0.97);
-    }
-    .sidebar .agent-item canvas.avatar-canvas {
-      width: 48px;
-      height: 52px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      background: transparent;
-      pointer-events: none;
-    }
-    .sidebar .agent-item .info { flex: 1; pointer-events: none; }
-    .sidebar .agent-item .info .name { font-weight: 600; font-size: 0.95rem; }
-    .sidebar .agent-item .info .role { font-size: 0.75rem; color: #999; }
-    .sidebar .agent-item .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #4caf50;
-      flex-shrink: 0;
-      transition: all 0.3s;
-      pointer-events: none;
-    }
-    .sidebar .agent-item .status-dot.idle { background: #555; }
-    .sidebar .agent-item .status-dot.pulse {
-      background: #f1c40f;
-      box-shadow: 0 0 16px #f1c40f;
-      animation: pulse-dot 1s infinite;
-    }
-    @keyframes pulse-dot {
-      0% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.4); opacity: 0.6; }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    .agent-vis { border-left-color: #d4af37; }
-    .agent-parsh { border-left-color: #e74c3c; }
-    .agent-krish { border-left-color: #2ecc71; }
-    .agent-parth { border-left-color: #3498db; }
-
-    /* ─── Repo dropdown in sidebar ─── */
-    #repo-select-section {
-      background: #1a1a32;
-      border-radius: 14px;
-      padding: 14px 16px;
-      border: 1px solid #2a2a48;
-      margin-top: 4px;
-      display: none;
-    }
-    #repo-select-section label {
-      font-size: 0.75rem;
-      color: #aaa;
-      display: block;
-      margin-bottom: 4px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-    }
-    #repo-select-section select {
-      width: 100%;
-      background: #0f0f22;
-      border: 1px solid #2a2a44;
-      border-radius: 8px;
-      color: #e0e0e0;
-      padding: 6px 10px;
-      font-size: 0.9rem;
-      font-family: inherit;
-      transition: border 0.2s;
-    }
-    #repo-select-section select:focus {
-      outline: none;
-      border-color: #d4af37;
-    }
-    #repo-select-section .repo-owner-info {
-      font-size: 0.7rem;
-      color: #888;
-      margin-top: 4px;
-    }
-
-    /* ─── Manual inputs (offline mode) ──────────────── */
-    #manual-inputs {
-      background: #1a1a32;
-      border-radius: 14px;
-      padding: 14px 16px;
-      border: 1px solid #2a2a48;
-      margin-top: 4px;
-      display: none;
-    }
-    #manual-inputs label {
-      font-size: 0.75rem;
-      color: #aaa;
-      display: block;
-      margin-top: 6px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-    }
-    #manual-inputs input {
-      width: 100%;
-      background: #0f0f22;
-      border: 1px solid #2a2a44;
-      border-radius: 8px;
-      color: #e0e0e0;
-      padding: 6px 10px;
-      font-size: 0.9rem;
-      margin-top: 3px;
-      font-family: inherit;
-      transition: border 0.2s;
-    }
-    #manual-inputs input:focus {
-      outline: none;
-      border-color: #d4af37;
-    }
-
-    .mission-form {
-      background: #1a1a32;
-      border-radius: 14px;
-      padding: 16px;
-      border: 1px solid #2a2a48;
-      margin-top: 4px;
-    }
-    .mission-form label {
-      font-size: 0.75rem;
-      color: #aaa;
-      display: block;
-      margin-top: 6px;
-      letter-spacing: 0.3px;
-      font-weight: 600;
-    }
-    .mission-form input,
-    .mission-form textarea {
-      width: 100%;
-      background: #0f0f22;
-      border: 1px solid #2a2a44;
-      border-radius: 8px;
-      color: #e0e0e0;
-      padding: 8px 10px;
-      font-size: 0.9rem;
-      margin-top: 3px;
-      font-family: inherit;
-      transition: border 0.2s;
-    }
-    .mission-form input:focus,
-    .mission-form textarea:focus {
-      outline: none;
-      border-color: #d4af37;
-    }
-    .mission-form textarea { resize: vertical; min-height: 60px; }
-    .mission-form button {
-      width: 100%;
-      margin-top: 10px;
-      padding: 10px;
-      background: #d4af37;
-      color: #0f0f1a;
-      font-weight: 700;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 1rem;
-      transition: all 0.2s;
-    }
-    .mission-form button:hover:not(:disabled) { background: #b8962c; transform: scale(1.01); }
-    .mission-form button:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .main-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #12121f;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .tab-panel {
-      display: none;
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px 32px;
-    }
-    .tab-panel.active {
-      display: flex;
-      flex-direction: column;
-    }
-
-    #panel-chat .chat-messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: 0 4px 16px 0;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    #panel-chat .message {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-      animation: fadeIn 0.2s ease;
-    }
-    #panel-chat .message .avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 0.9rem;
-      color: #fff;
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-    #panel-chat .message .bubble {
-      background: #1e1e36;
-      padding: 10px 16px;
-      border-radius: 14px 14px 14px 4px;
-      max-width: 85%;
-      word-wrap: break-word;
-      line-height: 1.6;
-      font-size: 0.95rem;
-      border-left: 3px solid transparent;
-    }
-    #panel-chat .message .bubble .sender {
-      font-weight: 600;
-      font-size: 0.8rem;
-      margin-bottom: 4px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    #panel-chat .message .bubble .sender .time {
-      font-weight: normal;
-      color: #777;
-      font-size: 0.7rem;
-    }
-    #panel-chat .message .bubble .content {
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    #panel-chat .code-block {
-      background: #0a0a18;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin: 8px 0;
-      overflow-x: auto;
-      font-family: 'Courier New', monospace;
-      font-size: 0.85rem;
-      border: 1px solid #2a2a44;
-      position: relative;
-    }
-    #panel-chat .code-block .lang-tag {
-      position: absolute;
-      top: 6px;
-      right: 10px;
-      font-size: 0.7rem;
-      color: #888;
-      background: #1a1a2e;
-      padding: 2px 10px;
-      border-radius: 12px;
-    }
-    #panel-chat .code-block pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
-    .avatar-vis { background: #d4af37; color: #1a1a1a; }
-    .avatar-parsh { background: #e74c3c; }
-    .avatar-krish { background: #2ecc71; }
-    .avatar-parth { background: #3498db; }
-    .avatar-system { background: #555; }
-    .bubble-vis { border-left-color: #d4af37; }
-    .bubble-parsh { border-left-color: #e74c3c; }
-    .bubble-krish { border-left-color: #2ecc71; }
-    .bubble-parth { border-left-color: #3498db; }
-    .bubble-system { border-left-color: #888; }
-    #panel-chat .message.system .bubble { background: #1a1a2e; border-left-color: #888; }
-    #panel-chat .message.system .avatar { background: #555; }
-    @keyframes fadeIn {
-      0% { opacity: 0; transform: translateY(6px); }
-      100% { opacity: 1; transform: translateY(0); }
-    }
-
-    #panel-chat .chat-status {
-      padding: 8px 0;
-      font-size: 0.8rem;
-      color: #666;
-      display: flex;
-      justify-content: space-between;
-      border-top: 1px solid #1a1a2e;
-      margin-top: 8px;
-    }
-
-    /* ─── Notification bar ──────────────────────────────── */
-    #notification {
-      position: fixed;
-      top: 70px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #2a2a48;
-      border: 1px solid #d4af37;
-      color: #e0e0e0;
-      padding: 10px 24px;
-      border-radius: 12px;
-      font-size: 0.95rem;
-      z-index: 999;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-      display: none;
-      align-items: center;
-      gap: 12px;
-      backdrop-filter: blur(8px);
-      transition: opacity 0.3s;
-      max-width: 90%;
-    }
-    #notification .close-notif {
-      background: none;
-      border: none;
-      color: #888;
-      font-size: 1.2rem;
-      cursor: pointer;
-      padding: 0 4px;
-    }
-    #notification .close-notif:hover { color: #fff; }
-
-    /* ─── Docs & Prototype ───────────────────────────────── */
-    #panel-docs {
-      color: #ccc;
-      line-height: 1.7;
-    }
-    #panel-docs h2 {
-      color: #d4af37;
-      font-size: 2rem;
-      margin-bottom: 0.5rem;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    #panel-docs h3 {
-      color: #f0d060;
-      font-size: 1.4rem;
-      margin-top: 2rem;
-      margin-bottom: 0.5rem;
-      border-bottom: 1px solid #2a2a44;
-      padding-bottom: 6px;
-    }
-    #panel-docs h4 {
-      color: #d4af37;
-      font-size: 1.1rem;
-      margin-top: 1.5rem;
-      margin-bottom: 0.3rem;
-    }
-    #panel-docs p { margin-bottom: 1rem; }
-    #panel-docs ul, #panel-docs ol { padding-left: 1.8rem; margin-bottom: 1rem; }
-    #panel-docs li { margin-bottom: 0.4rem; }
-    #panel-docs code {
-      background: #1a1a2e;
-      padding: 2px 10px;
-      border-radius: 6px;
-      font-family: 'Courier New', monospace;
-      font-size: 0.9rem;
-      color: #f0d060;
-      border: 1px solid #2a2a44;
-    }
-    #panel-docs pre {
-      background: #0a0a18;
-      padding: 1rem 1.5rem;
-      border-radius: 10px;
-      overflow-x: auto;
-      border: 1px solid #2a2a44;
-      font-family: 'Courier New', monospace;
-      font-size: 0.9rem;
-      color: #d4d4d4;
-      margin: 1rem 0;
-    }
-    #panel-docs .badge {
-      display: inline-block;
-      background: #d4af37;
-      color: #0f0f1a;
-      padding: 2px 14px;
-      border-radius: 20px;
-      font-weight: 600;
-      font-size: 0.75rem;
-      margin-right: 6px;
-    }
-    .agent-grid-docs {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 1rem;
-      margin: 1rem 0;
-    }
-    .agent-card-docs {
-      background: #1a1a32;
-      border-radius: 14px;
-      padding: 1.2rem 1rem;
-      border-left: 5px solid #d4af37;
-      transition: transform 0.2s;
-    }
-    .agent-card-docs:hover { transform: translateY(-4px); }
-    .agent-card-docs .emoji { font-size: 2rem; display: block; }
-    .agent-card-docs .name { font-weight: 700; font-size: 1.1rem; color: #f0d060; }
-    .agent-card-docs .role { font-size: 0.85rem; color: #aaa; }
-
-    #panel-prototype {
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-    }
-    #panel-prototype .demo-card {
-      background: #1a1a32;
-      border-radius: 16px;
-      padding: 1.8rem 2rem;
-      border: 1px solid #2a2a48;
-      transition: all 0.3s;
-    }
-    #panel-prototype .demo-card:hover {
-      border-color: #d4af37;
-      box-shadow: 0 8px 30px rgba(212,175,55,0.08);
-    }
-    #panel-prototype .demo-card h3 {
-      color: #d4af37;
-      font-size: 1.2rem;
-      margin-bottom: 0.5rem;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    #panel-prototype .demo-card p {
-      color: #bbb;
-      line-height: 1.6;
-    }
-    #panel-prototype .demo-card .demo-badge {
-      display: inline-block;
-      background: #2a2a48;
-      color: #d4af37;
-      padding: 4px 14px;
-      border-radius: 20px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      margin-top: 8px;
-    }
-
-    .footer {
-      background: #12122a;
-      border-top: 1px solid #1a1a36;
-      flex-shrink: 0;
-      font-size: 0.8rem;
-      color: #666;
-      transition: all 0.2s;
-    }
-    .footer .footer-toggle {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 4px 0;
-      cursor: pointer;
-      color: #555;
-      font-size: 1rem;
-      user-select: none;
-    }
-    .footer .footer-toggle:hover { color: #aaa; }
-    .footer .footer-toggle .arrow { transition: transform 0.2s; display: inline-block; }
-    .footer .footer-toggle .arrow.collapsed { transform: rotate(-90deg); }
-    .footer .footer-content {
-      padding: 8px 28px 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 8px;
-      transition: max-height 0.3s ease, opacity 0.2s, padding 0.3s;
-      max-height: 200px;
-      opacity: 1;
-      overflow: hidden;
-    }
-    .footer .footer-content.hidden {
-      max-height: 0;
-      opacity: 0;
-      padding: 0 28px;
-    }
-    .footer a {
-      color: #d4af37;
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-    .footer a:hover { color: #f0d060; text-decoration: underline; }
-    .footer .links {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .footer .divider { color: #444; }
-    .footer .powered {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .sidebar::-webkit-scrollbar,
-    #panel-chat .chat-messages::-webkit-scrollbar,
-    #panel-docs::-webkit-scrollbar,
-    #panel-prototype::-webkit-scrollbar {
-      width: 5px;
-    }
-    .sidebar::-webkit-scrollbar-track,
-    #panel-chat .chat-messages::-webkit-scrollbar-track,
-    #panel-docs::-webkit-scrollbar-track,
-    #panel-prototype::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    .sidebar::-webkit-scrollbar-thumb,
-    #panel-chat .chat-messages::-webkit-scrollbar-thumb,
-    #panel-docs::-webkit-scrollbar-thumb,
-    #panel-prototype::-webkit-scrollbar-thumb {
-      background: #3a3a5a;
-      border-radius: 10px;
-    }
-    .sidebar::-webkit-scrollbar-thumb:hover,
-    #panel-chat .chat-messages::-webkit-scrollbar-thumb:hover,
-    #panel-docs::-webkit-scrollbar-thumb:hover,
-    #panel-prototype::-webkit-scrollbar-thumb:hover {
-      background: #4a4a6a;
-    }
-
-    @media (max-width: 768px) {
-      .app { flex-direction: column; }
-      .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #2a2a44; max-height: 400px; }
-      .topbar { flex-wrap: wrap; gap: 8px; }
-      .topbar-actions { flex-wrap: wrap; }
-      .tab-panel { padding: 16px; }
-      .agent-grid-docs { grid-template-columns: 1fr; }
-      #panel-prototype .demo-card { padding: 1.2rem; }
-      .footer .footer-content { flex-direction: column; align-items: flex-start; }
-    }
-  </style>
+  <script src="script.js" defer></script>
 </head>
 <body>
 
@@ -757,25 +27,11 @@
   </h1>
   <div class="topbar-actions">
     <button class="tab-btn active" data-tab="chat">📡 Mission</button>
-    <button class="tab-btn" data-tab="docs">📖 Docs</button>
-    <button class="tab-btn" data-tab="prototype">🚀 Prototype</button>
+    <button class="modal-btn" id="docsBtn">📖 Docs</button>
+    <button class="modal-btn" id="prototypeBtn">🚀 Prototype</button>
     <button id="setupBtn" class="setup-btn">⚙️ Setup</button>
     <button id="clearBtn" class="danger">🗑️ Clear</button>
     <button id="scrollLockBtn">🔒 Scroll Lock</button>
-
-    <!-- ─── AUTH IN TOP-RIGHT ─── -->
-    <div id="auth-topbar">
-      <div id="login-section">
-        <button id="loginBtn" class="login-btn">🔑 Login</button>
-      </div>
-      <div id="user-section">
-        <div class="user-info">
-          <div class="avatar-circle" id="userAvatar">U</div>
-          <span id="userName">User</span>
-        </div>
-        <button id="logoutBtn">Logout</button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -819,20 +75,14 @@
       </div>
     </div>
 
-    <!-- ─── Repo dropdown (appears after login) ────────── -->
-    <div id="repo-select-section">
-      <label for="repoSelect">Select Repository</label>
-      <select id="repoSelect">
-        <option value="">— Loading —</option>
-      </select>
-      <div class="repo-owner-info" id="repoOwnerDisplay">Owner: —</div>
-      <input type="hidden" id="repoOwner" value="">
-    </div>
-
-    <!-- ─── Manual inputs (offline mode) ────────────────── -->
+    <!-- ─── Manual inputs ────────────────────────────────── -->
     <div id="manual-inputs">
+      <label for="username">Your GitHub Username</label>
+      <input type="text" id="username" placeholder="e.g., suryasticsai" value="suryasticsai">
+
       <label for="manualRepo">Repository Name</label>
       <input type="text" id="manualRepo" value="viscarma-test">
+
       <label for="manualOwner">Owner</label>
       <input type="text" id="manualOwner" value="suryasticsai">
     </div>
@@ -843,570 +93,118 @@
       <input type="text" id="branch" value="main">
       <label for="prompt">Mission</label>
       <textarea id="prompt" rows="2">Add a to-do list feature to index.html</textarea>
-      <button type="submit" id="launchBtn" disabled>🚀 Launch Mission</button>
+      <button type="button" id="launchBtn" disabled>🚀 Launch Mission</button>
     </div>
   </aside>
 
-  <!-- Main Content -->
-  <div class="main-content">
-
-    <!-- Tab: Chat -->
-    <div id="panel-chat" class="tab-panel active">
-      <div class="chat-messages" id="chatMessages"></div>
-      <div class="chat-status">
-        <span id="connectionStatus">⚪ Disconnected</span>
-        <span id="messageCount">0 messages</span>
-      </div>
+  <!-- Main Content – Chat -->
+  <main class="chat">
+    <div class="chat-messages" id="chatMessages"></div>
+    <div class="chat-status">
+      <span id="connectionStatus">⚪ Disconnected</span>
+      <span id="messageCount">0 messages</span>
     </div>
 
-    <!-- Tab: Docs -->
-    <div id="panel-docs" class="tab-panel">
-      <h2>📖 Technical Documentation</h2>
-      <p><strong>VisCarma</strong> is a multi‑agent system that autonomously improves your codebase. It combines the power of large language models (via Ollama) with battle‑tested tools like <strong>Aider</strong>, <strong>ESLint</strong>, and <strong>Playwright</strong> to fix bugs, add features, and orchestrate GitHub pull requests – all offline and private.</p>
-      <h3>🤖 The Agents</h3>
-      <div class="agent-grid-docs">
-        <div class="agent-card-docs" style="border-left-color:#d4af37;"><span class="emoji">🔱</span><div class="name">VisCarma</div><div class="role">Supreme Commander</div><p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Oversees missions and provides final approval.</p></div>
-        <div class="agent-card-docs" style="border-left-color:#e74c3c;"><span class="emoji">🪓</span><div class="name">Parsh</div><div class="role">Bug Killer</div><p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Identifies and eliminates bugs and errors.</p></div>
-        <div class="agent-card-docs" style="border-left-color:#2ecc71;"><span class="emoji">🪈</span><div class="name">Krish</div><div class="role">Feature Inventor</div><p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Designs and implements new capabilities.</p></div>
-        <div class="agent-card-docs" style="border-left-color:#3498db;"><span class="emoji">☸️</span><div class="name">Parth</div><div class="role">The Driver</div><p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Routes tasks and orchestrates the workflow.</p></div>
+    <!-- Footer -->
+    <div class="footer">
+      <div class="footer-toggle" id="footerToggle">
+        <span class="arrow" id="footerArrow">▼</span>
+        <span style="margin-left:6px;">dyāvāpṛthivī janayan deva ekaḥ</span>
       </div>
-      <h3>🧩 Agentic Patterns Used</h3>
-      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem;">
-        <span class="badge">Prompt Chaining</span><span class="badge">Routing</span><span class="badge">Parallelization</span><span class="badge">Reflection</span><span class="badge">Tool Use</span><span class="badge">Planning</span><span class="badge">Multi-Agent Collaboration</span><span class="badge">Guardrails</span><span class="badge">Evaluation & Monitoring</span>
+      <div class="footer-content" id="footerContent">
+        <div class="links">
+          <span>🔱 VisCarma v1.2</span>
+          <span class="divider">|</span>
+          <span>Built by <a href="https://github.com/suryasticsai" target="_blank">Surya Sai Varakala</a></span>
+          <span class="divider">|</span>
+          <a href="https://github.com/suryasticsai/viscarma" target="_blank">📦 VisCarMA</a>
+          <a href="https://github.com/suryasticsai/SprintAnalyzer" target="_blank">🧪 SprintAnalyzer</a>
+          <a href="https://github.com/suryasticsai/alkembic" target="_blank">🔧 AlkembicNeo</a>
+          <a href="https://github.com/suryasticsai/ScrumLens" target="_blank">👁 ScrumLens</a>
+        </div>
+        <div class="powered">
+          <span>⚡ Powered by</span>
+          <a href="https://ollama.com" target="_blank" style="color:#6c6c8a;">Ollama</a>
+          <span>+</span>
+          <a href="https://aider.chat" target="_blank" style="color:#6c6c8a;">Aider</a>
+          <span>+</span>
+          <a href="https://playwright.dev" target="_blank" style="color:#6c6c8a;">Playwright</a>
+        </div>
       </div>
-      <h3>⚙️ Tech Stack</h3>
-      <p>Node.js · Python (Aider) · Ollama · qwen2.5-coder:7b · Aider · ESLint · Playwright · Octokit · HTML/CSS/JS</p>
-      <h3>📦 Quick Install</h3>
-      <pre><code>git clone https://github.com/suryasticsai/viscarma.git
+    </div>
+  </main>
+</div>
+
+<!-- ─── Docs Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="docsModal">
+  <div class="modal-content">
+    <button class="close-modal" data-modal="docsModal">✕</button>
+    <h2>📖 Technical Documentation</h2>
+    <p><strong>VisCarma</strong> is a multi‑agent system that autonomously improves your codebase. It combines the power of large language models (via Ollama) with battle‑tested tools like <strong>Aider</strong>, <strong>ESLint</strong>, and <strong>Playwright</strong> to fix bugs, add features, and orchestrate GitHub pull requests – all offline and private.</p>
+    <h3>🤖 The Agents</h3>
+    <div class="agent-grid-docs">
+      <div class="agent-card-docs" style="border-left-color:#d4af37;">
+        <span class="emoji">🔱</span>
+        <div class="name">VisCarma</div>
+        <div class="role">Supreme Commander</div>
+        <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Oversees missions and provides final approval.</p>
+      </div>
+      <div class="agent-card-docs" style="border-left-color:#e74c3c;">
+        <span class="emoji">🪓</span>
+        <div class="name">Parsh</div>
+        <div class="role">Bug Killer</div>
+        <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Identifies and eliminates bugs and errors.</p>
+      </div>
+      <div class="agent-card-docs" style="border-left-color:#2ecc71;">
+        <span class="emoji">🪈</span>
+        <div class="name">Krish</div>
+        <div class="role">Feature Inventor</div>
+        <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Designs and implements new capabilities.</p>
+      </div>
+      <div class="agent-card-docs" style="border-left-color:#3498db;">
+        <span class="emoji">☸️</span>
+        <div class="name">Parth</div>
+        <div class="role">The Driver</div>
+        <p style="color:#bbb; font-size:0.9rem; margin-top:4px;">Routes tasks and orchestrates the workflow.</p>
+      </div>
+    </div>
+    <h3>🧩 Agentic Patterns Used</h3>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem;">
+      <span class="badge">Prompt Chaining</span>
+      <span class="badge">Routing</span>
+      <span class="badge">Parallelization</span>
+      <span class="badge">Reflection</span>
+      <span class="badge">Tool Use</span>
+      <span class="badge">Planning</span>
+      <span class="badge">Multi-Agent Collaboration</span>
+      <span class="badge">Guardrails</span>
+      <span class="badge">Evaluation & Monitoring</span>
+    </div>
+    <h3>⚙️ Tech Stack</h3>
+    <p>Node.js · Python (Aider) · Ollama · qwen2.5-coder:7b · Aider · ESLint · Playwright · Octokit · HTML/CSS/JS</p>
+    <h3>📦 Quick Install</h3>
+    <pre><code>git clone https://github.com/suryasticsai/viscarma.git
 cd viscarma
 npm install
 python -m pip install aider-chat
 node server.js</code></pre>
-      <p>Then open <a href="http://localhost:9000" target="_blank" style="color:#d4af37;">http://localhost:9000</a></p>
-      <h3>🚀 Usage</h3>
-      <ol>
-        <li>Enter repo, owner, branch, and a mission prompt.</li>
-        <li>Click <strong>Launch Mission</strong> – watch the agents collaborate in real‑time.</li>
-        <li>A pull request will be opened on your repo.</li>
-      </ol>
-    </div>
-
-    <!-- Tab: Prototype -->
-    <div id="panel-prototype" class="tab-panel">
-      <h2 style="color:#d4af37; font-size:2rem; margin-bottom:0.2rem;">🚀 Prototype Showcase</h2>
-      <p style="color:#aaa; margin-bottom:1.5rem;">Interactive demos of VisCarma's core capabilities.</p>
-      <div class="demo-card"><h3>⚡ Bug Fix – Duplicate Declaration</h3><p>Given the prompt <code>"Fix the duplicate counter bug"</code>, VisCarma (via Parsh) instantly removes the duplicate <code>let counter</code> line.</p><div class="demo-badge">✅ Works live</div></div>
-      <div class="demo-card"><h3>✨ Feature Add – To‑Do List</h3><p>Prompt: <code>"Add a to‑do list feature to index.html"</code>. Krish generates full HTML+JS with localStorage persistence.</p><div class="demo-badge">✅ Works live</div></div>
-      <div class="demo-card"><h3>🧹 ESLint Auto‑Fix</h3><p>Before any AI, ESLint runs <code>--fix</code> to correct missing semicolons, <code>var</code> → <code>let</code>, and unused variables.</p><div class="demo-badge">✅ Runs automatically</div></div>
-      <div class="demo-card"><h3>🧠 Critic Reflection</h3><p>After Aider applies a change, a separate <strong>Critic Agent</strong> reviews it. If flawed, it requests a refined fix – mimicking human pair‑review.</p><div class="demo-badge">✅ Integrated</div></div>
-      <div class="demo-card" style="border-color:#d4af37;"><h3>🕵️ Real‑time Chat Dashboard</h3><p>All agent communications stream live with typing effects, agent avatars, and code blocks – built with SSE.</p><div class="demo-badge">✅ You're using it now!</div></div>
-    </div>
+    <p>Then open <a href="http://localhost:9000" target="_blank" style="color:#d4af37;">http://localhost:9000</a></p>
   </div>
 </div>
 
-<!-- ─── Footer ─── -->
-<div class="footer">
-  <div class="footer-toggle" id="footerToggle">
-    <span class="arrow" id="footerArrow">▼</span>
-    <span style="margin-left:6px;">dyāvāpṛthivī janayan deva ekaḥ</span>
-  </div>
-  <div class="footer-content" id="footerContent">
-    <div class="links">
-      <span>🔱 VisCarma v1.0</span>
-      <span class="divider">|</span>
-      <span>Built by <a href="https://github.com/suryasticsai" target="_blank">Surya Sai Varakala</a></span>
-      <span class="divider">|</span>
-      <a href="https://github.com/suryasticsai/viscarma" target="_blank">📦 VisCarMA</a>
-      <a href="https://github.com/suryasticsai/SprintAnalyzer" target="_blank">🧪 SprintAnalyzer</a>
-      <a href="https://github.com/suryasticsai/alkembic" target="_blank">🔧 AlkembicNeo</a>
-      <a href="https://github.com/suryasticsai/ScrumLens" target="_blank">👁 ScrumLens</a>
-    </div>
-    <div class="powered">
-      <span>⚡ Powered by</span>
-      <a href="https://ollama.com" target="_blank" style="color:#6c6c8a;">Ollama</a>
-      <span>+</span>
-      <a href="https://aider.chat" target="_blank" style="color:#6c6c8a;">Aider</a>
-      <span>+</span>
-      <a href="https://playwright.dev" target="_blank" style="color:#6c6c8a;">Playwright</a>
-    </div>
+<!-- ─── Prototype Modal ──────────────────────────────────── -->
+<div class="modal-overlay" id="prototypeModal">
+  <div class="modal-content">
+    <button class="close-modal" data-modal="prototypeModal">✕</button>
+    <h2>🚀 Prototype Showcase</h2>
+    <p style="margin-bottom:1.5rem;">Interactive demos of VisCarma's core capabilities.</p>
+    <div class="demo-card"><h3>⚡ Bug Fix – Duplicate Declaration</h3><p>Given the prompt <code>"Fix the duplicate counter bug"</code>, VisCarma (via Parsh) instantly removes the duplicate <code>let counter</code> line.</p><div class="demo-badge">✅ Works live</div></div>
+    <div class="demo-card"><h3>✨ Feature Add – To‑Do List</h3><p>Prompt: <code>"Add a to‑do list feature to index.html"</code>. Krish generates full HTML+JS with localStorage persistence.</p><div class="demo-badge">✅ Works live</div></div>
+    <div class="demo-card"><h3>🧹 ESLint Auto‑Fix</h3><p>Before any AI, ESLint runs <code>--fix</code> to correct missing semicolons, <code>var</code> → <code>let</code>, and unused variables.</p><div class="demo-badge">✅ Runs automatically</div></div>
+    <div class="demo-card"><h3>🧠 Critic Reflection</h3><p>After Aider applies a change, a separate <strong>Critic Agent</strong> reviews it. If flawed, it requests a refined fix – mimicking human pair‑review.</p><div class="demo-badge">✅ Integrated</div></div>
+    <div class="demo-card"><h3>🕵️ Real‑time Chat Dashboard</h3><p>All agent communications stream live with typing effects, agent avatars, and code blocks – built with SSE.</p><div class="demo-badge">✅ You're using it now!</div></div>
   </div>
 </div>
 
-<!-- ─── JavaScript ────────────────────────────────────────── -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  if (typeof animateAvatars === 'function') animateAvatars();
-
-  // ─── DOM refs ──────────────────────────────────────────
-  const chatMessages = document.getElementById('chatMessages');
-  const launchBtn = document.getElementById('launchBtn');
-  const clearBtn = document.getElementById('clearBtn');
-  const scrollLockBtn = document.getElementById('scrollLockBtn');
-  const connectionStatus = document.getElementById('connectionStatus');
-  const messageCountSpan = document.getElementById('messageCount');
-  const footerToggle = document.getElementById('footerToggle');
-  const footerContent = document.getElementById('footerContent');
-  const footerArrow = document.getElementById('footerArrow');
-  const setupBtn = document.getElementById('setupBtn');
-
-  const loginSection = document.getElementById('login-section');
-  const userSection = document.getElementById('user-section');
-  const loginBtn = document.getElementById('loginBtn');
-  const logoutBtn = document.getElementById('logoutBtn');
-  const repoSelect = document.getElementById('repoSelect');
-  const repoOwnerHidden = document.getElementById('repoOwner');
-  const repoOwnerDisplay = document.getElementById('repoOwnerDisplay');
-  const userNameSpan = document.getElementById('userName');
-  const userAvatar = document.getElementById('userAvatar');
-  const repoSelectSection = document.getElementById('repo-select-section');
-  const manualInputs = document.getElementById('manual-inputs');
-
-  const manualRepo = document.getElementById('manualRepo');
-  const manualOwner = document.getElementById('manualOwner');
-  const branchInput = document.getElementById('branch');
-  const promptInput = document.getElementById('prompt');
-
-  // ─── Notification bar ──────────────────────────────────
-  const notif = document.getElementById('notification');
-  const notifMsg = document.getElementById('notifMessage');
-  const notifClose = document.getElementById('notifClose');
-  let notifTimeout = null;
-
-  function showNotification(msg, isError = false) {
-    notifMsg.textContent = msg;
-    notif.style.display = 'flex';
-    notif.style.borderColor = isError ? '#e74c3c' : '#d4af37';
-    if (notifTimeout) clearTimeout(notifTimeout);
-    notifTimeout = setTimeout(() => {
-      notif.style.display = 'none';
-    }, 5000);
-  }
-
-  notifClose.addEventListener('click', () => {
-    notif.style.display = 'none';
-    if (notifTimeout) clearTimeout(notifTimeout);
-  });
-
-  // ─── Agent intro messages ──────────────────────────────
-  const agentIntro = {
-    'VisCarma': {
-      intro: "🔱 I am VisCarma, the Supreme Architect and commander of this DevAIne team. I oversee all missions, delegate tasks, and ensure quality.\n\nI can guide you through the entire installation process. Click me again to see step-by-step instructions! 🛠️",
-      install: [
-        "📦 **Step 1:** Clone the repository\n```bash\ngit clone https://github.com/suryasticsai/viscarma.git\n```",
-        "📦 **Step 2:** Navigate to the folder\n```bash\ncd viscarma\n```",
-        "📦 **Step 3:** Install Node dependencies\n```bash\nnpm install\n```",
-        "📦 **Step 4:** Install Aider (Python)\n```bash\npython -m pip install aider-chat\n```",
-        "📦 **Step 5:** Configure your GitHub token and repo in `config/visCarma.json`\n```json\n{\n  \"github\": {\n    \"token\": \"your_token_here\",\n    \"owner\": \"suryasticsai\",\n    \"repo\": \"viscarma-test\"\n  }\n}\n```",
-        "📦 **Step 6:** Start the dashboard\n```bash\nnode server.js\n```",
-        "📦 **Step 7:** Open http://localhost:9000 and launch your first mission! 🚀\n\n💡 You can also run missions via CLI:\n```bash\nnode agent.js --repo viscarma-test --owner suryasticsai --base main \"Fix the duplicate counter bug\"\n```"
-      ]
-    },
-    'Parsh': {
-      intro: "🪓 I am Parsh, the Bug Killer. I specialize in identifying and eliminating bugs, errors, and code smells.\n\nGive me a mission like **'Fix the duplicate counter bug'** and I'll hunt it down instantly!\n\n🔧 I use ESLint, Aider, and my own rule‑based logic to keep your code pristine."
-    },
-    'Krish': {
-      intro: "🪈 I am Krish, the Feature Inventor. I design and implement new capabilities, from simple UI tweaks to complex modules.\n\nTell me what you want to add – like **'Add a to‑do list feature'** – and I'll write the code, handle the logic, and even add localStorage persistence.\n\n✨ I love building things from scratch!"
-    },
-    'Parth': {
-      intro: "☸️ I am Parth, The Driver. I analyze your mission and decide who should handle it – Parsh for bugs, Krish for features.\n\nI route tasks, orchestrate the workflow, and ensure the right agent is on the job. I'm the brain behind the operation! 🧭"
-    }
-  };
-
-  // ─── Chat helper functions ──────────────────────────────
-  function switchToChatTab() {
-    const chatTab = document.querySelector('.tab-btn[data-tab="chat"]');
-    if (chatTab && !chatTab.classList.contains('active')) chatTab.click();
-  }
-
-  function addMessage(agentName, text) {
-    const agentMap = {
-      'VisCarma': { emoji: '🔱', cls: 'vis' },
-      'Parsh':   { emoji: '🪓', cls: 'parsh' },
-      'Krish':   { emoji: '🪈', cls: 'krish' },
-      'Parth':   { emoji: '☸️', cls: 'parth' },
-      'System':  { emoji: '⚙️', cls: 'system' }
-    };
-    const info = agentMap[agentName] || agentMap['System'];
-    const time = new Date().toLocaleTimeString();
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message ${agentName === 'System' ? 'system' : ''}`;
-    const avatar = document.createElement('div');
-    avatar.className = `avatar avatar-${info.cls}`;
-    avatar.textContent = info.emoji;
-    const bubble = document.createElement('div');
-    bubble.className = `bubble bubble-${info.cls}`;
-    const sender = document.createElement('div');
-    sender.className = 'sender';
-    sender.innerHTML = `${info.emoji} ${agentName} <span class="time">${time}</span>`;
-    const content = document.createElement('div');
-    content.className = 'content';
-    const parts = text.split(/(```[^`]*```)/g);
-    let html = '';
-    for (let part of parts) {
-      if (part.startsWith('```') && part.endsWith('```')) {
-        const code = part.slice(3, -3).trim();
-        let lang = '', codeContent = code;
-        const firstLine = code.split('\n')[0];
-        if (firstLine && firstLine.match(/^[a-zA-Z0-9_+-]+$/)) {
-          lang = firstLine;
-          codeContent = code.split('\n').slice(1).join('\n');
-        }
-        html += `<div class="code-block"><span class="lang-tag">${lang || 'code'}</span><pre>${escapeHtml(codeContent)}</pre></div>`;
-      } else {
-        html += `<span class="content-text">${escapeHtml(part).replace(/\n/g, '<br>')}</span>`;
-      }
-    }
-    content.innerHTML = html;
-    bubble.appendChild(sender); bubble.appendChild(content);
-    msgDiv.appendChild(avatar); msgDiv.appendChild(bubble);
-    chatMessages.appendChild(msgDiv);
-    messageCount++;
-    messageCountSpan.textContent = `${messageCount} messages`;
-    if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
-    if (agentName !== 'System') {
-      setAgentActive(agentName, true);
-      clearTimeout(window['timeout_' + agentName]);
-      window['timeout_' + agentName] = setTimeout(() => {
-        setAgentActive(agentName, false);
-      }, 2000);
-    }
-  }
-
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  function setAgentActive(agentName, active) {
-    if (typeof window.setAgentActive === 'function') {
-      window.setAgentActive(agentName, active);
-    } else {
-      const map = { VisCarma: 'Vis', Parsh: 'Parsh', Krish: 'Krish', Parth: 'Parth' };
-      const key = map[agentName];
-      const dot = document.getElementById('status' + key);
-      if (dot) {
-        dot.className = 'status-dot' + (active ? ' pulse' : ' idle');
-      }
-    }
-  }
-
-  function detectAgent(text) {
-    if (text.includes('Agent Parsh')) return 'Parsh';
-    if (text.includes('Agent Krish')) return 'Krish';
-    if (text.includes('Agent Parth')) return 'Parth';
-    if (text.includes('VisCarma') || text.includes('🔱') || text.includes('Mission')) return 'VisCarma';
-    return 'System';
-  }
-
-  function processOutput(chunk) {
-    messageBuffer += chunk;
-    const lines = messageBuffer.split('\n');
-    messageBuffer = lines.pop() || '';
-    for (const line of lines) {
-      if (line.trim() === '') continue;
-      const agent = detectAgent(line);
-      addMessage(agent, line);
-    }
-  }
-
-  function clearChat() {
-    chatMessages.innerHTML = '';
-    messageCount = 0;
-    messageCountSpan.textContent = '0 messages';
-    connectionStatus.textContent = '⚪ Disconnected';
-    connectionStatus.style.color = '#666';
-    messageBuffer = '';
-    ['Vis','Parsh','Krish','Parth'].forEach(k => {
-      const dot = document.getElementById('status'+k);
-      if (dot) dot.className = 'status-dot idle';
-    });
-    if (window['visCarmaTimeout']) clearTimeout(window['visCarmaTimeout']);
-  }
-
-  // ─── Clickable avatars ─────────────────────────────────
-  document.querySelectorAll('.agent-item').forEach(item => {
-    item.addEventListener('click', function(e) {
-      if (e.target.closest('.mission-form') || e.target.closest('button')) return;
-      const agentName = this.dataset.agent;
-      if (!agentName) return;
-      switchToChatTab();
-      const info = agentIntro[agentName];
-      if (!info) return;
-      if (agentName === 'VisCarma') {
-        if (window['visCarmaTimeout']) clearTimeout(window['visCarmaTimeout']);
-        addMessage(agentName, info.intro);
-        const steps = info.install;
-        let delay = 800;
-        steps.forEach((step, index) => {
-          window['visCarmaTimeout'] = setTimeout(() => {
-            addMessage(agentName, step);
-          }, delay);
-          delay += 800;
-        });
-      } else {
-        addMessage(agentName, info.intro);
-      }
-    });
-  });
-
-  // ─── Button enable/disable logic ──────────────────────
-  function updateLaunchButton() {
-    const onlineMode = repoSelectSection.style.display !== 'none';
-    let enabled = false;
-
-    if (onlineMode) {
-      // Online mode: must be logged in, repo selected, prompt not empty
-      const loggedIn = userSection.style.display !== 'none';
-      const repoSelected = repoSelect.value && repoSelect.value !== '';
-      const promptFilled = promptInput.value.trim() !== '';
-      enabled = loggedIn && repoSelected && promptFilled;
-    } else {
-      // Offline mode: repo and owner filled, prompt not empty
-      const repoFilled = manualRepo.value.trim() !== '';
-      const ownerFilled = manualOwner.value.trim() !== '';
-      const promptFilled = promptInput.value.trim() !== '';
-      enabled = repoFilled && ownerFilled && promptFilled;
-    }
-
-    launchBtn.disabled = !enabled;
-  }
-
-  // Listen to changes
-  repoSelect.addEventListener('change', updateLaunchButton);
-  promptInput.addEventListener('input', updateLaunchButton);
-  manualRepo.addEventListener('input', updateLaunchButton);
-  manualOwner.addEventListener('input', updateLaunchButton);
-  branchInput.addEventListener('input', updateLaunchButton);
-
-  // ─── Auth status check ──────────────────────────────────
-  async function checkAuth() {
-    try {
-      const res = await fetch('/api/auth/status');
-      const data = await res.json();
-      console.log('Auth status:', data);
-      if (data.oauthEnabled) {
-        // Online mode – show repo dropdown, hide manual inputs
-        repoSelectSection.style.display = 'block';
-        manualInputs.style.display = 'none';
-        if (data.authenticated) {
-          const reposRes = await fetch('/api/repos');
-          if (reposRes.ok) {
-            const repos = await reposRes.json();
-            console.log('Repos fetched:', repos.length);
-            showLoggedIn(repos);
-          } else {
-            showLoggedOut();
-          }
-        } else {
-          showLoggedOut();
-        }
-      } else {
-        // Offline mode
-        repoSelectSection.style.display = 'none';
-        manualInputs.style.display = 'block';
-        manualRepo.value = 'viscarma-test';
-        manualOwner.value = 'suryasticsai';
-        addMessage('System', '🔧 Running in offline mode. Enter repo and owner manually.');
-        updateLaunchButton();
-      }
-    } catch (err) {
-      console.error('Auth check error:', err);
-      // Fallback offline
-      repoSelectSection.style.display = 'none';
-      manualInputs.style.display = 'block';
-      manualRepo.value = 'viscarma-test';
-      manualOwner.value = 'suryasticsai';
-      addMessage('System', '🔧 Running in offline mode. Enter repo and owner manually.');
-      updateLaunchButton();
-    }
-  }
-
-  function showLoggedOut() {
-    loginSection.style.display = 'block';
-    userSection.style.display = 'none';
-    repoSelect.innerHTML = '<option value="">— Please login —</option>';
-    repoSelectSection.style.display = 'block';
-    updateLaunchButton();
-  }
-
-  function showLoggedIn(repos) {
-    loginSection.style.display = 'none';
-    userSection.style.display = 'block';          // Show user + logout
-    repoSelectSection.style.display = 'block';    // Show repo dropdown
-
-    userNameSpan.textContent = 'User';
-    userAvatar.textContent = 'U';
-
-    repoSelect.innerHTML = '';
-    if (repos.length === 0) {
-      repoSelect.innerHTML = '<option value="">— No repos found —</option>';
-    } else {
-      repos.forEach(repo => {
-        const opt = document.createElement('option');
-        opt.value = repo.name;
-        opt.dataset.owner = repo.owner;
-        opt.textContent = repo.full_name + (repo.private ? ' 🔒' : '');
-        repoSelect.appendChild(opt);
-      });
-      if (repos.length > 0) {
-        const first = repos[0];
-        repoOwnerHidden.value = first.owner;
-        repoOwnerDisplay.textContent = `Owner: ${first.owner}`;
-      }
-      repoSelect.addEventListener('change', () => {
-        const selected = repoSelect.options[repoSelect.selectedIndex];
-        if (selected && selected.dataset.owner) {
-          repoOwnerHidden.value = selected.dataset.owner;
-          repoOwnerDisplay.textContent = `Owner: ${selected.dataset.owner}`;
-        }
-        updateLaunchButton();
-      });
-      repoSelect.dispatchEvent(new Event('change'));
-    }
-    updateLaunchButton();
-  }
-
-  loginBtn.addEventListener('click', () => {
-    window.location.href = '/auth/github';
-  });
-
-  logoutBtn.addEventListener('click', () => {
-    window.location.href = '/auth/logout';
-  });
-
-  // ─── Launch mission ────────────────────────────────────
-  let eventSource = null;
-  let messageBuffer = '';
-  let messageCount = 0;
-
-  function launchMission() {
-    let repo, owner;
-    const branch = branchInput.value.trim() || 'main';
-    const prompt = promptInput.value.trim();
-
-    const onlineMode = repoSelectSection.style.display !== 'none';
-    if (onlineMode) {
-      repo = repoSelect.value;
-      owner = repoOwnerHidden.value;
-    } else {
-      repo = manualRepo.value.trim();
-      owner = manualOwner.value.trim();
-    }
-
-    if (!repo) { showNotification('Please select or enter a repository.', true); return; }
-    if (!owner) { showNotification('Please enter or select an owner.', true); return; }
-    if (!prompt) { showNotification('Enter a mission prompt.', true); return; }
-
-    launchBtn.disabled = true;
-    launchBtn.textContent = 'Running...';
-    clearChat();
-    connectionStatus.textContent = '⏳ Connecting...';
-    connectionStatus.style.color = '#f39c12';
-
-    const url = `/stream?repo=${encodeURIComponent(repo)}&owner=${encodeURIComponent(owner)}&branch=${encodeURIComponent(branch)}&prompt=${encodeURIComponent(prompt)}`;
-
-    if (eventSource) { eventSource.close(); eventSource = null; }
-    eventSource = new EventSource(url);
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'output') processOutput(data.content);
-        else if (data.type === 'error') addMessage('System', '❌ ERROR: ' + data.content);
-        else if (data.type === 'done') {
-          addMessage('VisCarma', '✅ Mission complete.');
-          connectionStatus.textContent = '✅ Done';
-          connectionStatus.style.color = '#4caf50';
-          eventSource.close();
-          launchBtn.disabled = false;
-          launchBtn.textContent = '🚀 Launch Mission';
-          updateLaunchButton();
-        }
-      } catch (err) { console.error(err); }
-    };
-    eventSource.onerror = () => {
-      if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-        connectionStatus.textContent = '⚠️ Disconnected';
-        connectionStatus.style.color = '#e74c3c';
-        launchBtn.disabled = false;
-        launchBtn.textContent = '🚀 Launch Mission';
-        eventSource = null;
-        updateLaunchButton();
-      }
-    };
-  }
-
-  // ─── Setup button ──────────────────────────────────────
-  setupBtn.addEventListener('click', function() {
-    switchToChatTab();
-    clearChat();
-    addMessage('System', '⚙️ Starting setup... Please wait.');
-    if (eventSource) { eventSource.close(); eventSource = null; }
-    eventSource = new EventSource('/setup');
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'output') processOutput(data.content);
-        else if (data.type === 'error') addMessage('System', '❌ ERROR: ' + data.content);
-        else if (data.type === 'done') {
-          addMessage('VisCarma', data.content);
-          eventSource.close();
-          eventSource = null;
-        }
-      } catch (err) { console.error(err); }
-    };
-    eventSource.onerror = () => {
-      if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-        addMessage('System', '⚠️ Setup connection closed.');
-        eventSource = null;
-      }
-    };
-  });
-
-  // ─── Event listeners ──────────────────────────────────
-  document.querySelector('.mission-form').addEventListener('submit', e => {
-    e.preventDefault();
-    launchMission();
-  });
-
-  clearBtn.addEventListener('click', clearChat);
-  scrollLockBtn.addEventListener('click', () => {
-    scrollLock = !scrollLock;
-    scrollLockBtn.textContent = scrollLock ? '🔓 Scroll Unlocked' : '🔒 Scroll Lock';
-    if (!scrollLock) chatMessages.scrollTop = chatMessages.scrollHeight;
-  });
-
-  footerToggle.addEventListener('click', () => {
-    footerVisible = !footerVisible;
-    footerContent.classList.toggle('hidden', !footerVisible);
-    footerArrow.classList.toggle('collapsed', !footerVisible);
-  });
-
-  // ─── Tab switching ──────────────────────────────────
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const panels = {
-        chat: document.getElementById('panel-chat'),
-        docs: document.getElementById('panel-docs'),
-        prototype: document.getElementById('panel-prototype')
-      };
-      Object.keys(panels).forEach(key => {
-        panels[key].classList.toggle('active', key === btn.dataset.tab);
-      });
-    });
-  });
-
-  // ─── Initial messages ──────────────────────────────────
-  addMessage('VisCarma', '🔱 VisCarma is ready. Loading configuration...');
-  checkAuth();
-
-  // Clean up
-  window.addEventListener('beforeunload', () => {
-    if (eventSource) eventSource.close();
-  });
-});
-</script>
 </body>
 </html>
