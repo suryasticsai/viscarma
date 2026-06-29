@@ -2,12 +2,13 @@
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
+import FileStore from 'session-file-store';
 import { ESLint } from 'eslint';
 import { JSDOM } from 'jsdom';
 import simpleGit from 'simple-git';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { promises as fs } from 'fs';  // ✅ use built-in fs.promises
+import { promises as fs } from 'fs';
 import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,12 +17,22 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── Session config ──────────────────────────────────────────────
+// ─── Session store (persistent on disk) ──────────────────────────
+const FileStoreSession = FileStore(session);
+
 app.use(session({
+  store: new FileStoreSession({
+    path: './sessions',
+    ttl: 7 * 24 * 60 * 60, // 7 days
+    retries: 0,
+  }),
   secret: process.env.SESSION_SECRET || 'dev-secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 7 * 24 * 60 * 60 * 1000 },
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
 }));
 
 app.use(cors({
@@ -160,6 +171,13 @@ function checkHTML(code) {
       fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1.0">'
     });
   }
+  if (!code.includes('<meta name="description"')) {
+    issues.push({
+      severity: 'LOW',
+      description: 'Missing meta description – SEO issue.',
+      fix: 'Add <meta name="description" content="...">'
+    });
+  }
   return issues;
 }
 
@@ -260,6 +278,13 @@ async function generateFixesForFile(code, filename, issues) {
       doc.head.appendChild(title);
       applied.push('Added title');
     }
+    if (!doc.querySelector('meta[name="description"]')) {
+      const meta = doc.createElement('meta');
+      meta.name = 'description';
+      meta.content = 'Page description';
+      doc.head.appendChild(meta);
+      applied.push('Added meta description');
+    }
     doc.querySelectorAll('img:not([alt])').forEach(img => {
       img.setAttribute('alt', 'image');
       applied.push('Added alt to image');
@@ -295,15 +320,30 @@ const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 app.get('/auth/github', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
   req.session.oauthState = state;
-  const url = `${GITHUB_AUTH_URL}?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=repo&state=${state}`;
-  res.redirect(url);
+  req.session.save((err) => {
+    if (err) {
+      console.error('Session save error:', err);
+      return res.status(500).send('Session error');
+    }
+    const url = `${GITHUB_AUTH_URL}?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=repo&state=${state}`;
+    console.log('Redirecting with state:', state);
+    res.redirect(url);
+  });
 });
 
 app.get('/auth/callback', async (req, res) => {
   const { code, state } = req.query;
-  if (!code || state !== req.session.oauthState) {
-    return res.status(400).send('Invalid state or code');
+  console.log('Callback: code=', code, 'state=', state, 'session state=', req.session.oauthState);
+
+  if (!code) {
+    console.error('No code provided');
+    return res.status(400).send('Missing code');
   }
+  if (!state || state !== req.session.oauthState) {
+    console.error('State mismatch');
+    return res.status(400).send('Invalid state');
+  }
+
   try {
     const response = await fetch(GITHUB_TOKEN_URL, {
       method: 'POST',
@@ -326,19 +366,23 @@ app.get('/auth/callback', async (req, res) => {
       });
       const user = await userRes.json();
       req.session.githubUser = { id: user.id, login: user.login, avatar: user.avatar_url };
-      res.redirect('/');
+      req.session.save(() => {
+        res.redirect('/');
+      });
     } else {
+      console.error('Token exchange failed:', data);
       res.status(400).send('Failed to get token');
     }
   } catch (e) {
-    console.error(e);
+    console.error('Callback error:', e);
     res.status(500).send('OAuth error');
   }
 });
 
 app.get('/auth/logout', (req, res) => {
-  req.session.destroy();
-  res.redirect('/');
+  req.session.destroy(() => {
+    res.redirect('/');
+  });
 });
 
 app.get('/api/user', (req, res) => {
@@ -385,10 +429,8 @@ app.post('/api/scan-repo', async (req, res) => {
       const relativePath = path.relative(repoPath, filePath);
       const code = await fs.readFile(filePath, 'utf-8');
       const issues = await analyzeFile(code, relativePath);
-      // Store code for later fix generation
       results.push({ file: relativePath, code, issues });
     }
-    // Clean up
     await fs.rm(repoPath, { recursive: true, force: true });
     res.json({ success: true, results });
   } catch (e) {
