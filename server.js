@@ -14,7 +14,7 @@ import cookieParser from 'cookie-parser';
 import { ESLint }   from 'eslint';
 import { JSDOM }    from 'jsdom';
 import * as cheerio  from 'cheerio';
-import Diff          from 'diff';
+import * as Diff     from 'diff';
 import simpleGit    from 'simple-git';
 import path         from 'path';
 import { fileURLToPath } from 'url';
