@@ -18,12 +18,16 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Ensure sessions directory exists
+const sessionPath = './sessions';
+await fs.mkdir(sessionPath, { recursive: true });
+
 // ─── Session store (persistent on disk) ──────────────────────────
 const FileStoreSession = FileStore(session);
 
 app.use(session({
   store: new FileStoreSession({
-    path: './sessions',
+    path: sessionPath,
     ttl: 7 * 24 * 60 * 60, // 7 days
     retries: 0,
   }),
@@ -378,9 +382,13 @@ app.get('/auth/callback', async (req, res) => {
       });
       const user = await userRes.json();
       req.session.githubUser = { id: user.id, login: user.login, avatar: user.avatar_url };
-      // Save session before redirect
+      // Explicitly save session and handle errors
       req.session.save((err) => {
-        if (err) console.error('Session save error:', err);
+        if (err) {
+          console.error('Session save error:', err);
+          return res.status(500).send('Session save failed');
+        }
+        console.log('Session saved, redirecting to /');
         res.redirect('/');
       });
     } else {
