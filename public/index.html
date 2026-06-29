@@ -1258,7 +1258,7 @@ async function enablePush() {
     STATE.pushSubscription = sub.toJSON();
     btn.textContent = '🔔 Notifications enabled';
     btn.disabled    = true;
-    status.textContent = 'You'll get a notification when the agent finishes.';
+    status.textContent = 'You will get a notification when the agent finishes.';
     log('PUSH','tag-ok','Push notifications enabled');
   } catch(e) {
     status.textContent = 'Error: ' + e.message;
