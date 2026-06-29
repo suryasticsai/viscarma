@@ -1,580 +1,1006 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="VisCarMa — Hybrid code scanner with ESLint, AI analysis, GitHub PR integration, and feature development." />
-  <title>VisCarMa · Hybrid Scanner</title>
-  <link rel="icon" type="image/png" href="/viscarma_logo.png" />
-  <link rel="stylesheet" href="style.css" />
-  <style>
-    .avatar-wrap { display:none; align-items:center; gap:8px; }
-    .avatar-wrap.visible { display:flex; }
-    .gh-avatar { width:28px; height:28px; border-radius:50%; border:2px solid #3b82f6; object-fit:cover; }
-    .gh-username { font-size:12px; color:#8aa9c9; font-weight:600; }
-    .status-dot { width:8px; height:8px; border-radius:50%; background:#4b5563; display:inline-block; margin-right:4px; transition:background 0.3s; }
-    .status-dot.online  { background:#10b981; }
-    .status-dot.offline { background:#ef4444; }
-
-    /* Mode tabs */
-    .mode-tabs { display:flex; gap:8px; margin-bottom:12px; }
-    .mode-tab {
-      flex:1; padding:8px 0; text-align:center; border-radius:8px;
-      border:1px solid #2a3a4e; background:#0f172a; color:#8aa9c9;
-      cursor:pointer; font-size:13px; font-weight:600; transition:all 0.2s;
-    }
-    .mode-tab.active { background:#1e3a5f; border-color:#3b82f6; color:#60a5fa; }
-
-    /* Feature panel */
-    .feature-panel { display:none; }
-    .feature-panel.visible { display:block; }
-    .feature-input {
-      width:100%; padding:10px 12px; background:#0f172a; border:1px solid #2a3a4e;
-      border-radius:8px; color:#e0e8f0; font-size:13px; resize:vertical;
-      min-height:72px; box-sizing:border-box; margin-bottom:8px;
-    }
-    .feature-input:focus { outline:none; border-color:#3b82f6; }
-    .feature-file-list { margin:8px 0; font-size:11px; color:#8aa9c9; }
-    .feature-file-check { display:flex; align-items:center; gap:6px; margin:4px 0; cursor:pointer; }
-    .feature-file-check input { accent-color:#3b82f6; }
-  </style>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="VisCarMa — AI-powered code scanner, fixer, and agentic developer."/>
+  <title>VisCarMa</title>
+  <link rel="icon" type="image/png" href="/viscarma_logo.png"/>
+  <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap"/>
 </head>
 <body>
+<div class="app-shell">
 
-  <!-- Header -->
-  <div class="flex header">
-    <div class="flex logo-container">
-      <img src="/viscarma_logo.png" alt="VisCarMa logo" class="logo-img" />
-      <span class="logo">Vis<span class="accent">Car</span>Ma</span>
-      <span class="badge">Hybrid</span>
-    </div>
-    <div class="flex auth-section">
-      <span id="auth-status" class="auth-status">
-        <span class="status-dot" id="status-dot"></span>
-        <span class="avatar-wrap" id="avatar-wrap">
-          <img id="gh-avatar" class="gh-avatar" src="" alt="GitHub avatar" />
-          <span id="gh-username" class="gh-username"></span>
-        </span>
-        <span id="user-info" style="font-size:12px;color:#8aa9c9;">Checking…</span>
+  <!-- ── HEADER ── -->
+  <header class="header">
+    <a class="logo" href="#">
+      <img src="/viscarma_logo.png" alt="VisCarMa"/>
+      Vis<span class="accent">Car</span>Ma
+    </a>
+    <span class="badge">v2.0</span>
+
+    <div class="header-right">
+      <span class="status-dot" id="status-dot"></span>
+      <span class="avatar-wrap" id="avatar-wrap">
+        <img id="gh-avatar" class="gh-avatar" src="" alt="avatar"/>
+        <span id="gh-username" class="gh-username"></span>
       </span>
-      <button class="btn btn-ghost" id="login-btn" onclick="login()">Login with GitHub</button>
+      <span id="user-info" class="text-muted text-xs mono">Checking…</span>
+      <button class="btn btn-sm" id="login-btn" onclick="login()">Login with GitHub</button>
     </div>
-  </div>
+  </header>
 
-  <!-- Mode tabs -->
-  <div class="box">
-    <div class="mode-tabs">
-      <div class="mode-tab active" id="tab-fix" onclick="switchMode('fix')">🔧 Fix Mode</div>
-      <div class="mode-tab" id="tab-feature" onclick="switchMode('feature')">✨ Feature Mode</div>
-    </div>
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
 
-    <!-- Fix mode controls -->
-    <div id="fix-panel">
-      <div class="flex" style="justify-content:space-between;">
-        <div class="flex" style="flex:1;">
-          <input type="text" id="repo-url-input" placeholder="https://github.com/owner/repo" style="flex:2;min-width:200px;" />
-          <button class="btn" onclick="scanManual()">🔍 Scan Public Repo</button>
-        </div>
-        <div class="flex" style="flex:1;justify-content:flex-end;">
-          <select id="repo-select" style="flex:1;min-width:150px;display:none;" onchange="selectRepo()">
-            <option value="">Select repo</option>
-          </select>
-          <button class="btn btn-primary" id="scan-logged-btn" onclick="scanLoggedIn()" style="display:none;">🚀 Scan Selected</button>
-        </div>
-      </div>
-      <div style="font-size:10px;color:#8aa9c9;margin-top:6px;">
-        ℹ️ Log in to scan private repos and create PRs. Paste a public repo URL for quick scans.
+    <!-- Mode tabs -->
+    <div class="sidebar-section">
+      <div class="mode-tabs">
+        <button class="mode-tab active" id="tab-fix"     onclick="switchMode('fix')">Fix</button>
+        <button class="mode-tab"        id="tab-feature" onclick="switchMode('feature')">Feature</button>
+        <button class="mode-tab"        id="tab-agent"   onclick="switchMode('agent')">Agent</button>
       </div>
     </div>
 
-    <!-- Feature mode controls -->
-    <div id="feature-panel" class="feature-panel">
-      <div class="flex" style="margin-bottom:8px;">
-        <select id="feature-repo-select" style="flex:1;min-width:150px;" onchange="selectFeatureRepo()">
+    <!-- FIX mode sidebar -->
+    <div id="sidebar-fix" class="sidebar-scroll">
+      <div>
+        <div class="field-label">Repository URL</div>
+        <input type="text" id="repo-url-input" placeholder="https://github.com/owner/repo"/>
+      </div>
+      <div>
+        <div class="field-label">Your repos</div>
+        <select id="repo-select" onchange="selectRepo()">
           <option value="">Select repo (login required)</option>
         </select>
-        <button class="btn" onclick="loadFeatureFiles()">📂 Load Files</button>
       </div>
-      <textarea class="feature-input" id="feature-description"
-        placeholder="Describe the feature you want to add…&#10;e.g. Add a dark mode toggle button to the header"></textarea>
-      <div id="feature-file-list" class="feature-file-list" style="display:none;">
-        <div style="font-weight:700;color:#60a5fa;margin-bottom:4px;">Select files to modify:</div>
+      <div class="row">
+        <button class="btn flex-1" onclick="scanManual()">Scan URL</button>
+        <button class="btn btn-primary flex-1" id="scan-logged-btn" onclick="scanLoggedIn()">Scan repo</button>
+      </div>
+      <div class="divider"></div>
+      <div class="field-label">Actions</div>
+      <button class="btn btn-emerald" id="fix-btn" onclick="generateFixes()" style="display:none;width:100%">Apply fixes</button>
+      <button class="btn btn-primary" id="pr-btn"  onclick="createPR()"      style="display:none;width:100%">Create PR</button>
+    </div>
+
+    <!-- FEATURE mode sidebar -->
+    <div id="sidebar-feature" class="sidebar-scroll" style="display:none">
+      <div>
+        <div class="field-label">Repository</div>
+        <select id="feature-repo-select" onchange="selectFeatureRepo()">
+          <option value="">Select repo</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label">Feature description</div>
+        <textarea id="feature-description" placeholder="Add a dark mode toggle to the header…"></textarea>
+      </div>
+      <div id="feature-file-list" style="display:none">
+        <div class="field-label">Files to modify</div>
         <div id="feature-file-checkboxes"></div>
       </div>
-      <button class="btn btn-primary" onclick="generateFeature()" style="margin-top:8px;">✨ Generate Feature</button>
-      <div style="font-size:10px;color:#8aa9c9;margin-top:6px;">
-        ℹ️ VisCarMa will implement the feature and open a PR with a detailed description.
+      <button class="btn" onclick="loadFeatureFiles()" style="width:100%">Load files</button>
+      <button class="btn btn-primary" onclick="generateFeature()" style="width:100%">Generate feature</button>
+      <button class="btn btn-emerald" id="feat-pr-btn" onclick="createFeaturePR()" style="display:none;width:100%">Create PR</button>
+    </div>
+
+    <!-- AGENT mode sidebar -->
+    <div id="sidebar-agent" class="sidebar-scroll" style="display:none">
+      <div>
+        <div class="field-label">Target repository</div>
+        <select id="agent-repo-select" onchange="selectAgentRepo()">
+          <option value="">Select repo</option>
+        </select>
       </div>
-    </div>
-
-    <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-  </div>
-
-  <!-- Stats -->
-  <div class="box stats">
-    <span class="stat-box">Files <span class="stat-val" id="s-files">0</span></span>
-    <span class="stat-box">Issues <span class="stat-val" id="s-issues">0</span></span>
-    <span class="stat-box">Last <span class="stat-val" id="s-time">—</span></span>
-  </div>
-
-  <!-- Log -->
-  <div class="box log-container">
-    <div class="log-header">
-      <span>📋 Log</span>
-      <button class="btn btn-ghost" onclick="clearLog()">clear</button>
-    </div>
-    <div class="log-box" id="log-box">
-      <div class="log-line">
-        <span class="log-ts">--:--:--</span>
-        <span class="log-tag tag-sys">SYS</span>
-        <span>Ready. Choose Fix Mode or Feature Mode above.</span>
+      <div>
+        <div class="field-label">Idle duration (minutes)</div>
+        <input type="number" id="agent-duration" value="45" min="1" max="480"/>
       </div>
-    </div>
-  </div>
-
-  <!-- Report Area -->
-  <div id="report-area" style="display:none;margin-top:14px;">
-    <div class="box report-panel">
-      <div class="panel-title">
-        <span id="report-title">📊 Scan Report</span>
-        <div class="flex">
-          <button class="btn btn-ghost" id="fix-btn" onclick="generateFixes()" style="display:none;">🔧 Apply Fixes</button>
-          <button class="btn btn-primary" id="pr-btn" onclick="createPR()" style="display:none;">🔀 Create PR</button>
+      <div>
+        <div class="field-label">Task source</div>
+        <div class="source-tabs">
+          <button class="source-tab active" id="src-manual" onclick="setTaskSource('manual')">Manual</button>
+          <button class="source-tab" id="src-jira" onclick="setTaskSource('jira')">Jira</button>
+        </div>
+        <div id="task-manual-input">
+          <textarea id="agent-tasks" placeholder="One task per line:&#10;Fix all HIGH issues&#10;Add input validation to forms&#10;Refactor auth module"></textarea>
+        </div>
+        <div id="task-jira-input" style="display:none">
+          <input type="text" id="jira-url"     placeholder="https://yourco.atlassian.net" style="margin-bottom:6px"/>
+          <input type="text" id="jira-token"   placeholder="Jira API token" style="margin-bottom:6px"/>
+          <input type="text" id="jira-email"   placeholder="your@email.com" style="margin-bottom:6px"/>
+          <input type="text" id="jira-project" placeholder="Project key (e.g. DEV)"/>
         </div>
       </div>
-      <div id="report-content" style="padding:12px;"></div>
+      <div class="divider"></div>
+      <button class="btn btn-emerald" id="agent-start-btn" onclick="startAgent()" style="width:100%">Activate agent</button>
+      <button class="btn btn-danger"  id="agent-stop-btn"  onclick="stopAgent()"  style="display:none;width:100%">Stop agent</button>
     </div>
-  </div>
 
-  <!-- Footer -->
-  <footer class="footer">
-    <div class="flex footer-content">
-      <div class="flex">
-        <img src="/viscarma_logo.png" alt="VisCarMa logo" class="footer-logo-img" />
-        <span style="font-size:14px;font-weight:700;">Vis<span style="color:#3b82f6;">Car</span>Ma</span>
-        <span style="font-size:10px;color:#8aa9c9;margin-left:8px;">Hybrid Scanner</span>
+    <!-- Log (always visible at bottom) -->
+    <div class="log-wrap">
+      <div class="log-header">
+        <span>LOG</span>
+        <button class="btn btn-ghost btn-sm" onclick="clearLog()">clear</button>
       </div>
-      <div class="flex footer-links">
-        <a href="#" onclick="alert('VisCarMa – a code scanner with ESLint, AI, and GitHub integration. Built by Sai Varakala.')">About</a>
-        <a href="https://github.com/suryasticsai/viscarma" target="_blank">GitHub</a>
-        <a href="mailto:suryasticsai@gmail.com">Contact</a>
+      <div class="log-box" id="log-box">
+        <div class="log-line">
+          <span class="log-ts">--:--:--</span>
+          <span class="log-tag tag-sys">SYS</span>
+          <span>VisCarMa v2.0 ready.</span>
+        </div>
       </div>
     </div>
-    <div style="text-align:center;margin-top:8px;font-size:10px;color:#6b7b8d;">
-      © 2026 VisCarMa · All rights reserved.
+
+  </aside>
+
+  <!-- ── MAIN PANEL ── -->
+  <main class="main-panel">
+
+    <!-- Stats bar -->
+    <div class="stats-bar">
+      <div class="stat-chip"><div class="label">Files</div><div class="value" id="s-files">—</div></div>
+      <div class="stat-chip"><div class="label">Issues</div><div class="value red" id="s-issues">—</div></div>
+      <div class="stat-chip"><div class="label">HIGH</div><div class="value red" id="s-high">—</div></div>
+      <div class="stat-chip"><div class="label">MED</div><div class="value amber" id="s-med">—</div></div>
+      <div class="stat-chip"><div class="label">LOW</div><div class="value" id="s-low">—</div></div>
+      <div class="stat-chip"><div class="label">Last scan</div><div class="value" id="s-time" style="font-size:12px">—</div></div>
     </div>
-  </footer>
 
-  <div id="toast"></div>
+    <!-- Panel tabs -->
+    <nav class="panel-tabs">
+      <button class="panel-tab active" onclick="showPanel('report')">Report</button>
+      <button class="panel-tab"        onclick="showPanel('editor')">Editor / Diff</button>
+      <button class="panel-tab"        onclick="showPanel('history')">History</button>
+      <button class="panel-tab"        onclick="showPanel('agentlog')">Agent log</button>
+    </nav>
 
-  <script>
-    /* ─── STATE ─────────────────────────────────────────────────── */
-    const STATE = {
-      user: null, token: null,
-      repoUrl: null, repoOwner: null, repoName: null, repoBranch: 'main',
-      scanResults: null, fixes: null,
-      mode: 'fix',                    // 'fix' | 'feature'
-      featureFiles: [],               // [{file, code}] loaded for feature mode
-      featureFixes: null,             // generated feature code
-    };
+    <!-- REPORT panel -->
+    <div class="panel-content active" id="panel-report">
+      <div class="report-scroll" id="report-content">
+        <div class="empty-state">
+          <div class="e-icon">⬡</div>
+          <div>No scan yet. Enter a repo URL and click Scan.</div>
+        </div>
+      </div>
+    </div>
 
-    const $ = id => document.getElementById(id);
-    const logBox = $('log-box');
+    <!-- EDITOR / DIFF panel -->
+    <div class="panel-content" id="panel-editor">
+      <div class="editor-toolbar">
+        <div class="editor-filename">
+          <span id="editor-file-label">No file selected</span>
+        </div>
+        <button class="btn btn-sm" id="view-toggle-btn" onclick="toggleDiff()" style="display:none">Switch to diff</button>
+        <button class="btn btn-sm btn-ghost" onclick="copyEditorContent()">Copy</button>
+      </div>
+      <div class="editor-layout">
+        <div class="file-list" id="file-list-panel"></div>
+        <div class="editor-main">
+          <div id="monaco-container" style="flex:1;min-height:0;display:block"></div>
+          <div id="diff-container"   style="flex:1;min-height:0;display:none"></div>
+        </div>
+      </div>
+    </div>
 
-    function ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
+    <!-- HISTORY panel -->
+    <div class="panel-content" id="panel-history">
+      <div class="history-list" id="history-list">
+        <div class="empty-state">
+          <div class="e-icon">◷</div>
+          <div>No scan history yet.</div>
+        </div>
+      </div>
+    </div>
 
-    function log(tag, cls, msg) {
-      const line = document.createElement('div');
-      line.className = 'log-line';
-      line.innerHTML = `<span class="log-ts">${ts()}</span>`
-                     + `<span class="log-tag ${cls}">${tag}</span>`
-                     + `<span>${escHtml(msg)}</span>`;
-      logBox.appendChild(line);
-      logBox.scrollTop = logBox.scrollHeight;
-    }
+    <!-- AGENT LOG panel -->
+    <div class="panel-content" id="panel-agentlog">
+      <div id="agent-panel" class="agent-panel">
+        <div class="agent-status-bar">
+          <div class="agent-status-dot" id="agent-dot"></div>
+          <span id="agent-status-text" class="mono">Agent inactive</span>
+          <div class="timer-display" id="agent-timer" style="font-size:16px;padding:4px 12px;margin-left:auto">--:--</div>
+        </div>
+        <div>
+          <div class="agent-section-title">Task queue</div>
+          <div id="agent-queue-display">
+            <div class="empty-state" style="padding:20px">
+              <div>No tasks queued.</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="agent-section-title">Activity</div>
+          <div id="agent-activity" class="log-box" style="max-height:200px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:8px"></div>
+        </div>
+      </div>
+    </div>
 
-    function clearLog() { logBox.innerHTML = ''; log('SYS','tag-sys','Log cleared.'); }
+  </main>
+</div>
 
-    function escHtml(s) {
-      return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
+<div id="toast"></div>
 
-    function toast(msg) {
-      const el = $('toast');
-      el.textContent = msg; el.style.opacity = '1';
-      clearTimeout(window._tt);
-      window._tt = setTimeout(() => { el.style.opacity = '0'; }, 2500);
-    }
+<!-- Monaco Editor loader -->
+<script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
 
-    function setProgress(pct, visible=true) {
-      $('progress-bar').style.display = visible ? 'block' : 'none';
-      $('progress-fill').style.width  = pct + '%';
-      if (pct >= 100) setTimeout(() => setProgress(0, false), 600);
-    }
+<script>
+/* ══════════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════════ */
+const STATE = {
+  user: null, token: null,
+  repoUrl: null, repoOwner: null, repoName: null, repoBranch: 'main',
+  scanResults: null,
+  fixes: null,
+  featureFiles: [], featureFixes: null, featureDescription: null,
+  mode: 'fix',
+  taskSource: 'manual',
+  agentRunning: false, agentInterval: null, agentQueue: [],
+  agentIndex: 0, agentEndTime: null,
+  currentFile: null, showingDiff: false,
+  history: JSON.parse(localStorage.getItem('vc_history') || '[]'),
+};
 
-    /* ─── FETCH WRAPPER ─────────────────────────────────────────── */
-    async function apiFetch(url, options = {}) {
-      const { headers = {}, ...rest } = options;
-      return fetch(url, {
-        ...rest,
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      });
-    }
+/* Monaco instances */
+let monacoEditor = null;
+let diffEditor    = null;
+let monacoReady   = false;
 
-    /* ─── MODE SWITCH ───────────────────────────────────────────── */
-    function switchMode(mode) {
-      STATE.mode = mode;
-      $('tab-fix').classList.toggle('active', mode === 'fix');
-      $('tab-feature').classList.toggle('active', mode === 'feature');
-      $('fix-panel').style.display     = mode === 'fix'     ? 'block' : 'none';
-      $('feature-panel').classList.toggle('visible', mode === 'feature');
-      $('report-area').style.display   = 'none';
-      $('fix-btn').style.display       = 'none';
-      $('pr-btn').style.display        = 'none';
+/* Init Monaco */
+require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.45.0/min/vs' } });
+require(['vs/editor/editor.main'], () => {
+  monacoReady = true;
+  monacoEditor = monaco.editor.create(document.getElementById('monaco-container'), {
+    value: '// Select a file from the list to view its code',
+    language: 'javascript',
+    theme: 'vs-dark',
+    readOnly: true,
+    fontSize: 13,
+    fontFamily: '"JetBrains Mono", monospace',
+    minimap: { enabled: true },
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    lineNumbers: 'on',
+    renderLineHighlight: 'all',
+    smoothScrolling: true,
+  });
+  diffEditor = monaco.editor.createDiffEditor(document.getElementById('diff-container'), {
+    theme: 'vs-dark',
+    readOnly: true,
+    fontSize: 13,
+    fontFamily: '"JetBrains Mono", monospace',
+    automaticLayout: true,
+    renderSideBySide: true,
+    enableSplitViewResizing: true,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+  });
+  log('SYS', 'tag-sys', 'Monaco editor loaded.');
+});
 
-      // Populate feature repo select if logged in
-      if (mode === 'feature' && STATE.user) syncFeatureRepoSelect();
-    }
+/* ══════════════════════════════════════════════════════
+   UTILS
+══════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const logBox = $('log-box');
 
-    /* ─── AUTH ──────────────────────────────────────────────────── */
-    async function checkAuth() {
-      try {
-        const res = await apiFetch('/api/user');
-        if (!res.ok) { setTimeout(checkAuth, 1500); return; }
-        const data = await res.json();
-        applyAuthState(data.user, data.token);
-      } catch { setTimeout(checkAuth, 1500); }
-    }
+function ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
 
-    function applyAuthState(user, token) {
-      if (user) {
-        STATE.user  = user;
-        STATE.token = token;
-        $('gh-avatar').src           = user.avatar || '';
-        $('gh-avatar').alt           = user.login + ' avatar';
-        $('gh-username').textContent = user.login;
-        $('avatar-wrap').classList.add('visible');
-        $('user-info').style.display  = 'none';
-        $('status-dot').className     = 'status-dot online';
-        $('login-btn').textContent    = 'Logout';
-        $('login-btn').onclick        = logout;
-        $('repo-select').style.display     = 'inline-block';
-        $('scan-logged-btn').style.display = 'inline-flex';
-        loadRepos();
-        log('AUTH','tag-ok', `Authenticated as ${user.login}`);
-      } else {
-        STATE.user = null; STATE.token = null;
-        $('avatar-wrap').classList.remove('visible');
-        $('user-info').style.display  = '';
-        $('user-info').textContent    = 'Not logged in';
-        $('status-dot').className     = 'status-dot offline';
-        $('login-btn').textContent    = 'Login with GitHub';
-        $('login-btn').onclick        = login;
-        $('repo-select').style.display     = 'none';
-        $('scan-logged-btn').style.display = 'none';
-        log('AUTH','tag-sys','Not authenticated.');
-      }
-    }
+function log(tag, cls, msg) {
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-ts">${ts()}</span>`
+    + `<span class="log-tag ${cls}">${tag}</span>`
+    + `<span>${esc(msg)}</span>`;
+  logBox.appendChild(line);
+  logBox.scrollTop = logBox.scrollHeight;
+}
 
-    function login()  { window.location.href = '/auth/github'; }
-    function logout() { window.location.href = '/auth/logout'; }
+function clearLog() { logBox.innerHTML = ''; log('SYS','tag-sys','Log cleared.'); }
 
-    async function loadRepos() {
-      try {
-        const res   = await apiFetch('/api/repos');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const repos = await res.json();
-        const select = $('repo-select');
-        select.innerHTML = '<option value="">Select repo</option>';
-        repos.forEach(repo => {
-          const opt = document.createElement('option');
-          opt.value = repo.full_name; opt.textContent = repo.full_name;
-          select.appendChild(opt);
-        });
-        log('AUTH','tag-ok',`Loaded ${repos.length} repos`);
-        syncFeatureRepoSelect(repos);
-      } catch (e) { log('AUTH','tag-err','Failed to load repos: ' + e.message); }
-    }
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
-    function syncFeatureRepoSelect(repos) {
-      // Mirror fix repo-select into feature-repo-select
-      const src  = $('repo-select');
-      const dest = $('feature-repo-select');
-      dest.innerHTML = src.innerHTML;
-    }
+function toast(msg, dur=2500) {
+  const el = $('toast');
+  el.textContent = msg; el.style.opacity = '1';
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => { el.style.opacity = '0'; }, dur);
+}
 
-    function selectRepo() {
-      const val = $('repo-select').value;
-      if (!val) return;
-      const [owner, name] = val.split('/');
-      STATE.repoOwner = owner; STATE.repoName = name;
-      STATE.repoUrl   = `https://github.com/${val}.git`;
-      STATE.repoBranch = 'main';
-      $('repo-url-input').value = `https://github.com/${val}`;
-    }
+function setProgress(pct, visible=true) {
+  /* No standalone progress bar in new layout — use log */
+}
 
-    function selectFeatureRepo() {
-      const val = $('feature-repo-select').value;
-      if (!val) return;
-      const [owner, name] = val.split('/');
-      STATE.repoOwner = owner; STATE.repoName = name;
-      STATE.repoUrl   = `https://github.com/${val}.git`;
-      STATE.repoBranch = 'main';
-    }
+function agentLog(msg) {
+  const el = $('agent-activity');
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-ts">${ts()}</span><span>${esc(msg)}</span>`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  log('AGENT', 'tag-agent', msg);
+}
 
-    /* ─── FIX MODE: SCAN ────────────────────────────────────────── */
-    async function scanManual() {
-      const url   = $('repo-url-input').value.trim();
-      if (!url) { toast('⚠ Enter a repo URL'); return; }
-      const match = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
-      if (!match) { toast('⚠ Invalid GitHub URL'); return; }
-      STATE.repoOwner = match[1]; STATE.repoName = match[2];
-      STATE.repoUrl   = `https://github.com/${match[1]}/${match[2]}.git`;
-      STATE.repoBranch = 'main';
-      await doScan(null);
-    }
+function saveHistory(entry) {
+  STATE.history.unshift(entry);
+  if (STATE.history.length > 50) STATE.history.pop();
+  localStorage.setItem('vc_history', JSON.stringify(STATE.history));
+  renderHistory();
+}
 
-    async function scanLoggedIn() {
-      if (!STATE.repoUrl) { toast('⚠ Select a repo first'); return; }
-      await doScan(STATE.token);
-    }
+/* ══════════════════════════════════════════════════════
+   FETCH WRAPPER
+══════════════════════════════════════════════════════ */
+async function apiFetch(url, opts={}) {
+  const { headers={}, ...rest } = opts;
+  return fetch(url, {
+    ...rest,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...headers },
+  });
+}
 
-    async function doScan(token) {
-      $('report-area').style.display = 'none';
-      $('fix-btn').style.display = 'none';
-      $('pr-btn').style.display  = 'none';
-      setProgress(10);
-      log('SCAN','tag-info',`Scanning ${STATE.repoOwner}/${STATE.repoName}…`);
+/* ══════════════════════════════════════════════════════
+   MODE SWITCH
+══════════════════════════════════════════════════════ */
+function switchMode(mode) {
+  STATE.mode = mode;
+  ['fix','feature','agent'].forEach(m => {
+    $(`tab-${m}`).classList.toggle('active', m === mode);
+    $(`sidebar-${m}`).style.display = m === mode ? 'flex' : 'none';
+  });
+  if (mode === 'feature' || mode === 'agent') syncRepoSelects();
+}
 
-      try {
-        const res  = await apiFetch('/api/scan-repo', {
-          method: 'POST',
-          body:   JSON.stringify({ repoUrl: STATE.repoUrl, repoOwner: STATE.repoOwner, repoName: STATE.repoName, token: token || null }),
-        });
-        setProgress(80);
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Scan failed');
-        STATE.scanResults = data.results;
-        setProgress(100);
-        $('report-title').textContent = '📊 Scan Report';
-        renderReport(data.results);
-        $('report-area').style.display = 'block';
-        $('fix-btn').style.display     = 'inline-flex';
-        log('SCAN','tag-ok',`Scan complete: ${data.results.length} files analyzed`);
-        toast('✅ Scan complete');
-      } catch (e) {
-        log('SCAN','tag-err', e.message);
-        toast('❌ ' + e.message);
-        setProgress(0, false);
-      }
-    }
+function syncRepoSelects() {
+  const src = $('repo-select');
+  [$('feature-repo-select'), $('agent-repo-select')].forEach(dest => {
+    if (dest) dest.innerHTML = src.innerHTML;
+  });
+}
 
-    function renderReport(results) {
-      const container   = $('report-content');
-      const totalFiles  = results.length;
-      const totalIssues = results.reduce((sum, f) => sum + f.issues.length, 0);
+/* ══════════════════════════════════════════════════════
+   PANEL TABS
+══════════════════════════════════════════════════════ */
+function showPanel(name) {
+  document.querySelectorAll('.panel-tab').forEach((t,i) => {
+    const names = ['report','editor','history','agentlog'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.panel-content').forEach(p => p.classList.remove('active'));
+  $(`panel-${name}`).classList.add('active');
+  if (name === 'editor' && monacoReady) {
+    monacoEditor.layout();
+    diffEditor.layout();
+  }
+}
 
-      let html = `<div class="summary-box">
-        <div class="summary-line"><span>Files scanned</span><span class="val">${totalFiles}</span></div>
-        <div class="summary-line"><span>Total issues</span><span class="val red">${totalIssues}</span></div>
+/* ══════════════════════════════════════════════════════
+   AUTH
+══════════════════════════════════════════════════════ */
+async function checkAuth() {
+  try {
+    const res = await apiFetch('/api/user');
+    if (!res.ok) { setTimeout(checkAuth, 1500); return; }
+    const data = await res.json();
+    applyAuthState(data.user, data.token);
+  } catch { setTimeout(checkAuth, 1500); }
+}
+
+function applyAuthState(user, token) {
+  if (user) {
+    STATE.user = user; STATE.token = token;
+    $('gh-avatar').src = user.avatar || '';
+    $('gh-username').textContent = user.login;
+    $('avatar-wrap').classList.add('visible');
+    $('user-info').style.display = 'none';
+    $('status-dot').className = 'status-dot online';
+    $('login-btn').textContent = 'Logout';
+    $('login-btn').onclick = logout;
+    loadRepos();
+    log('AUTH','tag-ok',`Signed in as ${user.login}`);
+  } else {
+    STATE.user = null; STATE.token = null;
+    $('avatar-wrap').classList.remove('visible');
+    $('user-info').style.display = '';
+    $('user-info').textContent = 'Not signed in';
+    $('status-dot').className = 'status-dot offline';
+    $('login-btn').textContent = 'Login with GitHub';
+    $('login-btn').onclick = login;
+    log('AUTH','tag-sys','Not signed in.');
+  }
+}
+
+function login()  { window.location.href = '/auth/github'; }
+function logout() { window.location.href = '/auth/logout'; }
+
+async function loadRepos() {
+  try {
+    const res = await apiFetch('/api/repos');
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const repos = await res.json();
+    const html = '<option value="">Select repo</option>'
+      + repos.map(r => `<option value="${r.full_name}">${r.full_name}</option>`).join('');
+    ['repo-select','feature-repo-select','agent-repo-select'].forEach(id => {
+      if ($(id)) $(id).innerHTML = html;
+    });
+    log('AUTH','tag-ok',`Loaded ${repos.length} repos`);
+  } catch(e) { log('AUTH','tag-err','Failed to load repos: '+e.message); }
+}
+
+/* ══════════════════════════════════════════════════════
+   REPO SELECT
+══════════════════════════════════════════════════════ */
+function _setRepo(val) {
+  if (!val) return;
+  const [owner, name] = val.split('/');
+  STATE.repoOwner = owner; STATE.repoName = name;
+  STATE.repoUrl   = `https://github.com/${val}.git`;
+  STATE.repoBranch = 'main';
+  $('repo-url-input').value = `https://github.com/${val}`;
+}
+function selectRepo()        { _setRepo($('repo-select').value); }
+function selectFeatureRepo() { _setRepo($('feature-repo-select').value); }
+function selectAgentRepo()   { _setRepo($('agent-repo-select').value); }
+
+/* ══════════════════════════════════════════════════════
+   SCAN
+══════════════════════════════════════════════════════ */
+async function scanManual() {
+  const url = $('repo-url-input').value.trim();
+  if (!url) { toast('Enter a repo URL'); return; }
+  const m = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
+  if (!m) { toast('Invalid GitHub URL'); return; }
+  STATE.repoOwner = m[1]; STATE.repoName = m[2];
+  STATE.repoUrl   = `https://github.com/${m[1]}/${m[2]}.git`;
+  STATE.repoBranch = 'main';
+  await doScan(null);
+}
+
+async function scanLoggedIn() {
+  if (!STATE.repoUrl) { toast('Select a repo first'); return; }
+  await doScan(STATE.token);
+}
+
+async function doScan(token) {
+  log('SCAN','tag-info',`Scanning ${STATE.repoOwner}/${STATE.repoName}…`);
+  showPanel('report');
+  $('report-content').innerHTML = '<div class="empty-state"><div class="e-icon">⟳</div><div>Scanning repository…</div></div>';
+  $('fix-btn').style.display = 'none';
+  $('pr-btn').style.display  = 'none';
+
+  try {
+    const res  = await apiFetch('/api/scan-repo', {
+      method: 'POST',
+      body: JSON.stringify({ repoUrl:STATE.repoUrl, repoOwner:STATE.repoOwner, repoName:STATE.repoName, token:token||null }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error||'Scan failed');
+    STATE.scanResults = data.results;
+    renderReport(data.results);
+    buildFileList(data.results);
+    $('fix-btn').style.display = 'block';
+    log('SCAN','tag-ok',`Done: ${data.results.length} files, ${data.results.reduce((s,f)=>s+f.issues.length,0)} issues`);
+    toast('Scan complete');
+    saveHistory({
+      date: new Date().toISOString(),
+      repo: `${STATE.repoOwner}/${STATE.repoName}`,
+      files: data.results.length,
+      issues: data.results.reduce((s,f)=>s+f.issues.length,0),
+      high: data.results.reduce((s,f)=>s+f.issues.filter(i=>i.severity==='HIGH').length,0),
+      med:  data.results.reduce((s,f)=>s+f.issues.filter(i=>i.severity==='MED').length,0),
+      low:  data.results.reduce((s,f)=>s+f.issues.filter(i=>i.severity==='LOW').length,0),
+    });
+  } catch(e) {
+    log('SCAN','tag-err',e.message);
+    toast('Scan failed: '+e.message);
+    $('report-content').innerHTML = `<div class="empty-state"><div class="e-icon">✗</div><div>${esc(e.message)}</div></div>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   RENDER REPORT (with severity chart)
+══════════════════════════════════════════════════════ */
+function renderReport(results) {
+  const totalFiles  = results.length;
+  const totalIssues = results.reduce((s,f) => s+f.issues.length, 0);
+  const high  = results.reduce((s,f) => s+f.issues.filter(i=>i.severity==='HIGH').length, 0);
+  const med   = results.reduce((s,f) => s+f.issues.filter(i=>i.severity==='MED').length, 0);
+  const low   = results.reduce((s,f) => s+f.issues.filter(i=>i.severity==='LOW').length, 0);
+
+  $('s-files').textContent  = totalFiles;
+  $('s-issues').textContent = totalIssues;
+  $('s-high').textContent   = high;
+  $('s-med').textContent    = med;
+  $('s-low').textContent    = low;
+  $('s-time').textContent   = new Date().toLocaleTimeString();
+
+  const maxBar = Math.max(high, med, low, 1);
+  const pct = n => Math.round((n/maxBar)*100);
+
+  let html = `
+    <div class="summary-row">
+      <div class="summary-card"><div class="s-label">Files</div><div class="s-val">${totalFiles}</div></div>
+      <div class="summary-card"><div class="s-label">Issues</div><div class="s-val" style="color:var(--red)">${totalIssues}</div></div>
+      <div class="summary-card"><div class="s-label">Clean files</div><div class="s-val" style="color:var(--emerald)">${results.filter(f=>!f.issues.length).length}</div></div>
+    </div>
+    <div class="sev-chart-wrap">
+      <div class="sev-bar-group">
+        <div class="sev-bar-row">
+          <div class="sev-bar-label" style="color:var(--red)">HIGH</div>
+          <div class="sev-bar-track"><div class="sev-bar-fill" style="width:${pct(high)}%;background:var(--red)"></div></div>
+          <div class="sev-bar-count" style="color:var(--red)">${high}</div>
+        </div>
+        <div class="sev-bar-row">
+          <div class="sev-bar-label" style="color:var(--amber)">MED</div>
+          <div class="sev-bar-track"><div class="sev-bar-fill" style="width:${pct(med)}%;background:var(--amber)"></div></div>
+          <div class="sev-bar-count" style="color:var(--amber)">${med}</div>
+        </div>
+        <div class="sev-bar-row">
+          <div class="sev-bar-label" style="color:var(--blue)">LOW</div>
+          <div class="sev-bar-track"><div class="sev-bar-fill" style="width:${pct(low)}%;background:var(--blue)"></div></div>
+          <div class="sev-bar-count" style="color:var(--blue)">${low}</div>
+        </div>
+      </div>
+    </div>`;
+
+  if (!totalIssues) {
+    html += `<div class="empty-state" style="padding:40px"><div class="e-icon" style="color:var(--emerald)">✓</div><div style="color:var(--emerald)">No issues found. Repository is clean.</div></div>`;
+  } else {
+    for (const item of results) {
+      if (!item.issues.length) continue;
+      html += `<div class="file-heading">
+        <span style="opacity:0.5">◈</span>
+        ${esc(item.file)}
+        <span class="badge" style="margin-left:auto">${item.issues.length}</span>
       </div>`;
-
-      if (!totalIssues) {
-        html += `<div style="color:#10b981;margin-top:12px;">✅ No issues found. Great job!</div>`;
-      } else {
-        for (const item of results) {
-          if (!item.issues.length) continue;
-          html += `<div style="font-weight:700;color:#60a5fa;margin-top:12px;">📄 ${escHtml(item.file)}</div>`;
-          for (const issue of item.issues) {
-            const sev   = (issue.severity || 'MED').toLowerCase();
-            const color = sev === 'high' ? '#ef4444' : sev === 'med' ? '#f59e0b' : '#60a5fa';
-            html += `<div class="bug-item" style="border-left:2px solid ${color};">
-              <span class="sev-${sev}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">[${(issue.severity||'MED').toUpperCase()}]</span>
-              <span>${escHtml(issue.description||'Issue')}</span>
-              ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
-            </div>`;
-          }
-        }
-      }
-
-      container.innerHTML = html;
-      $('s-files').textContent  = totalFiles;
-      $('s-issues').textContent = totalIssues;
-      $('s-time').textContent   = new Date().toLocaleTimeString();
-    }
-
-    /* ─── FIX MODE: GENERATE FIXES ─────────────────────────────── */
-    async function generateFixes() {
-      if (!STATE.scanResults) { toast('⚠ No scan results.'); return; }
-      const filesToFix = STATE.scanResults.filter(f => f.issues?.length > 0)
-        .map(f => ({ file: f.file, code: f.code, issues: f.issues }));
-      if (!filesToFix.length) { toast('⚠ No issues to fix.'); return; }
-
-      log('FIX','tag-info',`Generating fixes for ${filesToFix.length} files…`);
-      $('fix-btn').disabled = true; $('fix-btn').textContent = '⏳ Generating…';
-
-      try {
-        const res  = await apiFetch('/api/generate-fixes', { method:'POST', body: JSON.stringify({ files: filesToFix }) });
-        const data = await res.json();
-        if (!data.fixes) throw new Error('No fixes returned');
-        STATE.fixes = data.fixes;
-        $('pr-btn').style.display = 'inline-flex';
-        log('FIX','tag-ok',`Generated fixes for ${data.fixes.length} files`);
-        toast('✅ Fixes ready. Click "Create PR".');
-        showFixPreview(data.fixes);
-      } catch (e) {
-        log('FIX','tag-err', e.message); toast('❌ ' + e.message);
-      } finally {
-        $('fix-btn').disabled = false; $('fix-btn').textContent = '🔧 Apply Fixes';
-      }
-    }
-
-    function showFixPreview(fixes, label='🔧 Fixes Generated') {
-      const container = $('report-content');
-      let html = container.innerHTML
-               + `<div style="margin-top:16px;border-top:1px solid #2a3a4e;padding-top:12px;">
-                    <div style="font-weight:700;color:#10b981;">${label}</div>`;
-      for (const fix of fixes) {
-        html += `<div style="margin-top:6px;font-size:11px;color:#8aa9c9;">
-          📄 ${escHtml(fix.file)} — ${escHtml((fix.applied||[]).join(', ') || 'reviewed')}
+      for (const issue of item.issues) {
+        const sev = (issue.severity||'MED').toLowerCase();
+        html += `<div class="issue-card ${sev}">
+          <div class="issue-meta">
+            <span class="sev sev-${sev}">${(issue.severity||'MED').toUpperCase()}</span>
+          </div>
+          <div class="issue-desc">${esc(issue.description||'Issue detected')}</div>
+          ${issue.fix ? `<div class="issue-fix">💡 ${esc(issue.fix)}</div>` : ''}
         </div>`;
-        if (fix.newCode) {
-          html += `<details style="margin-left:12px;">
-            <summary style="cursor:pointer;color:#8aa9c9;font-size:11px;">Show preview</summary>
-            <pre style="background:#0f172a;padding:6px;border-radius:4px;font-size:10px;color:#e0e8f0;white-space:pre-wrap;max-height:200px;overflow:auto;">${escHtml(fix.newCode.slice(0,800))}${fix.newCode.length>800?'\n…truncated':''}</pre>
-          </details>`;
+      }
+    }
+  }
+
+  $('report-content').innerHTML = html;
+}
+
+/* ══════════════════════════════════════════════════════
+   FILE LIST + MONACO EDITOR
+══════════════════════════════════════════════════════ */
+function buildFileList(results) {
+  const panel = $('file-list-panel');
+  if (!results || !results.length) { panel.innerHTML = ''; return; }
+  panel.innerHTML = results.map((r, i) => {
+    const issues = r.issues ? r.issues.length : 0;
+    const sevClass = r.issues && r.issues.some(x=>x.severity==='HIGH') ? 'sev-high'
+                   : r.issues && r.issues.some(x=>x.severity==='MED')  ? 'sev-med'  : 'sev-low';
+    return `<div class="file-item" onclick="openFile(${i})" id="fi-${i}">
+      <span style="opacity:0.5;font-size:10px">◈</span>
+      <span class="flex-1" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.file)}</span>
+      ${issues ? `<span class="sev ${sevClass} fi-badge">${issues}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function openFile(idx) {
+  const results = STATE.fixes || STATE.scanResults;
+  if (!results) return;
+  const item = results[idx];
+  if (!item) return;
+  STATE.currentFile = idx;
+
+  document.querySelectorAll('.file-item').forEach((el,i) => el.classList.toggle('active', i===idx));
+  $('editor-file-label').textContent = item.file || item.file;
+  showPanel('editor');
+
+  const lang = detectLang(item.file);
+
+  if (STATE.showingDiff && item.newCode && STATE.scanResults && STATE.scanResults[idx]) {
+    showDiff(STATE.scanResults[idx].code || '', item.newCode, lang);
+  } else {
+    showCode(item.code || item.newCode || '', lang);
+  }
+
+  const hasDiff = STATE.fixes && STATE.fixes[idx] && STATE.fixes[idx].newCode
+               && STATE.scanResults && STATE.scanResults[idx];
+  $('view-toggle-btn').style.display = hasDiff ? 'inline-flex' : 'none';
+  $('view-toggle-btn').textContent = STATE.showingDiff ? 'Switch to code' : 'Switch to diff';
+}
+
+function showCode(code, lang='javascript') {
+  if (!monacoReady) return;
+  $('monaco-container').style.display = 'block';
+  $('diff-container').style.display   = 'none';
+  monacoEditor.setValue(code);
+  monaco.editor.setModelLanguage(monacoEditor.getModel(), lang);
+  monacoEditor.layout();
+}
+
+function showDiff(original, modified, lang='javascript') {
+  if (!monacoReady) return;
+  $('monaco-container').style.display = 'none';
+  $('diff-container').style.display   = 'block';
+  const origModel = monaco.editor.createModel(original, lang);
+  const modModel  = monaco.editor.createModel(modified, lang);
+  diffEditor.setModel({ original: origModel, modified: modModel });
+  diffEditor.layout();
+}
+
+function toggleDiff() {
+  STATE.showingDiff = !STATE.showingDiff;
+  $('view-toggle-btn').textContent = STATE.showingDiff ? 'Switch to code' : 'Switch to diff';
+  if (STATE.currentFile !== null) openFile(STATE.currentFile);
+}
+
+function copyEditorContent() {
+  const text = monacoEditor.getValue();
+  navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard'));
+}
+
+function detectLang(filename) {
+  if (!filename) return 'plaintext';
+  const ext = filename.split('.').pop().toLowerCase();
+  const map = { js:'javascript', ts:'typescript', jsx:'javascript', tsx:'typescript',
+    html:'html', css:'css', py:'python', go:'go', java:'java',
+    rs:'rust', c:'c', cpp:'cpp', h:'c', json:'json', md:'markdown' };
+  return map[ext] || 'plaintext';
+}
+
+/* ══════════════════════════════════════════════════════
+   FIXES
+══════════════════════════════════════════════════════ */
+async function generateFixes() {
+  if (!STATE.scanResults) { toast('Run a scan first'); return; }
+  const filesToFix = STATE.scanResults.filter(f=>f.issues&&f.issues.length>0)
+    .map(f=>({ file:f.file, code:f.code, issues:f.issues }));
+  if (!filesToFix.length) { toast('No issues to fix'); return; }
+
+  log('FIX','tag-info',`Generating fixes for ${filesToFix.length} files…`);
+  $('fix-btn').disabled = true; $('fix-btn').textContent = 'Generating…';
+
+  try {
+    const res  = await apiFetch('/api/generate-fixes', {
+      method:'POST', body:JSON.stringify({ files:filesToFix })
+    });
+    const data = await res.json();
+    if (!data.fixes) throw new Error('No fixes returned');
+    STATE.fixes = data.fixes;
+    buildFileList(data.fixes);
+    $('pr-btn').style.display = 'block';
+    log('FIX','tag-ok',`Fixes ready for ${data.fixes.length} files`);
+    toast('Fixes generated — open Editor/Diff to review');
+    showPanel('editor');
+    if (data.fixes.length) openFile(0);
+  } catch(e) {
+    log('FIX','tag-err',e.message); toast('Fix failed: '+e.message);
+  } finally {
+    $('fix-btn').disabled = false; $('fix-btn').textContent = 'Apply fixes';
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   CREATE PR
+══════════════════════════════════════════════════════ */
+async function createPR(fixes, prType='fix', featureDescription=null) {
+  const f = fixes || STATE.fixes;
+  if (!f||!f.length)             { toast('Generate fixes first'); return; }
+  if (!STATE.repoOwner)          { toast('No repo selected'); return; }
+  if (!STATE.token)              { toast('Login required'); return; }
+
+  log('PR','tag-info','Opening pull request…');
+  $('pr-btn').disabled = true; $('pr-btn').textContent = 'Creating PR…';
+
+  try {
+    const res  = await apiFetch('/api/create-pr', {
+      method:'POST',
+      body: JSON.stringify({
+        repoOwner: STATE.repoOwner, repoName: STATE.repoName,
+        branch: STATE.repoBranch||'main',
+        fixes: f, token: STATE.token, prType, featureDescription,
+      }),
+    });
+    const data = await res.json();
+    if (!data.url) throw new Error(data.error||'PR failed');
+    log('PR','tag-ok',`PR #${data.number}: ${data.url}`);
+    toast(`PR #${data.number} opened!`);
+    $('report-content').insertAdjacentHTML('beforeend',
+      `<div class="pr-result">🔀 <a href="${data.url}" target="_blank" rel="noopener">View PR #${data.number}</a> <span class="text-muted text-xs">— README updated with VisCarMa log</span></div>`
+    );
+    return data;
+  } catch(e) {
+    log('PR','tag-err',e.message); toast('PR failed: '+e.message);
+  } finally {
+    $('pr-btn').disabled = false; $('pr-btn').textContent = 'Create PR';
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   FEATURE MODE
+══════════════════════════════════════════════════════ */
+async function loadFeatureFiles() {
+  if (!STATE.repoUrl) { toast('Select a repo first'); return; }
+  if (!STATE.token)   { toast('Login required'); return; }
+  log('FEAT','tag-info','Loading repo files…');
+  try {
+    const res  = await apiFetch('/api/scan-repo', {
+      method:'POST',
+      body: JSON.stringify({ repoUrl:STATE.repoUrl, repoOwner:STATE.repoOwner, repoName:STATE.repoName, token:STATE.token }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    STATE.featureFiles = data.results.map(r=>({ file:r.file, code:r.code }));
+    $('feature-file-checkboxes').innerHTML = STATE.featureFiles.map((f,i) =>
+      `<label class="feature-file-check">
+        <input type="checkbox" value="${i}" checked/>
+        ${esc(f.file)}
+       </label>`
+    ).join('');
+    $('feature-file-list').style.display = 'block';
+    log('FEAT','tag-ok',`${STATE.featureFiles.length} files loaded`);
+    toast(`${STATE.featureFiles.length} files ready`);
+  } catch(e) { log('FEAT','tag-err',e.message); toast(e.message); }
+}
+
+async function generateFeature() {
+  const desc = $('feature-description').value.trim();
+  if (!desc)                        { toast('Describe the feature'); return; }
+  if (!STATE.featureFiles.length)   { toast('Load files first'); return; }
+  if (!STATE.token)                 { toast('Login required'); return; }
+
+  const selected = [...document.querySelectorAll('#feature-file-checkboxes input:checked')]
+    .map(cb => STATE.featureFiles[parseInt(cb.value)]);
+  if (!selected.length) { toast('Select at least one file'); return; }
+
+  STATE.featureDescription = desc;
+  log('FEAT','tag-info',`Generating: "${desc}" across ${selected.length} files…`);
+
+  try {
+    const res  = await apiFetch('/api/generate-feature', {
+      method:'POST', body:JSON.stringify({ files:selected, featureDescription:desc }),
+    });
+    const data = await res.json();
+    if (!data.fixes) throw new Error('No result');
+    STATE.featureFixes = data.fixes;
+    buildFileList(data.fixes);
+    showPanel('editor');
+    if (data.fixes.length) openFile(0);
+    $('feat-pr-btn').style.display = 'block';
+    log('FEAT','tag-ok',`Feature generated for ${data.fixes.length} files`);
+    toast('Feature generated — review in Editor/Diff');
+  } catch(e) { log('FEAT','tag-err',e.message); toast(e.message); }
+}
+
+async function createFeaturePR() {
+  await createPR(STATE.featureFixes, 'feature', STATE.featureDescription);
+}
+
+/* ══════════════════════════════════════════════════════
+   SCAN HISTORY
+══════════════════════════════════════════════════════ */
+function renderHistory() {
+  const list = $('history-list');
+  if (!STATE.history.length) {
+    list.innerHTML = '<div class="empty-state"><div class="e-icon">◷</div><div>No scan history yet.</div></div>';
+    return;
+  }
+  list.innerHTML = STATE.history.map(h => `
+    <div class="history-item">
+      <div class="history-date">${new Date(h.date).toLocaleString()}</div>
+      <div class="history-repo">${esc(h.repo)}</div>
+      <div class="history-stats">
+        <span class="sev sev-high">${h.high||0}</span>
+        <span class="sev sev-med">${h.med||0}</span>
+        <span class="sev sev-low">${h.low||0}</span>
+        <span class="text-muted text-xs">${h.files} files</span>
+      </div>
+    </div>`).join('');
+}
+
+/* ══════════════════════════════════════════════════════
+   AGENTIC IDLE MODE
+══════════════════════════════════════════════════════ */
+function setTaskSource(src) {
+  STATE.taskSource = src;
+  ['manual','jira'].forEach(s => {
+    $(`src-${s}`).classList.toggle('active', s===src);
+    $(`task-${s}-input`).style.display = s===src ? 'block' : 'none';
+  });
+}
+
+function getAgentTasks() {
+  if (STATE.taskSource === 'manual') {
+    return $('agent-tasks').value.split('\n').map(t=>t.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+async function fetchJiraTasks() {
+  const url     = $('jira-url').value.trim();
+  const token   = $('jira-token').value.trim();
+  const email   = $('jira-email').value.trim();
+  const project = $('jira-project').value.trim();
+  if (!url||!token||!email||!project) { toast('Fill all Jira fields'); return []; }
+  try {
+    const res = await apiFetch('/api/jira-tasks', {
+      method:'POST', body:JSON.stringify({ url,token,email,project }),
+    });
+    const data = await res.json();
+    return (data.tasks || []).map(t => `${t.key}: ${t.summary}`);
+  } catch(e) { log('AGENT','tag-err','Jira fetch failed: '+e.message); return []; }
+}
+
+async function startAgent() {
+  if (!STATE.repoUrl)   { toast('Select a repo first'); return; }
+  if (!STATE.token)     { toast('Login required'); return; }
+
+  let tasks = getAgentTasks();
+  if (STATE.taskSource === 'jira') {
+    agentLog('Fetching Jira tickets…');
+    tasks = await fetchJiraTasks();
+  }
+  if (!tasks.length) { toast('Add at least one task'); return; }
+
+  const mins = parseInt($('agent-duration').value) || 45;
+  STATE.agentQueue   = tasks.map(t=>({ text:t, status:'pending' }));
+  STATE.agentIndex   = 0;
+  STATE.agentRunning = true;
+  STATE.agentEndTime = Date.now() + mins * 60 * 1000;
+
+  $('agent-start-btn').style.display = 'none';
+  $('agent-stop-btn').style.display  = 'block';
+  $('agent-dot').className = 'agent-status-dot running';
+  $('agent-status-text').textContent = `Running — ${tasks.length} tasks queued`;
+
+  showPanel('agentlog');
+  renderAgentQueue();
+  agentLog(`Agent activated — ${tasks.length} tasks, ${mins} min window`);
+
+  runAgentTick();
+  STATE.agentInterval = setInterval(runAgentTick, 100);
+  STATE.agentTimerInterval = setInterval(updateAgentTimer, 1000);
+}
+
+function stopAgent() {
+  STATE.agentRunning = false;
+  clearInterval(STATE.agentInterval);
+  clearInterval(STATE.agentTimerInterval);
+  $('agent-start-btn').style.display = 'block';
+  $('agent-stop-btn').style.display  = 'none';
+  $('agent-dot').className = 'agent-status-dot';
+  $('agent-status-text').textContent = 'Agent stopped';
+  $('agent-timer').className = 'timer-display';
+  agentLog('Agent stopped by user.');
+}
+
+function updateAgentTimer() {
+  if (!STATE.agentEndTime) return;
+  const remaining = Math.max(0, STATE.agentEndTime - Date.now());
+  const m = Math.floor(remaining / 60000);
+  const s = Math.floor((remaining % 60000) / 1000);
+  const display = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  $('agent-timer').textContent = display;
+  if (remaining <= 0) {
+    $('agent-timer').className = 'timer-display expired';
+    stopAgent();
+    agentLog('Time window expired. Agent signing off.');
+    toast('Agent session complete — check Agent log for summary', 5000);
+  }
+}
+
+let agentBusy = false;
+async function runAgentTick() {
+  if (!STATE.agentRunning || agentBusy) return;
+  if (Date.now() >= STATE.agentEndTime) { stopAgent(); return; }
+  if (STATE.agentIndex >= STATE.agentQueue.length) {
+    agentLog('All tasks complete!');
+    stopAgent();
+    return;
+  }
+
+  const task = STATE.agentQueue[STATE.agentIndex];
+  if (task.status !== 'pending') { STATE.agentIndex++; return; }
+
+  agentBusy = true;
+  task.status = 'running';
+  renderAgentQueue();
+  agentLog(`Working on: "${task.text}"`);
+
+  try {
+    const isFeature = /add|implement|build|create|generate/i.test(task.text);
+
+    if (isFeature) {
+      agentLog('Detected feature task — loading files…');
+      const scanRes  = await apiFetch('/api/scan-repo', {
+        method:'POST',
+        body: JSON.stringify({ repoUrl:STATE.repoUrl, repoOwner:STATE.repoOwner, repoName:STATE.repoName, token:STATE.token }),
+      });
+      const scanData = await scanRes.json();
+      if (!scanData.success) throw new Error(scanData.error);
+      const files = scanData.results.slice(0,3).map(r=>({ file:r.file, code:r.code }));
+      const featRes  = await apiFetch('/api/generate-feature', {
+        method:'POST', body:JSON.stringify({ files, featureDescription:task.text }),
+      });
+      const featData = await featRes.json();
+      if (featData.fixes) {
+        const pr = await apiFetch('/api/create-pr', {
+          method:'POST',
+          body:JSON.stringify({ repoOwner:STATE.repoOwner, repoName:STATE.repoName,
+            branch:STATE.repoBranch||'main', fixes:featData.fixes, token:STATE.token,
+            prType:'feature', featureDescription:task.text }),
+        });
+        const prData = await pr.json();
+        if (prData.url) agentLog(`PR opened: ${prData.url}`);
+      }
+    } else {
+      agentLog('Detected fix task — scanning…');
+      const scanRes  = await apiFetch('/api/scan-repo', {
+        method:'POST',
+        body: JSON.stringify({ repoUrl:STATE.repoUrl, repoOwner:STATE.repoOwner, repoName:STATE.repoName, token:STATE.token }),
+      });
+      const scanData = await scanRes.json();
+      if (!scanData.success) throw new Error(scanData.error);
+      const filesToFix = scanData.results.filter(f=>f.issues&&f.issues.length>0)
+        .map(f=>({ file:f.file, code:f.code, issues:f.issues }));
+      if (!filesToFix.length) { agentLog('No issues found for this task.'); }
+      else {
+        const fixRes  = await apiFetch('/api/generate-fixes', {
+          method:'POST', body:JSON.stringify({ files:filesToFix })
+        });
+        const fixData = await fixRes.json();
+        if (fixData.fixes) {
+          const pr = await apiFetch('/api/create-pr', {
+            method:'POST',
+            body:JSON.stringify({ repoOwner:STATE.repoOwner, repoName:STATE.repoName,
+              branch:STATE.repoBranch||'main', fixes:fixData.fixes, token:STATE.token, prType:'fix' }),
+          });
+          const prData = await pr.json();
+          if (prData.url) agentLog(`Fix PR opened: ${prData.url}`);
         }
       }
-      html += `</div>`;
-      container.innerHTML = html;
     }
 
-    /* ─── FEATURE MODE ──────────────────────────────────────────── */
-    async function loadFeatureFiles() {
-      if (!STATE.repoUrl) { toast('⚠ Select a repo first'); return; }
-      if (!STATE.token)   { toast('⚠ Login required for feature mode'); return; }
+    task.status = 'done';
+    agentLog(`Task complete: "${task.text}"`);
+  } catch(e) {
+    task.status = 'error';
+    agentLog(`Task failed: ${e.message}`);
+  }
 
-      log('FEAT','tag-info','Loading repo files…');
-      setProgress(20);
+  STATE.agentIndex++;
+  renderAgentQueue();
+  agentBusy = false;
+}
 
-      try {
-        const res  = await apiFetch('/api/scan-repo', {
-          method: 'POST',
-          body: JSON.stringify({ repoUrl: STATE.repoUrl, repoOwner: STATE.repoOwner, repoName: STATE.repoName, token: STATE.token }),
-        });
-        setProgress(80);
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error);
-        STATE.featureFiles = data.results.map(r => ({ file: r.file, code: r.code }));
-        setProgress(100);
+function renderAgentQueue() {
+  const icons = { pending:'○', running:'◉', done:'●', error:'✗' };
+  const colors = { pending:'var(--text-3)', running:'var(--blue)', done:'var(--emerald)', error:'var(--red)' };
+  $('agent-queue-display').innerHTML = STATE.agentQueue.length
+    ? STATE.agentQueue.map(t => `
+        <div class="queue-item ${t.status}">
+          <span class="q-status" style="color:${colors[t.status]}">${icons[t.status]}</span>
+          <span class="q-text">${esc(t.text)}</span>
+        </div>`).join('')
+    : '<div class="empty-state" style="padding:16px"><div>No tasks queued.</div></div>';
+}
 
-        // Render file checkboxes
-        const checkboxContainer = $('feature-file-checkboxes');
-        checkboxContainer.innerHTML = STATE.featureFiles.map((f, i) => `
-          <label class="feature-file-check">
-            <input type="checkbox" value="${i}" checked />
-            ${escHtml(f.file)}
-          </label>`).join('');
-        $('feature-file-list').style.display = 'block';
-        log('FEAT','tag-ok',`Loaded ${STATE.featureFiles.length} files`);
-        toast(`✅ ${STATE.featureFiles.length} files loaded. Describe your feature.`);
-      } catch (e) {
-        log('FEAT','tag-err', e.message); toast('❌ ' + e.message);
-        setProgress(0, false);
-      }
-    }
-
-    async function generateFeature() {
-      const desc = $('feature-description').value.trim();
-      if (!desc) { toast('⚠ Describe the feature first'); return; }
-      if (!STATE.featureFiles.length) { toast('⚠ Load files first'); return; }
-      if (!STATE.token) { toast('⚠ Login required'); return; }
-
-      // Get selected files
-      const checked = [...document.querySelectorAll('#feature-file-checkboxes input:checked')];
-      const selected = checked.map(cb => STATE.featureFiles[parseInt(cb.value)]);
-      if (!selected.length) { toast('⚠ Select at least one file'); return; }
-
-      log('FEAT','tag-info',`Generating feature for ${selected.length} files: "${desc}"`);
-      setProgress(15);
-
-      try {
-        const res  = await apiFetch('/api/generate-feature', {
-          method: 'POST',
-          body: JSON.stringify({ files: selected, featureDescription: desc }),
-        });
-        setProgress(80);
-        const data = await res.json();
-        if (!data.fixes) throw new Error('No feature code returned');
-        STATE.fixes = data.fixes;
-        STATE.featureDescription = desc;
-        setProgress(100);
-
-        $('report-title').textContent = '✨ Feature Preview';
-        $('report-content').innerHTML = '';
-        $('report-area').style.display = 'block';
-        $('fix-btn').style.display = 'none';
-        $('pr-btn').style.display  = 'inline-flex';
-
-        showFixPreview(data.fixes, `✨ Feature: "${escHtml(desc)}"`);
-        $('s-files').textContent  = data.fixes.length;
-        $('s-issues').textContent = '—';
-        $('s-time').textContent   = new Date().toLocaleTimeString();
-
-        log('FEAT','tag-ok',`Feature generated for ${data.fixes.length} files`);
-        toast('✅ Feature generated! Review and click "Create PR".');
-      } catch (e) {
-        log('FEAT','tag-err', e.message); toast('❌ ' + e.message);
-        setProgress(0, false);
-      }
-    }
-
-    /* ─── CREATE PR (fix or feature) ────────────────────────────── */
-    async function createPR() {
-      if (!STATE.fixes?.length)         { toast('⚠ Generate fixes or a feature first.'); return; }
-      if (!STATE.repoOwner || !STATE.repoName) { toast('⚠ Repo not set.'); return; }
-      if (!STATE.token)                 { toast('⚠ Login required to create a PR.'); return; }
-
-      const isFeature = STATE.mode === 'feature';
-      log('PR','tag-info', isFeature ? `Creating feature PR…` : 'Creating fix PR…');
-      $('pr-btn').disabled = true; $('pr-btn').textContent = '⏳ Creating…';
-
-      try {
-        const res  = await apiFetch('/api/create-pr', {
-          method: 'POST',
-          body: JSON.stringify({
-            repoOwner:          STATE.repoOwner,
-            repoName:           STATE.repoName,
-            branch:             STATE.repoBranch || 'main',
-            fixes:              STATE.fixes,
-            token:              STATE.token,
-            featureDescription: STATE.featureDescription || null,
-            prType:             isFeature ? 'feature' : 'fix',
-          }),
-        });
-        const data = await res.json();
-        if (!data.url) throw new Error(data.error || 'PR creation failed');
-        log('PR','tag-ok',`PR created: ${data.url}`);
-        toast(`✅ PR #${data.number} opened!`);
-        $('report-content').innerHTML +=
-          `<div style="margin-top:12px;border-top:1px solid #10b981;padding-top:8px;">
-            🔀 <a href="${data.url}" target="_blank" rel="noopener" style="color:#10b981;">View PR #${data.number}</a>
-            &nbsp;&nbsp;📝 README updated with VisCarMa change log entry.
-          </div>`;
-      } catch (e) {
-        log('PR','tag-err', e.message); toast('❌ ' + e.message);
-      } finally {
-        $('pr-btn').disabled = false; $('pr-btn').textContent = '🔀 Create PR';
-      }
-    }
-
-    /* ─── INIT ──────────────────────────────────────────────────── */
-    (function init() {
-      log('SYS','tag-sys','VisCarMa Hybrid Scanner ready.');
-      setTimeout(checkAuth, 150);
-    })();
-  </script>
-
+/* ══════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════ */
+(function init() {
+  renderHistory();
+  setTimeout(checkAuth, 150);
+})();
+</script>
 </body>
 </html>
