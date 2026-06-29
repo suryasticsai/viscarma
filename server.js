@@ -247,11 +247,14 @@ async function generateFixesForFile(code, filename, issues) {
   const ext = filename.split('.').pop().toLowerCase();
   const applied = [];
 
-  // 1. ESLint auto-fix
+  // 1. ESLint auto-fix (FIX: pass fix as an option to lintText)
   if (['js', 'ts', 'jsx', 'tsx'].includes(ext)) {
     try {
       const eslint = await getESLint();
-      const results = await eslint.lintText(newCode, { filePath: filename, fix: true });
+      const results = await eslint.lintText(newCode, {
+        filePath: filename,
+        fix: true, // <-- correct place for fix option
+      });
       if (results[0]?.output) {
         newCode = results[0].output;
         applied.push('ESLint auto-fix');
@@ -324,7 +327,6 @@ const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 
 app.get('/auth/github', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
-  // Store state in a signed cookie (maxAge 10 minutes)
   res.cookie('oauthState', state, {
     signed: true,
     maxAge: 10 * 60 * 1000,
@@ -352,7 +354,6 @@ app.get('/auth/callback', async (req, res) => {
     return res.status(400).send('Invalid state');
   }
 
-  // Clear the cookie
   res.clearCookie('oauthState');
 
   try {
@@ -377,7 +378,9 @@ app.get('/auth/callback', async (req, res) => {
       });
       const user = await userRes.json();
       req.session.githubUser = { id: user.id, login: user.login, avatar: user.avatar_url };
-      req.session.save(() => {
+      // Save session before redirect
+      req.session.save((err) => {
+        if (err) console.error('Session save error:', err);
         res.redirect('/');
       });
     } else {
