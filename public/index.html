@@ -63,6 +63,11 @@
       <div class="field-label">Actions</div>
       <button class="btn btn-emerald" id="fix-btn" onclick="generateFixes()" style="display:none;width:100%">Apply fixes</button>
       <button class="btn btn-primary" id="pr-btn"  onclick="createPR()"      style="display:none;width:100%">Create PR</button>
+      <div class="divider"></div>
+      <div class="field-label">PR Reviewer</div>
+      <div class="text-muted text-xs mono" style="margin-bottom:6px">Post AI review on an existing open PR</div>
+      <input type="number" id="review-pr-number" placeholder="PR number e.g. 42" style="margin-bottom:6px"/>
+      <button class="btn" onclick="reviewExistingPR()" style="width:100%">Review open PR</button>
     </div>
 
     <!-- FEATURE mode sidebar -->
@@ -241,7 +246,7 @@ const STATE = {
   agentRunning: false, agentInterval: null, agentQueue: [],
   agentIndex: 0, agentEndTime: null,
   currentFile: null, showingDiff: false,
-  history: JSON.parse(localStorage.getItem('vc_history') || '[]'),
+  history: [],
 };
 
 /* Monaco instances */
@@ -326,12 +331,7 @@ function agentLog(msg) {
   log('AGENT', 'tag-agent', msg);
 }
 
-function saveHistory(entry) {
-  STATE.history.unshift(entry);
-  if (STATE.history.length > 50) STATE.history.pop();
-  localStorage.setItem('vc_history', JSON.stringify(STATE.history));
-  renderHistory();
-}
+/* History is persisted server-side via /api/history */
 
 /* ══════════════════════════════════════════════════════
    FETCH WRAPPER
@@ -378,6 +378,7 @@ function showPanel(name) {
     monacoEditor.layout();
     diffEditor.layout();
   }
+  if (name === 'history') renderHistory();
 }
 
 /* ══════════════════════════════════════════════════════
@@ -487,15 +488,7 @@ async function doScan(token) {
     $('fix-btn').style.display = 'block';
     log('SCAN','tag-ok',`Done: ${data.results.length} files, ${data.results.reduce((s,f)=>s+f.issues.length,0)} issues`);
     toast('Scan complete');
-    saveHistory({
-      date: new Date().toISOString(),
-      repo: `${STATE.repoOwner}/${STATE.repoName}`,
-      files: data.results.length,
-      issues: data.results.reduce((s,f)=>s+f.issues.length,0),
-      high: data.results.reduce((s,f)=>s+f.issues.filter(i=>i.severity==='HIGH').length,0),
-      med:  data.results.reduce((s,f)=>s+f.issues.filter(i=>i.severity==='MED').length,0),
-      low:  data.results.reduce((s,f)=>s+f.issues.filter(i=>i.severity==='LOW').length,0),
-    });
+    /* history saved server-side */
   } catch(e) {
     log('SCAN','tag-err',e.message);
     toast('Scan failed: '+e.message);
@@ -788,23 +781,57 @@ async function createFeaturePR() {
 /* ══════════════════════════════════════════════════════
    SCAN HISTORY
 ══════════════════════════════════════════════════════ */
-function renderHistory() {
+async function renderHistory() {
   const list = $('history-list');
-  if (!STATE.history.length) {
-    list.innerHTML = '<div class="empty-state"><div class="e-icon">◷</div><div>No scan history yet.</div></div>';
-    return;
+  list.innerHTML = '<div class="empty-state"><div class="e-icon">⟳</div><div>Loading history…</div></div>';
+  try {
+    const res  = await apiFetch('/api/history');
+    const data = await res.json();
+    const history = data.history || [];
+    if (!history.length) {
+      list.innerHTML = '<div class="empty-state"><div class="e-icon">◷</div><div>No scan history yet.</div></div>';
+      return;
+    }
+    list.innerHTML = history.map(h => `
+      <div class="history-item">
+        <div class="history-date">${new Date(h.date).toLocaleString()}</div>
+        <div class="history-repo">${esc(h.repo)}</div>
+        <div class="history-stats">
+          <span class="sev sev-high">${h.high||0}</span>
+          <span class="sev sev-med">${h.med||0}</span>
+          <span class="sev sev-low">${h.low||0}</span>
+          ${h.security ? `<span class="sev" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple)">${h.security} sec</span>` : ''}
+          <span class="text-muted text-xs">${h.files} files</span>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="empty-state"><div>Failed to load history: ${e.message}</div></div>`;
   }
-  list.innerHTML = STATE.history.map(h => `
-    <div class="history-item">
-      <div class="history-date">${new Date(h.date).toLocaleString()}</div>
-      <div class="history-repo">${esc(h.repo)}</div>
-      <div class="history-stats">
-        <span class="sev sev-high">${h.high||0}</span>
-        <span class="sev sev-med">${h.med||0}</span>
-        <span class="sev sev-low">${h.low||0}</span>
-        <span class="text-muted text-xs">${h.files} files</span>
-      </div>
-    </div>`).join('');
+}
+
+async function reviewExistingPR() {
+  const prNum = $('review-pr-number').value.trim();
+  if (!prNum)           { toast('Enter a PR number'); return; }
+  if (!STATE.repoOwner) { toast('Select a repo first'); return; }
+  if (!STATE.token)     { toast('Login required'); return; }
+
+  log('REVIEW','tag-info',`Reviewing PR #${prNum} on ${STATE.repoOwner}/${STATE.repoName}…`);
+  try {
+    const res  = await apiFetch('/api/review-pr', {
+      method:'POST',
+      body: JSON.stringify({ repoOwner:STATE.repoOwner, repoName:STATE.repoName, prNumber:parseInt(prNum), token:STATE.token }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    log('REVIEW','tag-ok',`Review posted on PR #${prNum} — ${data.issueCount} issue(s) found`);
+    toast(`Review posted on PR #${prNum}`);
+    $('report-content').insertAdjacentHTML('beforeend',
+      `<div class="pr-result">🔍 <a href="${data.url||'#'}" target="_blank" rel="noopener">View review on PR #${prNum}</a> <span class="text-muted text-xs">— ${data.issueCount} AI comment(s)</span></div>`
+    );
+    showPanel('report');
+  } catch(e) {
+    log('REVIEW','tag-err',e.message); toast('Review failed: '+e.message);
+  }
 }
 
 /* ══════════════════════════════════════════════════════
@@ -998,7 +1025,6 @@ function renderAgentQueue() {
    INIT
 ══════════════════════════════════════════════════════ */
 (function init() {
-  renderHistory();
   setTimeout(checkAuth, 150);
 })();
 </script>
