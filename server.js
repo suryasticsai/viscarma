@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
 import crypto       from 'crypto';
 import webpush      from 'web-push';
+import cron         from 'node-cron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -323,6 +324,9 @@ async function analyzeFile(code, filename) {
       if (!existing.has(ai.description)) { issues.push(ai); existing.add(ai.description); }
     }
   }
+
+  // 5b. Custom user rules
+  issues.push(...applyCustomRules(code, filename));
 
   // 6. Fallback: TODO/FIXME for unrecognized types
   if (issues.length === 0 && (code.includes('TODO') || code.includes('FIXME')))
@@ -1165,6 +1169,554 @@ Add \`VISCARMA_TOKEN\` to your repository secrets:
     console.error('[ACTION]', e);
     res.status(500).json({ error: 'Action generation failed: ' + e.message });
   }
+});
+
+// ══════════════════════════════════════════════════════════════
+// TIER 3: CUSTOM RULE BUILDER
+// ══════════════════════════════════════════════════════════════
+const RULES_FILE = path.join(process.cwd(), 'data', 'rules.json');
+let customRules = [];
+
+async function loadCustomRules() {
+  try {
+    const raw = await fs.readFile(RULES_FILE, 'utf-8');
+    customRules = JSON.parse(raw);
+  } catch { customRules = []; }
+}
+loadCustomRules();
+
+async function saveCustomRules() {
+  await fs.mkdir(path.dirname(RULES_FILE), { recursive: true });
+  await fs.writeFile(RULES_FILE, JSON.stringify(customRules, null, 2));
+}
+
+// Apply custom rules to code
+function applyCustomRules(code, filename) {
+  const issues = [];
+  const ext    = filename.split('.').pop().toLowerCase();
+  for (const rule of customRules) {
+    if (rule.disabled) continue;
+    // fileTypes filter — empty means all files
+    if (rule.fileTypes?.length && !rule.fileTypes.includes(ext)) continue;
+    try {
+      const re = new RegExp(rule.pattern, rule.flags || 'g');
+      if (re.test(code)) {
+        issues.push({
+          severity:    rule.severity || 'MED',
+          description: `[CUSTOM] ${rule.name}: ${rule.description}`,
+          fix:         rule.fix || 'Review manually.',
+        });
+      }
+    } catch { /* invalid regex — skip */ }
+  }
+  return issues;
+}
+
+app.get('/api/rules', (req, res) => {
+  res.json({ rules: customRules });
+});
+
+app.post('/api/rules', async (req, res) => {
+  const { name, description, pattern, flags, severity, fix, fileTypes } = req.body;
+  if (!name || !pattern) return res.status(400).json({ error: 'name and pattern required' });
+  // Validate regex before saving
+  try { new RegExp(pattern, flags || 'g'); }
+  catch(e) { return res.status(400).json({ error: 'Invalid regex: ' + e.message }); }
+
+  const rule = {
+    id:          crypto.randomBytes(6).toString('hex'),
+    name, description, pattern,
+    flags:       flags || 'g',
+    severity:    severity || 'MED',
+    fix:         fix || '',
+    fileTypes:   fileTypes || [],
+    disabled:    false,
+    createdAt:   new Date().toISOString(),
+    marketplace: false,
+  };
+  customRules.push(rule);
+  await saveCustomRules();
+  res.json({ rule });
+});
+
+app.put('/api/rules/:id', async (req, res) => {
+  const idx = customRules.findIndex(r => r.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Rule not found' });
+  customRules[idx] = { ...customRules[idx], ...req.body, id: customRules[idx].id };
+  await saveCustomRules();
+  res.json({ rule: customRules[idx] });
+});
+
+app.delete('/api/rules/:id', async (req, res) => {
+  const before = customRules.length;
+  customRules   = customRules.filter(r => r.id !== req.params.id);
+  await saveCustomRules();
+  res.json({ deleted: customRules.length < before });
+});
+
+// ══════════════════════════════════════════════════════════════
+// TIER 3: SCHEDULED AUTO-FIX
+// ══════════════════════════════════════════════════════════════
+const SCHEDULES_FILE = path.join(process.cwd(), 'data', 'schedules.json');
+let schedules   = [];
+const cronJobs  = new Map();
+
+async function loadSchedules() {
+  try {
+    const raw = await fs.readFile(SCHEDULES_FILE, 'utf-8');
+    schedules = JSON.parse(raw);
+    // Re-register all active cron jobs on startup
+    for (const s of schedules) {
+      if (!s.disabled) registerCronJob(s);
+    }
+  } catch { schedules = []; }
+}
+
+async function saveSchedules() {
+  await fs.mkdir(path.dirname(SCHEDULES_FILE), { recursive: true });
+  await fs.writeFile(SCHEDULES_FILE, JSON.stringify(schedules, null, 2));
+}
+
+function registerCronJob(schedule) {
+  if (cronJobs.has(schedule.id)) cronJobs.get(schedule.id).destroy();
+  if (!cron.validate(schedule.cron)) return;
+
+  const job = cron.schedule(schedule.cron, async () => {
+    console.log(`[CRON] Running schedule "${schedule.name}" for ${schedule.repoOwner}/${schedule.repoName}`);
+    schedule.lastRunAt = new Date().toISOString();
+    schedule.lastRunStatus = 'running';
+    await saveSchedules();
+
+    try {
+      // Scan
+      const folderId = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+      const repoPath = path.join(TEMP_DIR, folderId);
+      await fs.mkdir(repoPath, { recursive: true });
+      let cloneUrl = schedule.repoUrl;
+      if (schedule.token) cloneUrl = schedule.repoUrl.replace('https://', `https://x-access-token:${schedule.token}@`);
+      await simpleGit().clone(cloneUrl, repoPath, ['--depth','1']);
+      const files   = await walkDir(repoPath);
+      const results = [];
+      for (const fp of files) {
+        const rel    = path.relative(repoPath, fp);
+        const code   = await fs.readFile(fp, 'utf-8');
+        const issues = await analyzeFile(code, rel);
+        results.push({ file: rel, code, issues });
+      }
+      await fs.rm(repoPath, { recursive: true, force: true });
+
+      // Fix
+      const filesToFix = results.filter(f => f.issues?.length > 0).map(f => ({ file:f.file, code:f.code, issues:f.issues }));
+      if (!filesToFix.length) {
+        schedule.lastRunStatus = 'clean';
+        schedule.lastRunMessage = 'No issues found.';
+        await saveSchedules();
+        return;
+      }
+      const fixes = [];
+      for (const item of filesToFix) {
+        const { newCode, applied } = await generateFixesForFile(item.code, item.file, item.issues);
+        fixes.push({ file: item.file, newCode, applied, issues: item.issues });
+      }
+
+      // PR
+      const baseUrl  = `https://api.github.com/repos/${schedule.repoOwner}/${schedule.repoName}`;
+      const baseRef  = await fetch(`${baseUrl}/git/refs/heads/${schedule.branch||'main'}`, {
+        headers: { Authorization: `token ${schedule.token}` },
+      });
+      const baseData = await baseRef.json();
+      if (!baseData.object?.sha) throw new Error('Branch not found');
+      const newBranch = `viscarma-scheduled-${Date.now()}`;
+      await fetch(`${baseUrl}/git/refs`, {
+        method: 'POST',
+        headers: { Authorization: `token ${schedule.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: baseData.object.sha }),
+      });
+      for (const fix of fixes) {
+        if (!fix.newCode) continue;
+        const fileRes  = await fetch(`${baseUrl}/contents/${fix.file}?ref=${newBranch}`, {
+          headers: { Authorization: `token ${schedule.token}` },
+        });
+        const fileData = await fileRes.json();
+        if (!fileData.sha) continue;
+        const oldContent = Buffer.from(fileData.content, 'base64').toString('utf-8');
+        if (oldContent === fix.newCode) continue;
+        await fetch(`${baseUrl}/contents/${fix.file}`, {
+          method: 'PUT',
+          headers: { Authorization: `token ${schedule.token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: `fix: scheduled VisCarMa auto-fix — ${schedule.name}`,
+            content: Buffer.from(fix.newCode).toString('base64'),
+            sha: fileData.sha, branch: newBranch,
+          }),
+        });
+      }
+      const pr = await fetch(`${baseUrl}/pulls`, {
+        method: 'POST',
+        headers: { Authorization: `token ${schedule.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `fix: scheduled auto-fix by VisCarMa (${schedule.name})`,
+          head: newBranch, base: schedule.branch||'main',
+          body: `[![VisCarMa](https://img.shields.io/badge/auto--fixed%20by-VisCarMa-388bfd?style=flat-square)](https://viscarma.onrender.com)\n\n## ⏰ Scheduled Fix\n\nSchedule: **${schedule.name}** (${schedule.cron})\n\nFiles fixed: ${fixes.map(f=>\`\`${f.file}\`\`).join(', ')}\n\n---\n🤖 by [VisCarMa](https://viscarma.onrender.com)`,
+        }),
+      });
+      const prData = await pr.json();
+      schedule.lastRunStatus  = 'success';
+      schedule.lastRunMessage = prData.html_url ? \`PR #\${prData.number} opened\` : 'PR failed';
+      schedule.lastPrUrl      = prData.html_url || null;
+      schedule.runCount       = (schedule.runCount || 0) + 1;
+      await saveSchedules();
+      console.log(\`[CRON] \${schedule.name} — \${schedule.lastRunMessage}\`);
+    } catch(e) {
+      schedule.lastRunStatus  = 'error';
+      schedule.lastRunMessage = e.message;
+      await saveSchedules();
+      console.error('[CRON] Schedule failed:', e.message);
+    }
+  }, { timezone: 'UTC' });
+
+  cronJobs.set(schedule.id, job);
+}
+
+loadSchedules();
+
+app.get('/api/schedules', (req, res) => {
+  res.json({ schedules: schedules.map(s => ({ ...s, token: undefined })) });
+});
+
+app.post('/api/schedules', async (req, res) => {
+  const { name, cron: cronExpr, repoUrl, repoOwner, repoName, branch, token } = req.body;
+  if (!name || !cronExpr || !repoUrl || !token) return res.status(400).json({ error: 'name, cron, repoUrl, token required' });
+  if (!cron.validate(cronExpr)) return res.status(400).json({ error: 'Invalid cron expression' });
+
+  const schedule = {
+    id: crypto.randomBytes(6).toString('hex'),
+    name, cron: cronExpr, repoUrl, repoOwner, repoName,
+    branch: branch || 'main', token,
+    disabled: false, runCount: 0,
+    createdAt: new Date().toISOString(),
+    lastRunAt: null, lastRunStatus: null, lastRunMessage: null, lastPrUrl: null,
+  };
+  schedules.push(schedule);
+  await saveSchedules();
+  registerCronJob(schedule);
+  res.json({ schedule: { ...schedule, token: undefined } });
+});
+
+app.delete('/api/schedules/:id', async (req, res) => {
+  if (cronJobs.has(req.params.id)) { cronJobs.get(req.params.id).destroy(); cronJobs.delete(req.params.id); }
+  schedules = schedules.filter(s => s.id !== req.params.id);
+  await saveSchedules();
+  res.json({ deleted: true });
+});
+
+app.post('/api/schedules/:id/toggle', async (req, res) => {
+  const s = schedules.find(s => s.id === req.params.id);
+  if (!s) return res.status(404).json({ error: 'Not found' });
+  s.disabled = !s.disabled;
+  if (s.disabled) { cronJobs.get(s.id)?.destroy(); cronJobs.delete(s.id); }
+  else registerCronJob(s);
+  await saveSchedules();
+  res.json({ disabled: s.disabled });
+});
+
+// ══════════════════════════════════════════════════════════════
+// TIER 3: TEST GENERATOR
+// ══════════════════════════════════════════════════════════════
+async function generateTestsForFile(code, filename) {
+  const ext      = filename.split('.').pop().toLowerCase();
+  const framework = ext === 'py' ? 'pytest' : ext === 'java' ? 'JUnit 5' : 'Jest';
+  const testExt   = ext === 'py' ? 'py' : ext === 'java' ? 'java' : ext;
+  const testFile  = filename.replace(/\.([^.]+)$/, \`.test.$1\`);
+
+  const prompt = \`You are a senior engineer. Write comprehensive unit tests for this file.
+Testing framework: \${framework}
+File: \${filename}
+
+Rules:
+- Return ONLY the complete test file contents, no explanation, no markdown fences.
+- Cover all functions and edge cases.
+- Use descriptive test names.
+- Include setup/teardown where needed.
+- Add a comment at the top: // Tests generated by VisCarMa
+- Test file should be: \${testFile}
+
+Source code:
+\${code.slice(0, 4000)}\`;
+
+  const aiResponse = await callAI(prompt);
+  if (!aiResponse) return null;
+  const block = aiResponse.match(/\`\`\`(?:\w+)?\s*([\s\S]*?)\`\`\`/);
+  return { testFile, testCode: block ? block[1] : aiResponse, framework };
+}
+
+app.post('/api/generate-tests', async (req, res) => {
+  const { files, repoOwner, repoName, branch, token } = req.body;
+  const ghToken = token || req.session?.githubToken;
+  if (!files?.length) return res.status(400).json({ error: 'files required' });
+
+  const results = [];
+  for (const item of files) {
+    const result = await generateTestsForFile(item.code, item.file);
+    if (result) results.push({ ...result, sourceFile: item.file });
+  }
+
+  if (!results.length) return res.status(500).json({ error: 'AI could not generate tests' });
+
+  // If repo info provided, commit tests as PR
+  if (ghToken && repoOwner && repoName) {
+    try {
+      const baseUrl  = \`https://api.github.com/repos/\${repoOwner}/\${repoName}\`;
+      const baseRef  = await fetch(\`\${baseUrl}/git/refs/heads/\${branch||'main'}\`, {
+        headers: { Authorization: \`token \${ghToken}\` },
+      });
+      const baseSha  = (await baseRef.json()).object?.sha;
+      if (!baseSha) throw new Error('Branch not found');
+      const newBranch = \`viscarma-tests-\${Date.now()}\`;
+      await fetch(\`\${baseUrl}/git/refs\`, {
+        method: 'POST',
+        headers: { Authorization: \`token \${ghToken}\`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: \`refs/heads/\${newBranch}\`, sha: baseSha }),
+      });
+      for (const r of results) {
+        const existing = await fetch(\`\${baseUrl}/contents/\${r.testFile}?ref=\${newBranch}\`, {
+          headers: { Authorization: \`token \${ghToken}\` },
+        }).then(res => res.ok ? res.json() : null);
+        await fetch(\`\${baseUrl}/contents/\${r.testFile}\`, {
+          method: 'PUT',
+          headers: { Authorization: \`token \${ghToken}\`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: \`test: VisCarMa generates tests for \${r.sourceFile}\`,
+            content: Buffer.from(r.testCode).toString('base64'),
+            ...(existing?.sha ? { sha: existing.sha } : {}),
+            branch: newBranch,
+          }),
+        });
+      }
+      const pr = await fetch(\`\${baseUrl}/pulls\`, {
+        method: 'POST',
+        headers: { Authorization: \`token \${ghToken}\`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: \`test: AI-generated unit tests by VisCarMa\`,
+          head: newBranch, base: branch||'main',
+          body: \`[![VisCarMa](https://img.shields.io/badge/tests%20by-VisCarMa-388bfd?style=flat-square)](https://viscarma.onrender.com)\n\n## 🧪 AI-Generated Tests\n\n\${results.map(r=>\`- \\`\${r.testFile}\\` — \${r.framework}\`).join('\n')}\n\n---\n🤖 by [VisCarMa](https://viscarma.onrender.com)\`,
+        }),
+      });
+      const prData = await pr.json();
+      res.json({ results, prUrl: prData.html_url, prNumber: prData.number });
+    } catch(e) {
+      res.json({ results, prError: e.message });
+    }
+  } else {
+    res.json({ results });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// TIER 4: FREEMIUM SCAN LIMITS
+// ══════════════════════════════════════════════════════════════
+const USAGE_FILE = path.join(process.cwd(), 'data', 'usage.json');
+let usageStore   = {};
+
+async function loadUsage() {
+  try { usageStore = JSON.parse(await fs.readFile(USAGE_FILE, 'utf-8')); }
+  catch { usageStore = {}; }
+}
+async function saveUsage() {
+  await fs.mkdir(path.dirname(USAGE_FILE), { recursive: true });
+  await fs.writeFile(USAGE_FILE, JSON.stringify(usageStore, null, 2));
+}
+loadUsage();
+
+const LIMITS = { anonymous: 3, free: 20, pro: Infinity };
+
+function getUsageKey(req) {
+  const userId = req.session?.githubUser?.id;
+  const month  = new Date().toISOString().slice(0,7); // YYYY-MM
+  return userId ? \`user:\${userId}:\${month}\` : \`ip:\${req.ip}:\${month}\`;
+}
+
+function getPlan(req) {
+  if (!req.session?.githubUser) return 'anonymous';
+  // Pro check — extend this to check a real payments table
+  if (req.session?.githubUser?.pro) return 'pro';
+  return 'free';
+}
+
+async function checkAndIncrementUsage(req) {
+  const key   = getUsageKey(req);
+  const plan  = getPlan(req);
+  const limit = LIMITS[plan];
+  const count = usageStore[key] || 0;
+  if (count >= limit) return { allowed: false, count, limit, plan };
+  usageStore[key] = count + 1;
+  await saveUsage();
+  return { allowed: true, count: usageStore[key], limit, plan };
+}
+
+app.get('/api/usage', async (req, res) => {
+  const key   = getUsageKey(req);
+  const plan  = getPlan(req);
+  const limit = LIMITS[plan];
+  const count = usageStore[key] || 0;
+  res.json({ count, limit, plan, remaining: Math.max(0, limit - count) });
+});
+
+// Patch scan-repo to enforce limits
+// We hook into the existing route by wrapping the handler
+const _originalScanHandler = app._router.stack
+  .filter(l => l.route?.path === '/api/scan-repo')
+  .pop();
+
+// Add limit-check middleware
+app.use('/api/scan-repo', async (req, res, next) => {
+  if (req.method !== 'POST') return next();
+  const check = await checkAndIncrementUsage(req);
+  if (!check.allowed) {
+    return res.status(429).json({
+      error: \`Scan limit reached. Plan: \${check.plan} — \${check.limit} scans/month. Upgrade to Pro for unlimited scans.\`,
+      count: check.count, limit: check.limit, plan: check.plan,
+    });
+  }
+  req.usageInfo = check;
+  next();
+});
+
+// ══════════════════════════════════════════════════════════════
+// TIER 4: PUBLIC SCAN BADGE
+// ══════════════════════════════════════════════════════════════
+// GET /badge/:owner/:repo.svg  — returns SVG badge
+// Shows last scan result from history
+
+app.get('/badge/:owner/:repo.svg', (req, res) => {
+  const { owner, repo } = req.params;
+  const repoKey = \`\${owner}/\${repo}\`;
+  const lastScan = scanHistory.find(h => h.repo === repoKey);
+
+  let label, color, message;
+  if (!lastScan) {
+    label = 'VisCarMa'; message = 'not scanned'; color = '#8b949e';
+  } else if (lastScan.high > 0) {
+    label = 'VisCarMa'; message = \`\${lastScan.high} HIGH issues\`; color = '#f85149';
+  } else if (lastScan.med > 0) {
+    label = 'VisCarMa'; message = \`\${lastScan.med} warnings\`; color = '#d29922';
+  } else {
+    label = 'VisCarMa'; message = 'clean ✓'; color = '#3fb950';
+  }
+
+  const labelW   = label.length * 7 + 10;
+  const messageW = message.length * 7 + 10;
+  const totalW   = labelW + messageW;
+
+  const svg = \`<svg xmlns="http://www.w3.org/2000/svg" width="\${totalW}" height="20">
+  <title>\${label}: \${message}</title>
+  <rect width="\${labelW}" height="20" fill="#21262d" rx="3"/>
+  <rect x="\${labelW}" width="\${messageW}" height="20" fill="\${color}" rx="3"/>
+  <rect x="\${labelW - 3}" width="6" height="20" fill="\${color}"/>
+  <text x="\${labelW/2}" y="14" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11" fill="#fff" text-anchor="middle">\${label}</text>
+  <text x="\${labelW + messageW/2}" y="14" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11" fill="#fff" text-anchor="middle">\${message}</text>
+</svg>\`;
+
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Cache-Control', 'public, max-age=300'); // 5 min cache
+  res.send(svg);
+});
+
+// Badge README markdown endpoint — returns the markdown to copy
+app.get('/badge/:owner/:repo', (req, res) => {
+  const { owner, repo } = req.params;
+  const badgeUrl   = \`\${FRONTEND_URL}/badge/\${owner}/\${repo}.svg\`;
+  const reportUrl  = \`\${FRONTEND_URL}\`;
+  const markdown   = \`[![VisCarMa](\${badgeUrl})](\${reportUrl})\`;
+  res.json({ markdown, badgeUrl, reportUrl });
+});
+
+// ══════════════════════════════════════════════════════════════
+// TIER 4: RULE MARKETPLACE
+// ══════════════════════════════════════════════════════════════
+const MARKETPLACE_FILE = path.join(process.cwd(), 'data', 'marketplace.json');
+let marketplace = [];
+
+async function loadMarketplace() {
+  try { marketplace = JSON.parse(await fs.readFile(MARKETPLACE_FILE, 'utf-8')); }
+  catch { marketplace = []; }
+}
+async function saveMarketplace() {
+  await fs.mkdir(path.dirname(MARKETPLACE_FILE), { recursive: true });
+  await fs.writeFile(MARKETPLACE_FILE, JSON.stringify(marketplace, null, 2));
+}
+loadMarketplace();
+
+// Browse marketplace packs
+app.get('/api/marketplace', (req, res) => {
+  const { category, search } = req.query;
+  let results = [...marketplace];
+  if (category) results = results.filter(p => p.category === category);
+  if (search)   results = results.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.description.toLowerCase().includes(search.toLowerCase())
+  );
+  res.json({ packs: results.sort((a,b) => (b.installs||0) - (a.installs||0)) });
+});
+
+// Publish your custom rules as a pack
+app.post('/api/marketplace/publish', async (req, res) => {
+  if (!req.session?.githubUser) return res.status(401).json({ error: 'Login required to publish' });
+  const { name, description, category, rules } = req.body;
+  if (!name || !rules?.length) return res.status(400).json({ error: 'name and rules required' });
+
+  const pack = {
+    id:          crypto.randomBytes(8).toString('hex'),
+    name, description,
+    category:    category || 'general',
+    author:      req.session.githubUser.login,
+    authorAvatar: req.session.githubUser.avatar,
+    rules,
+    installs:    0,
+    rating:      0,
+    ratings:     [],
+    publishedAt: new Date().toISOString(),
+  };
+  marketplace.push(pack);
+  await saveMarketplace();
+  res.json({ pack });
+});
+
+// Install a pack (copies rules to user's custom rules)
+app.post('/api/marketplace/:id/install', async (req, res) => {
+  const pack = marketplace.find(p => p.id === req.params.id);
+  if (!pack) return res.status(404).json({ error: 'Pack not found' });
+
+  let installed = 0;
+  for (const rule of pack.rules) {
+    if (customRules.find(r => r.name === rule.name && r.pattern === rule.pattern)) continue;
+    customRules.push({
+      ...rule,
+      id:          crypto.randomBytes(6).toString('hex'),
+      createdAt:   new Date().toISOString(),
+      marketplace: true,
+      packId:      pack.id,
+      packName:    pack.name,
+    });
+    installed++;
+  }
+  pack.installs = (pack.installs || 0) + 1;
+  await saveCustomRules();
+  await saveMarketplace();
+  res.json({ installed, total: pack.rules.length });
+});
+
+// Rate a pack
+app.post('/api/marketplace/:id/rate', async (req, res) => {
+  if (!req.session?.githubUser) return res.status(401).json({ error: 'Login required' });
+  const pack   = marketplace.find(p => p.id === req.params.id);
+  if (!pack) return res.status(404).json({ error: 'Pack not found' });
+  const rating = Math.min(5, Math.max(1, parseInt(req.body.rating)));
+  pack.ratings  = pack.ratings.filter(r => r.user !== req.session.githubUser.login);
+  pack.ratings.push({ user: req.session.githubUser.login, rating });
+  pack.rating   = pack.ratings.reduce((s,r) => s+r.rating, 0) / pack.ratings.length;
+  await saveMarketplace();
+  res.json({ rating: pack.rating, count: pack.ratings.length });
 });
 
 // ─── Health ──────────────────────────────────────────────────────
