@@ -2,6 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
+import cookieParser from 'cookie-parser';
 import FileStore from 'session-file-store';
 import { ESLint } from 'eslint';
 import { JSDOM } from 'jsdom';
@@ -32,8 +33,12 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: 'lax',
   },
 }));
+
+// ─── Cookie parser (for signed OAuth state) ──────────────────────
+app.use(cookieParser(process.env.SESSION_SECRET || 'dev-secret'));
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
@@ -313,36 +318,42 @@ async function generateFixesForFile(code, filename, issues) {
   return { newCode, applied };
 }
 
-// ─── OAuth Routes ──────────────────────────────────────────────────
+// ─── OAuth Routes (using signed cookies for state) ──────────────
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 
 app.get('/auth/github', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
-  req.session.oauthState = state;
-  req.session.save((err) => {
-    if (err) {
-      console.error('Session save error:', err);
-      return res.status(500).send('Session error');
-    }
-    const url = `${GITHUB_AUTH_URL}?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=repo&state=${state}`;
-    console.log('Redirecting with state:', state);
-    res.redirect(url);
+  // Store state in a signed cookie (maxAge 10 minutes)
+  res.cookie('oauthState', state, {
+    signed: true,
+    maxAge: 10 * 60 * 1000,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
   });
+  const url = `${GITHUB_AUTH_URL}?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=repo&state=${state}`;
+  console.log('Redirecting with state:', state);
+  res.redirect(url);
 });
 
 app.get('/auth/callback', async (req, res) => {
   const { code, state } = req.query;
-  console.log('Callback: code=', code, 'state=', state, 'session state=', req.session.oauthState);
+  const cookieState = req.signedCookies.oauthState;
+  console.log('Callback: code=', code, 'state=', state, 'cookie state=', cookieState);
 
   if (!code) {
     console.error('No code provided');
     return res.status(400).send('Missing code');
   }
-  if (!state || state !== req.session.oauthState) {
+
+  if (!state || state !== cookieState) {
     console.error('State mismatch');
     return res.status(400).send('Invalid state');
   }
+
+  // Clear the cookie
+  res.clearCookie('oauthState');
 
   try {
     const response = await fetch(GITHUB_TOKEN_URL, {
@@ -381,6 +392,7 @@ app.get('/auth/callback', async (req, res) => {
 
 app.get('/auth/logout', (req, res) => {
   req.session.destroy(() => {
+    res.clearCookie('oauthState');
     res.redirect('/');
   });
 });
