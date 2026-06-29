@@ -1,322 +1,511 @@
-/**
- * VisCarMa — Fixed server.js
- * Fixes:
- *  1. Session persistence on Render (cookie-based, no file store)
- *  2. GitHub OAuth login loop
- *  3. AI fetch target (Pollinations fallback when Ollama unreachable)
- *  4. ESLint v8 lintText() fix option error
- */
-
-import express from 'express';
-import cookieSession from 'cookie-session';
-import cors from 'cors';
-import { createRequire } from 'module';
-import { ESLint } from 'eslint';
-
-const require = createRequire(import.meta.url);
-const dotenv = require('dotenv');
-dotenv.config();
-
-const app  = express();
-const PORT = process.env.PORT || 10000;
-
-// ── ENV ──────────────────────────────────────────────────────────────
-const GITHUB_CLIENT_ID     = process.env.GITHUB_CLIENT_ID;
-const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
-const FRONTEND_URL         = process.env.FRONTEND_URL || 'http://localhost:3000';
-const REDIRECT_URI         = process.env.REDIRECT_URI  || `${FRONTEND_URL}/auth/callback`;
-const SESSION_SECRET        = process.env.SESSION_SECRET || 'viscarma-secret-change-me';
-const OLLAMA_API_KEY       = process.env.OLLAMA_API_KEY;
-const OLLAMA_URL           = process.env.OLLAMA_URL || 'http://localhost:11434';
-
-console.log('🕵️  VisCarma backend running on port', PORT);
-if (OLLAMA_API_KEY) console.log('🔐 OLLAMA_API_KEY ✓ set');
-console.log('🌐 FRONTEND_URL:', FRONTEND_URL);
-console.log('🔁 REDIRECT_URI:', REDIRECT_URI);
-
-// ── MIDDLEWARE ───────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
-
-// CORS — allow frontend origin + credentials
-app.use(cors({
-  origin: FRONTEND_URL,
-  credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-// FIX #1: Use cookie-session instead of express-session + file-store.
-// cookie-session stores the whole session in a signed cookie — works
-// perfectly on Render's ephemeral filesystem with zero extra deps.
-app.use(cookieSession({
-  name:   'viscarma_session',
-  secret: SESSION_SECRET,
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  httpOnly: true,
-  // FIX #2: secure must be false on Render HTTP health-checks but true on HTTPS.
-  // Render always terminates TLS at the edge, so trust the X-Forwarded-Proto header.
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax'
-}));
-
-// Render terminates SSL at the load balancer — tell Express to trust the proxy
-// so req.secure works correctly and cookie-session sets secure cookies properly.
-app.set('trust proxy', 1);
-
-// ── STATIC FILES ─────────────────────────────────────────────────────
-import { fileURLToPath } from 'url';
-import path from 'path';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ── SESSION CHECK ────────────────────────────────────────────────────
-// FIX #3: /api/me now correctly reads from cookie-session (req.session.user)
-app.get('/api/me', (req, res) => {
-  if (req.session && req.session.user) {
-    res.json({ user: req.session.user });
-  } else {
-    res.status(401).json({ error: 'Not authenticated' });
-  }
-});
-
-// ── GITHUB OAUTH ─────────────────────────────────────────────────────
-// Step 1 — redirect to GitHub
-app.get('/auth/github', (req, res) => {
-  const state = Math.random().toString(36).slice(2);
-  req.session.oauth_state = state;            // store in cookie-session ← fixes loop
-
-  const url = new URL('https://github.com/login/oauth/authorize');
-  url.searchParams.set('client_id', GITHUB_CLIENT_ID);
-  url.searchParams.set('redirect_uri', REDIRECT_URI);
-  url.searchParams.set('scope', 'repo user');
-  url.searchParams.set('state', state);
-
-  console.log('[AUTH] Redirecting to GitHub OAuth, state:', state);
-  res.redirect(url.toString());
-});
-
-// Step 2 — GitHub callback
-app.get('/auth/callback', async (req, res) => {
-  const { code, state } = req.query;
-  const storedState = req.session.oauth_state;
-
-  console.log('[AUTH] Callback received — code:', !!code, 'state match:', state === storedState);
-
-  // FIX #4: Don't redirect back to /auth/github on state mismatch — it creates a loop.
-  // Instead send a proper error page.
-  if (!code || state !== storedState) {
-    console.warn('[AUTH] State mismatch or missing code — possible CSRF or retry');
-    return res.status(400).send(`
-      <html><body style="font-family:monospace;background:#0a0c0f;color:#ff5370;padding:40px;">
-        <h2>Authentication Error</h2>
-        <p>State mismatch or missing code. This can happen if you clicked the OAuth link twice.</p>
-        <a href="${FRONTEND_URL}" style="color:#00ffa3;">← Back to VisCarMa</a>
-      </body></html>
-    `);
-  }
-
-  try {
-    // Exchange code for access token
-    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        client_id:     GITHUB_CLIENT_ID,
-        client_secret: GITHUB_CLIENT_SECRET,
-        code,
-        redirect_uri:  REDIRECT_URI
-      })
-    });
-
-    const tokenData = await tokenRes.json();
-
-    if (tokenData.error || !tokenData.access_token) {
-      throw new Error(tokenData.error_description || 'Failed to get access token');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="VisCarMa — Hybrid code scanner with ESLint, AI analysis, and GitHub PR integration." />
+  <title>VisCarMa · Hybrid Scanner</title>
+  <link rel="icon" type="image/png" href="/viscarma_logo.png" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* ── Avatar styles (added) ───────────────────────────── */
+    .avatar-wrap {
+      display: none;
+      align-items: center;
+      gap: 8px;
     }
+    .avatar-wrap.visible {
+      display: flex;
+    }
+    .gh-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid #3b82f6;
+      object-fit: cover;
+    }
+    .gh-username {
+      font-size: 12px;
+      color: #8aa9c9;
+      font-weight: 600;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4b5563;
+      display: inline-block;
+      margin-right: 4px;
+      transition: background 0.3s;
+    }
+    .status-dot.online  { background: #10b981; }
+    .status-dot.offline { background: #ef4444; }
+  </style>
+</head>
+<body>
 
-    // Fetch GitHub user profile
-    const userRes = await fetch('https://api.github.com/user', {
-      headers: {
-        'Authorization': `Bearer ${tokenData.access_token}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28'
-      }
-    });
+  <!-- Header -->
+  <div class="flex header">
+    <div class="flex logo-container">
+      <img src="/viscarma_logo.png" alt="VisCarMa logo" class="logo-img" />
+      <span class="logo">Vis<span class="accent">Car</span>Ma</span>
+      <span class="badge">Hybrid</span>
+    </div>
+    <div class="flex auth-section">
+      <span id="auth-status" class="auth-status">
+        <span class="status-dot" id="status-dot"></span>
+        <!-- Avatar + username shown after login -->
+        <span class="avatar-wrap" id="avatar-wrap">
+          <img id="gh-avatar" class="gh-avatar" src="" alt="GitHub avatar" />
+          <span id="gh-username" class="gh-username"></span>
+        </span>
+        <!-- Fallback text when not logged in / checking -->
+        <span id="user-info" style="font-size:12px;color:#8aa9c9;">Checking…</span>
+      </span>
+      <button class="btn btn-ghost" id="login-btn" onclick="login()">Login with GitHub</button>
+    </div>
+  </div>
 
-    const userData = await userRes.json();
+  <!-- Main Controls -->
+  <div class="box">
+    <div class="flex" style="justify-content:space-between;">
+      <div class="flex" style="flex:1;">
+        <input type="text" id="repo-url-input" placeholder="https://github.com/owner/repo" style="flex:2;min-width:200px;" />
+        <button class="btn" onclick="scanManual()">🔍 Scan Public Repo</button>
+      </div>
+      <div class="flex" style="flex:1;justify-content:flex-end;">
+        <select id="repo-select" style="flex:1;min-width:150px;display:none;" onchange="selectRepo()">
+          <option value="">Select repo</option>
+        </select>
+        <button class="btn btn-primary" id="scan-logged-btn" onclick="scanLoggedIn()" style="display:none;">🚀 Scan Selected</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:#8aa9c9;margin-top:6px;">
+      ℹ️ Log in to scan private repos and create PRs. Paste a public repo URL for quick scans.
+    </div>
+    <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  </div>
 
-    // Store in cookie-session
-    req.session.oauth_state = null;  // clear state after use
-    req.session.user = {
-      login:      userData.login,
-      name:       userData.name,
-      avatar_url: userData.avatar_url,
-      email:      userData.email
+  <!-- Stats -->
+  <div class="box stats">
+    <span class="stat-box">Files <span class="stat-val" id="s-files">0</span></span>
+    <span class="stat-box">Issues <span class="stat-val" id="s-issues">0</span></span>
+    <span class="stat-box">Last <span class="stat-val" id="s-time">—</span></span>
+  </div>
+
+  <!-- Log -->
+  <div class="box log-container">
+    <div class="log-header">
+      <span>📋 Log</span>
+      <button class="btn btn-ghost" onclick="clearLog()">clear</button>
+    </div>
+    <div class="log-box" id="log-box">
+      <div class="log-line">
+        <span class="log-ts">--:--:--</span>
+        <span class="log-tag tag-sys">SYS</span>
+        <span>Ready. Enter a repo URL or login to select one.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Area -->
+  <div id="report-area" style="display:none;margin-top:14px;">
+    <div class="box report-panel">
+      <div class="panel-title">
+        <span>📊 Scan Report</span>
+        <div class="flex">
+          <button class="btn btn-ghost" id="fix-btn" onclick="generateFixes()" style="display:none;">🔧 Apply Fixes</button>
+          <button class="btn btn-primary" id="pr-btn" onclick="createPR()" style="display:none;">🔀 Create PR</button>
+        </div>
+      </div>
+      <div id="report-content" style="padding:12px;"></div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="flex footer-content">
+      <div class="flex">
+        <img src="/viscarma_logo.png" alt="VisCarMa logo" class="footer-logo-img" />
+        <span style="font-size:14px;font-weight:700;">Vis<span style="color:#3b82f6;">Car</span>Ma</span>
+        <span style="font-size:10px;color:#8aa9c9;margin-left:8px;">Hybrid Scanner</span>
+      </div>
+      <div class="flex footer-links">
+        <a href="#" onclick="alert('VisCarMa – a code scanner with ESLint, AI, and GitHub integration. Built by Sai Varakala.')">About</a>
+        <a href="https://github.com/suryasticsai/viscarma" target="_blank">GitHub</a>
+        <a href="mailto:suryasticsai@gmail.com">Contact</a>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:8px;font-size:10px;color:#6b7b8d;">
+      © 2026 VisCarMa · All rights reserved.
+    </div>
+  </footer>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <script>
+    /* ─── STATE ─────────────────────────────────────────────────── */
+    const STATE = {
+      user:        null,
+      token:       null,
+      repoUrl:     null,
+      repoOwner:   null,
+      repoName:    null,
+      repoBranch:  'main',
+      scanResults: null,
+      fixes:       null,
     };
-    req.session.github_token = tokenData.access_token;
 
-    console.log('[AUTH] Session set for user:', userData.login, '— redirecting to /');
-    res.redirect(FRONTEND_URL + '/?login=success');
+    const $   = id => document.getElementById(id);
+    const logBox = $('log-box');
 
-  } catch (err) {
-    console.error('[AUTH] Error:', err.message);
-    res.status(500).send(`
-      <html><body style="font-family:monospace;background:#0a0c0f;color:#ff5370;padding:40px;">
-        <h2>OAuth Error</h2><p>${err.message}</p>
-        <a href="${FRONTEND_URL}" style="color:#00ffa3;">← Back to VisCarMa</a>
-      </body></html>
-    `);
-  }
-});
-
-// Logout
-app.post('/auth/logout', (req, res) => {
-  req.session = null;  // cookie-session: setting to null clears the cookie
-  res.json({ ok: true });
-});
-
-// ── AI PROXY ─────────────────────────────────────────────────────────
-// FIX #5: Ollama is localhost-only on Render — use Pollinations as fallback.
-// If OLLAMA_URL is set and reachable, use it. Otherwise fall back to Pollinations.
-app.post('/api/ai', async (req, res) => {
-  const { prompt, model = 'llava', images = [] } = req.body;
-
-  // Try Ollama first (works locally, fails on Render unless self-hosted)
-  const ollamaAvailable = OLLAMA_URL && !OLLAMA_URL.includes('localhost') || process.env.NODE_ENV !== 'production';
-
-  if (ollamaAvailable) {
-    try {
-      const ollamaRes = await fetch(`${OLLAMA_URL}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, prompt, images, stream: false }),
-        signal: AbortSignal.timeout(30000)
-      });
-      if (ollamaRes.ok) {
-        const data = await ollamaRes.json();
-        return res.json({ response: data.response });
-      }
-    } catch (e) {
-      console.log('[AI] Ollama unreachable, falling back to Pollinations:', e.message);
+    function ts() {
+      return new Date().toLocaleTimeString('en-GB', { hour12: false });
     }
-  }
 
-  // Pollinations fallback — free, keyless, no signup required
-  try {
-    const pollRes = await fetch('https://text.pollinations.ai/openai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'openai',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 1000
-      }),
-      signal: AbortSignal.timeout(30000)
-    });
+    function log(tag, cls, msg) {
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      line.innerHTML = `<span class="log-ts">${ts()}</span>`
+                     + `<span class="log-tag ${cls}">${tag}</span>`
+                     + `<span>${escHtml(msg)}</span>`;
+      logBox.appendChild(line);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
 
-    if (!pollRes.ok) throw new Error(`Pollinations HTTP ${pollRes.status}`);
-    const data = await pollRes.json();
-    const text = data.choices?.[0]?.message?.content || data.response || '(no response)';
-    return res.json({ response: text });
+    function clearLog() {
+      logBox.innerHTML = '';
+      log('SYS', 'tag-sys', 'Log cleared.');
+    }
 
-  } catch (e) {
-    console.error('AI error:', e.message);
-    return res.status(502).json({ error: 'AI unavailable: ' + e.message });
-  }
-});
+    function escHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
 
-// ── GITHUB API PROXY ──────────────────────────────────────────────────
-// Proxies GitHub API calls using the session token — avoids CORS issues
-app.get('/api/github/*', async (req, res) => {
-  const token = req.session?.github_token;
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+    function toast(msg) {
+      const el = $('toast');
+      el.textContent = msg;
+      el.style.opacity = '1';
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+    }
 
-  const ghPath = req.params[0];
-  try {
-    const ghRes = await fetch(`https://api.github.com/${ghPath}?${new URLSearchParams(req.query)}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28'
+    /* ─── FETCH WRAPPER ─────────────────────────────────────────── */
+    // KEY FIX: credentials:'include' sends the session cookie on every request.
+    // Without this the server never sees the cookie and thinks you're logged out.
+    async function apiFetch(url, options = {}) {
+      const { headers = {}, ...rest } = options;
+      return fetch(url, {
+        ...rest,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...headers },
+      });
+    }
+
+    /* ─── AUTH ──────────────────────────────────────────────────── */
+    async function checkAuth() {
+      try {
+        const res = await apiFetch('/api/user');
+        if (!res.ok) {
+          console.warn('[AUTH] /api/user returned', res.status, '— retrying…');
+          setTimeout(checkAuth, 1500);
+          return;
+        }
+        const data = await res.json();
+        applyAuthState(data.user, data.token);
+      } catch (e) {
+        console.error('[AUTH] checkAuth error:', e);
+        setTimeout(checkAuth, 1500);
       }
-    });
-    const data = await ghRes.json();
-    res.status(ghRes.status).json(data);
-  } catch (e) {
-    res.status(502).json({ error: e.message });
-  }
-});
+    }
 
-app.post('/api/github/*', async (req, res) => {
-  const token = req.session?.github_token;
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+    function applyAuthState(user, token) {
+      const avatarWrap = $('avatar-wrap');
+      const userInfo   = $('user-info');
+      const dot        = $('status-dot');
+      const loginBtn   = $('login-btn');
 
-  const ghPath = req.params[0];
-  try {
-    const ghRes = await fetch(`https://api.github.com/${ghPath}`, {
-      method: req.method,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-        'X-GitHub-Api-Version': '2022-11-28'
-      },
-      body: JSON.stringify(req.body)
-    });
-    const data = await ghRes.json();
-    res.status(ghRes.status).json(data);
-  } catch (e) {
-    res.status(502).json({ error: e.message });
-  }
-});
+      if (user) {
+        STATE.user  = user;
+        STATE.token = token;
 
-// ── ESLINT FIX ───────────────────────────────────────────────────────
-// FIX #6: ESLint v8 lintText() does not accept { fix: true } in options.
-// The fix flag must be passed in the ESLint constructor, not lintText().
-async function generateFixesForFile(code, filePath) {
-  const eslint = new ESLint({
-    fix: true,          // ← correct: constructor option, not lintText option
-    overrideConfig: {
-      env: { browser: true, es2022: true, node: true },
-      parserOptions: { ecmaVersion: 2022, sourceType: 'module' }
-    },
-    useEslintrc: false
-  });
+        // ── Show avatar + username ──────────────────────────────
+        $('gh-avatar').src = user.avatar || '';
+        $('gh-avatar').alt = user.login + ' avatar';
+        $('gh-username').textContent = user.login;
+        avatarWrap.classList.add('visible');
+        userInfo.style.display = 'none';
 
-  // lintText() takes only (code, { filePath }) — no fix option here
-  const results = await eslint.lintText(code, { filePath });
-  await ESLint.outputFixes(results);  // applies fixes back to file
-  return results;
-}
+        dot.className       = 'status-dot online';
+        loginBtn.textContent = 'Logout';
+        loginBtn.onclick     = logout;
 
-app.post('/api/lint', async (req, res) => {
-  const { code, filePath = 'input.js' } = req.body;
-  if (!code) return res.status(400).json({ error: 'No code provided' });
+        $('repo-select').style.display    = 'inline-block';
+        $('scan-logged-btn').style.display = 'inline-flex';
 
-  try {
-    const results = await generateFixesForFile(code, filePath);
-    const messages = results.flatMap(r => r.messages);
-    const fixed    = results[0]?.output || code;
-    res.json({ messages, fixed, errorCount: results[0]?.errorCount || 0 });
-  } catch (e) {
-    console.error('ESLint fix error:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
+        loadRepos();
+        log('AUTH', 'tag-ok', `Authenticated as ${user.login}`);
+      } else {
+        STATE.user  = null;
+        STATE.token = null;
 
-// ── HEALTH CHECK ─────────────────────────────────────────────────────
-app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
+        // ── Hide avatar, show plain text ────────────────────────
+        avatarWrap.classList.remove('visible');
+        userInfo.style.display  = '';
+        userInfo.textContent    = 'Not logged in';
 
-// ── SPA FALLBACK ──────────────────────────────────────────────────────
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+        dot.className        = 'status-dot offline';
+        loginBtn.textContent  = 'Login with GitHub';
+        loginBtn.onclick      = login;
 
-// ── START ────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`✅ VisCarMa server listening on port ${PORT}`);
-});
+        $('repo-select').style.display    = 'none';
+        $('scan-logged-btn').style.display = 'none';
+
+        log('AUTH', 'tag-sys', 'Not authenticated.');
+      }
+    }
+
+    function login()  { window.location.href = '/auth/github';  }
+    function logout() { window.location.href = '/auth/logout'; }
+
+    async function loadRepos() {
+      try {
+        const res   = await apiFetch('/api/repos');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const repos = await res.json();
+        const select = $('repo-select');
+        select.innerHTML = '<option value="">Select repo</option>';
+        for (const repo of repos) {
+          const opt     = document.createElement('option');
+          opt.value     = repo.full_name;
+          opt.textContent = repo.full_name;
+          select.appendChild(opt);
+        }
+        log('AUTH', 'tag-ok', `Loaded ${repos.length} repos`);
+      } catch (e) {
+        log('AUTH', 'tag-err', 'Failed to load repos: ' + e.message);
+      }
+    }
+
+    function selectRepo() {
+      const val = $('repo-select').value;
+      if (!val) return;
+      const [owner, name] = val.split('/');
+      STATE.repoOwner  = owner;
+      STATE.repoName   = name;
+      STATE.repoUrl    = `https://github.com/${val}.git`;
+      STATE.repoBranch = 'main';
+      $('repo-url-input').value = `https://github.com/${val}`;
+    }
+
+    /* ─── SCANNING ──────────────────────────────────────────────── */
+    async function scanManual() {
+      const url   = $('repo-url-input').value.trim();
+      if (!url) { toast('⚠ Enter a repo URL'); return; }
+      const match = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
+      if (!match) { toast('⚠ Invalid GitHub URL'); return; }
+      STATE.repoOwner  = match[1];
+      STATE.repoName   = match[2];
+      STATE.repoUrl    = `https://github.com/${match[1]}/${match[2]}.git`;
+      STATE.repoBranch = 'main';
+      await doScan(null);
+    }
+
+    async function scanLoggedIn() {
+      if (!STATE.repoUrl) { toast('⚠ Select a repo first'); return; }
+      await doScan(STATE.token);
+    }
+
+    async function doScan(token) {
+      const payload = {
+        repoUrl:   STATE.repoUrl,
+        repoOwner: STATE.repoOwner,
+        repoName:  STATE.repoName,
+        token:     token || null,
+      };
+
+      $('report-area').style.display = 'none';
+      $('fix-btn').style.display     = 'none';
+      $('pr-btn').style.display      = 'none';
+
+      const progressFill = $('progress-fill');
+      const progressBar  = $('progress-bar');
+      progressBar.style.display  = 'block';
+      progressFill.style.width   = '10%';
+      log('SCAN', 'tag-info', `Scanning ${STATE.repoOwner}/${STATE.repoName}…`);
+
+      try {
+        const res  = await apiFetch('/api/scan-repo', {
+          method: 'POST',
+          body:   JSON.stringify(payload),
+        });
+        progressFill.style.width = '80%';
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Scan failed');
+
+        STATE.scanResults        = data.results;
+        progressFill.style.width = '100%';
+        setTimeout(() => { progressBar.style.display = 'none'; }, 600);
+
+        renderReport(data.results);
+        $('report-area').style.display = 'block';
+        $('fix-btn').style.display     = 'inline-flex';
+        log('SCAN', 'tag-ok', `Scan complete: ${data.results.length} files analyzed`);
+        toast('✅ Scan complete');
+      } catch (e) {
+        log('SCAN', 'tag-err', e.message);
+        toast('❌ ' + e.message);
+        progressBar.style.display = 'none';
+      }
+    }
+
+    function renderReport(results) {
+      const container   = $('report-content');
+      const totalFiles  = results.length;
+      const totalIssues = results.reduce((sum, f) => sum + f.issues.length, 0);
+
+      let html = `
+        <div class="summary-box">
+          <div class="summary-line"><span>Files scanned</span><span class="val">${totalFiles}</span></div>
+          <div class="summary-line"><span>Total issues</span><span class="val red">${totalIssues}</span></div>
+        </div>`;
+
+      if (!totalIssues) {
+        html += `<div style="color:#10b981;margin-top:12px;">✅ No issues found. Great job!</div>`;
+      } else {
+        for (const item of results) {
+          if (!item.issues.length) continue;
+          html += `<div style="font-weight:700;color:#60a5fa;margin-top:12px;">📄 ${escHtml(item.file)}</div>`;
+          for (const issue of item.issues) {
+            const sev         = (issue.severity || 'MED').toLowerCase();
+            const borderColor = sev === 'high' ? '#ef4444' : sev === 'med' ? '#f59e0b' : '#60a5fa';
+            html += `
+              <div class="bug-item" style="border-left:2px solid ${borderColor};">
+                <span class="sev-${sev}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">
+                  [${(issue.severity || 'MED').toUpperCase()}]
+                </span>
+                <span>${escHtml(issue.description || 'Issue')}</span>
+                ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
+              </div>`;
+          }
+        }
+      }
+
+      container.innerHTML = html;
+      $('s-files').textContent = totalFiles;
+      $('s-issues').textContent = totalIssues;
+      $('s-time').textContent   = new Date().toLocaleTimeString();
+    }
+
+    /* ─── FIXES ─────────────────────────────────────────────────── */
+    async function generateFixes() {
+      if (!STATE.scanResults) { toast('⚠ No scan results.'); return; }
+
+      const filesToFix = STATE.scanResults
+        .filter(f => f.issues && f.issues.length > 0)
+        .map(f => ({ file: f.file, code: f.code, issues: f.issues }));
+
+      if (!filesToFix.length) { toast('⚠ No issues to fix.'); return; }
+
+      log('FIX', 'tag-info', `Generating fixes for ${filesToFix.length} files…`);
+      $('fix-btn').disabled     = true;
+      $('fix-btn').textContent  = '⏳ Generating…';
+
+      try {
+        const res  = await apiFetch('/api/generate-fixes', {
+          method: 'POST',
+          body:   JSON.stringify({ files: filesToFix }),
+        });
+        const data = await res.json();
+        if (!data.fixes) throw new Error('No fixes returned');
+        STATE.fixes = data.fixes;
+        $('pr-btn').style.display = 'inline-flex';
+        log('FIX', 'tag-ok', `Generated fixes for ${data.fixes.length} files`);
+        toast('✅ Fixes generated. Click "Create PR" to open a pull request.');
+        showFixPreview(data.fixes);
+      } catch (e) {
+        log('FIX', 'tag-err', e.message);
+        toast('❌ ' + e.message);
+      } finally {
+        $('fix-btn').disabled    = false;
+        $('fix-btn').textContent = '🔧 Apply Fixes';
+      }
+    }
+
+    function showFixPreview(fixes) {
+      const container = $('report-content');
+      let html = container.innerHTML
+               + `<div style="margin-top:16px;border-top:1px solid #2a3a4e;padding-top:12px;">
+                    <div style="font-weight:700;color:#10b981;">🔧 Fixes Generated</div>`;
+      for (const fix of fixes) {
+        html += `<div style="margin-top:6px;font-size:11px;color:#8aa9c9;">
+                   📄 ${escHtml(fix.file)} – applied: ${escHtml(fix.applied.join(', ') || 'none')}
+                 </div>`;
+        if (fix.newCode) {
+          html += `<details style="margin-left:12px;">
+                     <summary style="cursor:pointer;color:#8aa9c9;font-size:11px;">Show preview</summary>
+                     <pre style="background:#0f172a;padding:6px;border-radius:4px;font-size:10px;
+                                 color:#e0e8f0;white-space:pre-wrap;max-height:200px;overflow:auto;">
+${escHtml(fix.newCode.slice(0, 800))}${fix.newCode.length > 800 ? '\n…truncated' : ''}</pre>
+                   </details>`;
+        }
+      }
+      html += `</div>`;
+      container.innerHTML = html;
+    }
+
+    /* ─── CREATE PR ─────────────────────────────────────────────── */
+    async function createPR() {
+      if (!STATE.fixes || !STATE.fixes.length) { toast('⚠ Generate fixes first.'); return; }
+      if (!STATE.repoOwner || !STATE.repoName) { toast('⚠ Repo owner/name not set.'); return; }
+      if (!STATE.token)                         { toast('⚠ You must be logged in to create a PR.'); return; }
+
+      log('PR', 'tag-info', 'Creating pull request…');
+      $('pr-btn').disabled    = true;
+      $('pr-btn').textContent = '⏳ Creating…';
+
+      try {
+        const res  = await apiFetch('/api/create-pr', {
+          method: 'POST',
+          body:   JSON.stringify({
+            repoOwner: STATE.repoOwner,
+            repoName:  STATE.repoName,
+            branch:    STATE.repoBranch || 'main',
+            fixes:     STATE.fixes,
+            token:     STATE.token,
+          }),
+        });
+        const data = await res.json();
+        if (!data.url) throw new Error(data.error || 'PR creation failed');
+        log('PR', 'tag-ok', `PR created: ${data.url}`);
+        toast(`✅ PR #${data.number} opened!`);
+        $('report-content').innerHTML +=
+          `<div style="margin-top:12px;border-top:1px solid #10b981;padding-top:8px;">
+             🔀 <a href="${data.url}" target="_blank" rel="noopener" style="color:#10b981;">
+               View PR #${data.number}
+             </a>
+           </div>`;
+      } catch (e) {
+        log('PR', 'tag-err', e.message);
+        toast('❌ ' + e.message);
+      } finally {
+        $('pr-btn').disabled    = false;
+        $('pr-btn').textContent = '🔀 Create PR';
+      }
+    }
+
+    /* ─── INIT ──────────────────────────────────────────────────── */
+    (function init() {
+      log('SYS', 'tag-sys', 'VisCarMa Hybrid Scanner ready.');
+      // Small delay so cookie-session cookie is fully set after OAuth redirect
+      // before we try to read it back via /api/user
+      setTimeout(checkAuth, 150);
+    })();
+  </script>
+
+</body>
+</html>
