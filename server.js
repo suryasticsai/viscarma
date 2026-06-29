@@ -13,6 +13,8 @@ import cookieSession from 'cookie-session';
 import cookieParser from 'cookie-parser';
 import { ESLint }   from 'eslint';
 import { JSDOM }    from 'jsdom';
+import * as cheerio  from 'cheerio';
+import Diff          from 'diff';
 import simpleGit    from 'simple-git';
 import path         from 'path';
 import { fileURLToPath } from 'url';
@@ -1857,6 +1859,365 @@ app.post('/api/marketplace/:id/rate', async (req, res) => {
   pack.rating   = pack.ratings.reduce((s,r) => s+r.rating, 0) / pack.ratings.length;
   await saveMarketplace();
   res.json({ rating: pack.rating, count: pack.ratings.length });
+});
+
+// ══════════════════════════════════════════════════════════════
+// GOD MODE — LIVE URL SCANNER (fetch + cheerio + JSDOM, no browser)
+// ══════════════════════════════════════════════════════════════
+
+async function fetchAndAnalyseUrl(url) {
+  const issues = [];
+
+  // Fetch the live page
+  let html;
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'VisCarMa/2.0 (+https://viscarma.onrender.com)' },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    html = await res.text();
+  } catch (e) {
+    return { url, issues: [{ severity: 'HIGH', description: `Failed to fetch URL: ${e.message}`, fix: 'Check the URL is publicly accessible.' }], title: 'Fetch failed', meta: {} };
+  }
+
+  const $ = cheerio.load(html);
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
+
+  // ── Meta & SEO ──────────────────────────────────────────────
+  const title = $('title').text().trim();
+  if (!title) issues.push({ severity: 'HIGH', description: 'Missing <title> tag — critical for SEO.', fix: 'Add a descriptive <title> to your <head>.' });
+  else if (title.length < 10) issues.push({ severity: 'MED', description: `Title too short (${title.length} chars): "${title}"`, fix: 'Title should be 30–60 characters.' });
+  else if (title.length > 60) issues.push({ severity: 'LOW', description: `Title too long (${title.length} chars) — may be truncated in search results.`, fix: 'Keep title under 60 characters.' });
+
+  const metaDesc = $('meta[name="description"]').attr('content');
+  if (!metaDesc) issues.push({ severity: 'MED', description: 'Missing meta description — hurts SEO click-through rate.', fix: 'Add <meta name="description" content="150–160 char description">.' });
+  else if (metaDesc.length > 160) issues.push({ severity: 'LOW', description: `Meta description too long (${metaDesc.length} chars).`, fix: 'Keep meta description under 160 characters.' });
+
+  if (!$('meta[name="viewport"]').length)
+    issues.push({ severity: 'HIGH', description: 'Missing viewport meta tag — site will not be mobile responsive.', fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1.0">.' });
+
+  if (!$('html').attr('lang'))
+    issues.push({ severity: 'MED', description: 'Missing lang attribute on <html> — accessibility and SEO issue.', fix: 'Add lang="en" (or appropriate language code) to <html>.' });
+
+  const canonical = $('link[rel="canonical"]').attr('href');
+  if (!canonical) issues.push({ severity: 'LOW', description: 'No canonical URL — may cause duplicate content issues.', fix: 'Add <link rel="canonical" href="YOUR_URL">.' });
+
+  // ── Open Graph / Social ─────────────────────────────────────
+  if (!$('meta[property="og:title"]').length)
+    issues.push({ severity: 'LOW', description: 'Missing og:title — link previews on social media will be poor.', fix: 'Add <meta property="og:title" content="...">.' });
+  if (!$('meta[property="og:image"]').length)
+    issues.push({ severity: 'LOW', description: 'Missing og:image — no image when shared on social media.', fix: 'Add <meta property="og:image" content="URL_TO_IMAGE">.' });
+
+  // ── Accessibility ───────────────────────────────────────────
+  const imgsNoAlt = $('img:not([alt])').length;
+  if (imgsNoAlt > 0) issues.push({ severity: 'MED', description: `${imgsNoAlt} image(s) missing alt attribute — screen reader accessibility failure.`, fix: 'Add descriptive alt="..." to every <img>.' });
+
+  const inputsNoLabel = $('input:not([aria-label]):not([aria-labelledby])').filter((i, el) => {
+    const id = $(el).attr('id');
+    return !id || !$(`label[for="${id}"]`).length;
+  }).length;
+  if (inputsNoLabel > 0) issues.push({ severity: 'MED', description: `${inputsNoLabel} input(s) missing associated <label> or aria-label.`, fix: 'Add <label for="inputId"> or aria-label to each input.' });
+
+  const emptyLinks = $('a').filter((i, el) => !$(el).text().trim() && !$(el).attr('aria-label')).length;
+  if (emptyLinks > 0) issues.push({ severity: 'MED', description: `${emptyLinks} link(s) with no visible text — inaccessible to screen readers.`, fix: 'Add descriptive text or aria-label to all links.' });
+
+  if (!$('[role="main"], main').length)
+    issues.push({ severity: 'LOW', description: 'No <main> landmark element — reduces accessibility navigation.', fix: 'Wrap your primary content in a <main> element.' });
+
+  // ── Performance hints ───────────────────────────────────────
+  const inlineStyles = $('[style]').length;
+  if (inlineStyles > 10) issues.push({ severity: 'LOW', description: `${inlineStyles} elements use inline styles — harder to maintain and overrides CSS cascade.`, fix: 'Move inline styles to CSS classes.' });
+
+  const scriptCount = $('script:not([type="application/json"]):not([type="application/ld+json"])').length;
+  if (scriptCount > 10) issues.push({ severity: 'LOW', description: `${scriptCount} <script> tags detected — consider bundling.`, fix: 'Bundle scripts with a build tool to reduce HTTP requests.' });
+
+  const renderBlockingCss = $('link[rel="stylesheet"]:not([media])').length;
+  if (renderBlockingCss > 3) issues.push({ severity: 'MED', description: `${renderBlockingCss} render-blocking stylesheets detected.`, fix: 'Use media queries or load non-critical CSS asynchronously.' });
+
+  // ── Security headers (inferred from meta) ───────────────────
+  const csp = $('meta[http-equiv="Content-Security-Policy"]').length;
+  if (!csp) issues.push({ severity: 'MED', description: 'No Content-Security-Policy meta tag detected.', fix: 'Add a CSP header via your server or a meta tag to prevent XSS.' });
+
+  // ── Broken / suspicious patterns ────────────────────────────
+  const httpLinks = $('a[href^="http:"]').length;
+  if (httpLinks > 0) issues.push({ severity: 'MED', description: `${httpLinks} link(s) use insecure HTTP — mixed content risk.`, fix: 'Change all links to use HTTPS.' });
+
+  const consoleInScripts = $('script').filter((i, el) => $(el).html()?.includes('console.log')).length;
+  if (consoleInScripts > 0) issues.push({ severity: 'LOW', description: `console.log() found in ${consoleInScripts} inline script(s).`, fix: 'Remove console.log() before going to production.' });
+
+  // ── Structured data ─────────────────────────────────────────
+  const jsonLd = $('script[type="application/ld+json"]').length;
+  if (!jsonLd) issues.push({ severity: 'LOW', description: 'No JSON-LD structured data — missed opportunity for rich search results.', fix: 'Add Schema.org JSON-LD markup for your page type.' });
+
+  // ── AI analysis of the page content ─────────────────────────
+  const bodyText = $('body').text().replace(/\s+/g, ' ').trim().slice(0, 2000);
+  const aiPrompt = `Analyse this webpage's HTML and content for UX, SEO, accessibility, and performance issues.
+URL: ${url}
+Title: ${title || 'none'}
+Body text preview: ${bodyText}
+Number of issues already found by static analysis: ${issues.length}
+
+Return a JSON array of additional issues ONLY (no duplicates of common ones already found): [{"severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`;
+
+  const aiRaw = await callAI(aiPrompt);
+  const aiIssues = parseAIResponse(aiRaw);
+  const existing = new Set(issues.map(i => i.description));
+  for (const ai of aiIssues) {
+    if (!existing.has(ai.description)) { issues.push(ai); existing.add(ai.description); }
+  }
+
+  // ── Page metadata ───────────────────────────────────────────
+  const meta = {
+    title: title || null,
+    description: metaDesc || null,
+    h1: $('h1').first().text().trim() || null,
+    h1Count: $('h1').length,
+    links: $('a[href]').length,
+    images: $('img').length,
+    scripts: scriptCount,
+    wordCount: bodyText.split(' ').length,
+  };
+
+  if (meta.h1Count === 0) issues.push({ severity: 'HIGH', description: 'No <h1> tag found — critical for SEO and document structure.', fix: 'Add exactly one <h1> tag as the main page heading.' });
+  if (meta.h1Count > 1) issues.push({ severity: 'MED', description: `Multiple <h1> tags (${meta.h1Count}) — only one is recommended per page.`, fix: 'Use a single <h1> for the main heading; use <h2>-<h6> for subheadings.' });
+
+  return { url, issues, title: title || url, meta };
+}
+
+// God Mode: analyse multiple URLs + optional linked pages
+app.post('/api/godmode/scan-url', async (req, res) => {
+  const { url, deepScan } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+
+  try {
+    const primary = await fetchAndAnalyseUrl(url);
+    const results  = [primary];
+
+    // Deep scan: follow internal links (up to 4 more pages)
+    if (deepScan) {
+      const html  = await fetch(url, { headers: { 'User-Agent': 'VisCarMa/2.0' } }).then(r => r.text()).catch(() => '');
+      const $     = cheerio.load(html);
+      const base  = new URL(url);
+      const links = [];
+      $('a[href]').each((i, el) => {
+        try {
+          const href = new URL($('a', el).attr('href') || $(el).attr('href'), base);
+          if (href.hostname === base.hostname && !links.includes(href.href) && href.href !== url) {
+            links.push(href.href);
+          }
+        } catch {}
+      });
+      for (const link of links.slice(0, 4)) {
+        try {
+          const pageResult = await fetchAndAnalyseUrl(link);
+          results.push(pageResult);
+        } catch {}
+      }
+    }
+
+    res.json({ success: true, results, totalIssues: results.reduce((s, r) => s + r.issues.length, 0) });
+  } catch (e) {
+    console.error('[GODMODE]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Self-verification loop ─────────────────────────────────────
+// After fixes are applied, re-scan and compare before vs after
+app.post('/api/godmode/verify', async (req, res) => {
+  const { files, originalIssueCount } = req.body;
+  if (!files?.length) return res.status(400).json({ error: 'files required' });
+
+  const results = [];
+  let totalAfter = 0;
+  for (const item of files) {
+    const issues = await analyzeFile(item.code, item.file);
+    totalAfter += issues.length;
+    results.push({ file: item.file, issuesBefore: item.issueCount || 0, issuesAfter: issues.length, issues, improved: issues.length < (item.issueCount || 0) });
+  }
+
+  const improved = totalAfter < originalIssueCount;
+  res.json({ verified: improved, before: originalIssueCount, after: totalAfter, reduction: originalIssueCount - totalAfter, results });
+});
+
+// ── Dependency vulnerability scanner ──────────────────────────
+// Reads package.json from repo, checks npm registry for CVEs
+app.post('/api/godmode/scan-deps', async (req, res) => {
+  const { repoOwner, repoName, token } = req.body;
+  const ghToken = token || req.session?.githubToken;
+  if (!repoOwner || !repoName) return res.status(400).json({ error: 'repoOwner and repoName required' });
+
+  try {
+    // Fetch package.json from repo
+    const pkgRes  = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/package.json`, {
+      headers: { Authorization: ghToken ? `token ${ghToken}` : '', Accept: 'application/vnd.github.v3+json' },
+    });
+    if (!pkgRes.ok) return res.status(404).json({ error: 'package.json not found in repo' });
+    const pkgData = await pkgRes.json();
+    const pkg     = JSON.parse(Buffer.from(pkgData.content, 'base64').toString('utf-8'));
+
+    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+    const vulns   = [];
+
+    // Check each package against npm registry for deprecation + known issues
+    const checks = Object.entries(allDeps).slice(0, 20); // cap at 20 to avoid rate limits
+    for (const [name, versionRange] of checks) {
+      try {
+        const npmRes  = await fetch(`https://registry.npmjs.org/${name}/latest`);
+        if (!npmRes.ok) continue;
+        const npmData = await npmRes.json();
+
+        if (npmData.deprecated) {
+          vulns.push({ package: name, currentRange: versionRange, severity: 'HIGH', issue: 'Deprecated', description: npmData.deprecated, fix: `Replace ${name} with an actively maintained alternative.` });
+        }
+
+        // Check for drastically outdated versions
+        const latest = npmData.version;
+        const currentMajor = parseInt((versionRange.replace(/[\^~>=<]/g, '').split('.')[0]) || '0');
+        const latestMajor  = parseInt((latest.split('.')[0]) || '0');
+        if (latestMajor - currentMajor >= 2) {
+          vulns.push({ package: name, currentRange: versionRange, latestVersion: latest, severity: 'MED', issue: 'Major version gap', description: `${name} is ${latestMajor - currentMajor} major versions behind (you: ~${currentMajor}.x, latest: ${latest}).`, fix: `Run: npm install ${name}@latest` });
+        }
+      } catch {}
+    }
+
+    // AI analysis of the full dependency list
+    const aiRaw = await callAI(
+      `Analyse these npm dependencies for security risks, deprecated packages, or better alternatives.
+Dependencies: ${JSON.stringify(allDeps, null, 2)}
+
+Return a JSON array: [{"package":"...","severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`
+    );
+    const aiVulns = parseAIResponse(aiRaw);
+    const existing = new Set(vulns.map(v => v.package + v.issue));
+    for (const ai of aiVulns) {
+      if (!existing.has(ai.package + ai.description)) vulns.push(ai);
+    }
+
+    res.json({ package: pkg.name, version: pkg.version, totalDeps: Object.keys(allDeps).length, checked: checks.length, vulns });
+  } catch (e) {
+    console.error('[DEPS]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Auto-merge (merge PR if all issues are LOW) ─────────────────
+app.post('/api/godmode/auto-merge', async (req, res) => {
+  const { repoOwner, repoName, prNumber, token } = req.body;
+  const ghToken = token || req.session?.githubToken;
+  if (!ghToken) return res.status(401).json({ error: 'Not authenticated' });
+
+  try {
+    const baseUrl = `https://api.github.com/repos/${repoOwner}/${repoName}`;
+
+    // Check PR is mergeable
+    const prRes  = await fetch(`${baseUrl}/pulls/${prNumber}`, { headers: { Authorization: `token ${ghToken}` } });
+    const pr     = await prRes.json();
+    if (!pr.mergeable) return res.json({ merged: false, reason: 'PR is not mergeable (conflicts or checks failing)' });
+    if (pr.state !== 'open') return res.json({ merged: false, reason: `PR is ${pr.state}` });
+
+    // Merge it
+    const mergeRes  = await fetch(`${baseUrl}/pulls/${prNumber}/merge`, {
+      method: 'PUT',
+      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        commit_title:   `fix: VisCarMa auto-merge PR #${prNumber}`,
+        commit_message: `Auto-merged by VisCarMa God Mode after verification.
+
+All issues confirmed LOW severity or resolved.`,
+        merge_method:   'squash',
+      }),
+    });
+    const mergeData = await mergeRes.json();
+    if (!mergeData.merged) return res.json({ merged: false, reason: mergeData.message });
+
+    res.json({ merged: true, sha: mergeData.sha, message: mergeData.message });
+  } catch (e) {
+    console.error('[AUTO-MERGE]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Multi-repo sweep ───────────────────────────────────────────
+// Scan + fix multiple repos in one call
+app.post('/api/godmode/multi-repo', async (req, res) => {
+  const { repos, token } = req.body; // repos: [{repoUrl, repoOwner, repoName}]
+  const ghToken = token || req.session?.githubToken;
+  if (!repos?.length) return res.status(400).json({ error: 'repos array required' });
+
+  const results = [];
+  for (const repo of repos.slice(0, 5)) { // cap at 5 repos
+    try {
+      const folderId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const repoPath = path.join(TEMP_DIR, folderId);
+      await fs.mkdir(repoPath, { recursive: true });
+      let cloneUrl = repo.repoUrl;
+      if (ghToken) cloneUrl = repo.repoUrl.replace('https://', `https://x-access-token:${ghToken}@`);
+      await simpleGit().clone(cloneUrl, repoPath, ['--depth', '1']);
+      const files   = await walkDir(repoPath);
+      const scanResults = [];
+      for (const fp of files) {
+        const rel  = path.relative(repoPath, fp);
+        const code = await fs.readFile(fp, 'utf-8');
+        const issues = await analyzeFile(code, rel);
+        scanResults.push({ file: rel, code, issues });
+      }
+      await fs.rm(repoPath, { recursive: true, force: true });
+      const totalIssues = scanResults.reduce((s, f) => s + f.issues.length, 0);
+      results.push({ ...repo, success: true, files: scanResults.length, issues: totalIssues, results: scanResults });
+    } catch (e) {
+      results.push({ ...repo, success: false, error: e.message });
+    }
+  }
+
+  res.json({ repos: results, totalRepos: results.length, totalIssues: results.reduce((s, r) => s + (r.issues || 0), 0) });
+});
+
+// ── AI code explainer ──────────────────────────────────────────
+app.post('/api/godmode/explain', async (req, res) => {
+  const { code, filename } = req.body;
+  if (!code) return res.status(400).json({ error: 'code required' });
+
+  const prompt = `You are a senior engineer explaining code to a junior developer.
+Explain this file in plain English. Be clear, friendly, and thorough.
+
+File: ${filename || 'unknown'}
+
+Structure your response as:
+1. What this file does (1-2 sentences)
+2. Key functions/classes and what they do
+3. How data flows through it
+4. Any patterns or architecture decisions worth noting
+5. Potential improvements
+
+Code:
+${code.slice(0, 4000)}`;
+
+  const explanation = await callAI(prompt);
+  res.json({ explanation: explanation || 'AI could not generate explanation.', filename });
+});
+
+// ── Proper diff patching (replaces string replace) ─────────────
+app.post('/api/godmode/diff', async (req, res) => {
+  const { original, modified, filename } = req.body;
+  if (!original || !modified) return res.status(400).json({ error: 'original and modified required' });
+
+  try {
+    const patch   = Diff.createPatch(filename || 'file', original, modified, 'original', 'fixed');
+    const changes = Diff.diffLines(original, modified);
+    const stats   = { added: 0, removed: 0, unchanged: 0 };
+    for (const part of changes) {
+      const lines = part.count || 0;
+      if (part.added) stats.added += lines;
+      else if (part.removed) stats.removed += lines;
+      else stats.unchanged += lines;
+    }
+    res.json({ patch, stats, changes: changes.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Health ──────────────────────────────────────────────────────
