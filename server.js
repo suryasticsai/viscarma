@@ -1530,17 +1530,49 @@ loadUsage();
 
 const LIMITS = { anonymous: 3, free: 20, pro: Infinity };
 
-function getUsageKey(req) {
-  const userId = req.session?.githubUser?.id;
-  const month  = new Date().toISOString().slice(0,7); // YYYY-MM
-  return userId ? \`user:\${userId}:\${month}\` : \`ip:\${req.ip}:\${month}\`;
+// ── PRO WHITELIST ─────────────────────────────────────────────
+// Add GitHub usernames to VISCARMA_PRO_USERS env var (comma-separated)
+// e.g.  VISCARMA_PRO_USERS=suryasticsai,alice,bob
+// These users get unlimited scans immediately, no payment needed.
+const PRO_WHITELIST = new Set(
+  (process.env.VISCARMA_PRO_USERS || 'suryasticsai')
+    .split(',').map(u => u.trim().toLowerCase()).filter(Boolean)
+);
+
+// ── PRO DB (Stripe-backed, loaded from data/pro.json) ─────────
+// Stripe webhook writes here when payment succeeds.
+// Format: { "github_user_id": { plan:"pro", since:"...", stripeCustomerId:"..." } }
+const PRO_FILE = path.join(process.cwd(), 'data', 'pro.json');
+let proStore   = {};
+
+async function loadProStore() {
+  try { proStore = JSON.parse(await fs.readFile(PRO_FILE, 'utf-8')); }
+  catch { proStore = {}; }
 }
+async function saveProStore() {
+  await fs.mkdir(path.dirname(PRO_FILE), { recursive: true });
+  await fs.writeFile(PRO_FILE, JSON.stringify(proStore, null, 2));
+}
+loadProStore();
 
 function getPlan(req) {
   if (!req.session?.githubUser) return 'anonymous';
-  // Pro check — extend this to check a real payments table
-  if (req.session?.githubUser?.pro) return 'pro';
+  const login = req.session.githubUser.login?.toLowerCase();
+  const id    = String(req.session.githubUser.id);
+
+  // 1. Manual whitelist (instant Pro)
+  if (PRO_WHITELIST.has(login)) return 'pro';
+
+  // 2. Stripe-verified Pro (set by webhook)
+  if (proStore[id]?.plan === 'pro') return 'pro';
+
   return 'free';
+}
+
+function getUsageKey(req) {
+  const userId = req.session?.githubUser?.id;
+  const month  = new Date().toISOString().slice(0,7);
+  return userId ? `user:${userId}:${month}` : `ip:${req.ip}:${month}`;
 }
 
 async function checkAndIncrementUsage(req) {
@@ -1559,23 +1591,129 @@ app.get('/api/usage', async (req, res) => {
   const plan  = getPlan(req);
   const limit = LIMITS[plan];
   const count = usageStore[key] || 0;
-  res.json({ count, limit, plan, remaining: Math.max(0, limit - count) });
+  res.json({
+    count, limit, plan,
+    remaining: limit === Infinity ? Infinity : Math.max(0, limit - count),
+    isWhitelisted: plan === 'pro' && PRO_WHITELIST.has(req.session?.githubUser?.login?.toLowerCase()),
+  });
 });
 
-// Patch scan-repo to enforce limits
-// We hook into the existing route by wrapping the handler
-const _originalScanHandler = app._router.stack
-  .filter(l => l.route?.path === '/api/scan-repo')
-  .pop();
+// ── STRIPE WEBHOOK ────────────────────────────────────────────
+// When a user pays, Stripe posts here.
+// Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET in Render env vars.
+// In Stripe dashboard: Webhooks → Add endpoint → https://viscarma.onrender.com/api/stripe/webhook
+// Events to listen for: checkout.session.completed, customer.subscription.deleted
 
-// Add limit-check middleware
+const STRIPE_SECRET_KEY      = process.env.STRIPE_SECRET_KEY      || null;
+const STRIPE_WEBHOOK_SECRET  = process.env.STRIPE_WEBHOOK_SECRET  || null;
+const STRIPE_PRO_PRICE_ID    = process.env.STRIPE_PRO_PRICE_ID    || null; // your Price ID from Stripe dashboard
+
+// Raw body needed for Stripe signature verification
+app.post('/api/stripe/webhook',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    if (!STRIPE_SECRET_KEY || !STRIPE_WEBHOOK_SECRET) {
+      return res.status(503).json({ error: 'Stripe not configured' });
+    }
+    // Lazy-load Stripe only when keys are present
+    const Stripe     = (await import('stripe')).default;
+    const stripe     = new Stripe(STRIPE_SECRET_KEY);
+    const sig        = req.headers['stripe-signature'];
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+    } catch (e) {
+      console.error('[STRIPE] Webhook signature failed:', e.message);
+      return res.status(400).send(`Webhook Error: ${e.message}`);
+    }
+
+    if (event.type === 'checkout.session.completed') {
+      const session   = event.data.object;
+      const githubId  = session.metadata?.github_user_id;
+      const login     = session.metadata?.github_login;
+      if (githubId) {
+        proStore[githubId] = {
+          plan:             'pro',
+          since:            new Date().toISOString(),
+          stripeCustomerId: session.customer,
+          stripeSessionId:  session.id,
+          githubLogin:      login,
+        };
+        await saveProStore();
+        console.log(`[STRIPE] Pro activated for GitHub user: ${login} (${githubId})`);
+      }
+    }
+
+    if (event.type === 'customer.subscription.deleted') {
+      const sub      = event.data.object;
+      const customerId = sub.customer;
+      // Find user by Stripe customer ID and downgrade
+      const entry = Object.entries(proStore).find(([, v]) => v.stripeCustomerId === customerId);
+      if (entry) {
+        const [githubId, data] = entry;
+        proStore[githubId] = { ...data, plan: 'free', cancelledAt: new Date().toISOString() };
+        await saveProStore();
+        console.log(`[STRIPE] Pro cancelled for: ${data.githubLogin}`);
+      }
+    }
+
+    res.json({ received: true });
+  }
+);
+
+// ── STRIPE CHECKOUT SESSION ────────────────────────────────────
+// Browser calls this to get a Stripe checkout URL
+app.post('/api/stripe/create-checkout', async (req, res) => {
+  if (!STRIPE_SECRET_KEY) return res.status(503).json({ error: 'Stripe not configured. Add STRIPE_SECRET_KEY to Render env vars.' });
+  if (!req.session?.githubUser) return res.status(401).json({ error: 'Login required' });
+  if (!STRIPE_PRO_PRICE_ID) return res.status(503).json({ error: 'No price configured. Add STRIPE_PRO_PRICE_ID to Render env vars.' });
+
+  try {
+    const Stripe  = (await import('stripe')).default;
+    const stripe  = new Stripe(STRIPE_SECRET_KEY);
+    const session = await stripe.checkout.sessions.create({
+      mode:        'subscription',
+      line_items:  [{ price: STRIPE_PRO_PRICE_ID, quantity: 1 }],
+      success_url: `${FRONTEND_URL}?pro=success`,
+      cancel_url:  `${FRONTEND_URL}?pro=cancelled`,
+      metadata:    {
+        github_user_id: String(req.session.githubUser.id),
+        github_login:   req.session.githubUser.login,
+      },
+      customer_email: req.body.email || undefined,
+    });
+    res.json({ url: session.url });
+  } catch (e) {
+    console.error('[STRIPE] Checkout failed:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── ADMIN: manually grant/revoke Pro ──────────────────────────
+// Only usable by whitelisted admin (you)
+app.post('/api/admin/set-pro', async (req, res) => {
+  const callerLogin = req.session?.githubUser?.login?.toLowerCase();
+  if (!PRO_WHITELIST.has(callerLogin)) return res.status(403).json({ error: 'Admin only' });
+  const { githubId, githubLogin, grant } = req.body;
+  if (!githubId) return res.status(400).json({ error: 'githubId required' });
+  if (grant) {
+    proStore[String(githubId)] = { plan: 'pro', since: new Date().toISOString(), grantedBy: callerLogin, githubLogin };
+  } else {
+    if (proStore[String(githubId)]) proStore[String(githubId)].plan = 'free';
+  }
+  await saveProStore();
+  res.json({ ok: true, plan: grant ? 'pro' : 'free', githubLogin });
+});
+
+// ── LIMIT-CHECK MIDDLEWARE on scan-repo ───────────────────────
 app.use('/api/scan-repo', async (req, res, next) => {
   if (req.method !== 'POST') return next();
   const check = await checkAndIncrementUsage(req);
   if (!check.allowed) {
     return res.status(429).json({
-      error: \`Scan limit reached. Plan: \${check.plan} — \${check.limit} scans/month. Upgrade to Pro for unlimited scans.\`,
+      error: `Scan limit reached. Plan: ${check.plan} — ${check.limit === Infinity ? 'unlimited' : check.limit + '/month'}. Upgrade to Pro for unlimited scans.`,
       count: check.count, limit: check.limit, plan: check.plan,
+      upgradeUrl: '/api/stripe/create-checkout',
     });
   }
   req.usageInfo = check;
