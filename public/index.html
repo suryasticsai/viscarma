@@ -3,19 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VisCarMa · Hybrid Scanner</title>
+  <title>VisCarMa · DevAIne Agent </title>
+  <link rel="icon" type="image/png" href="/viscarma_logo.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <!-- Header -->
   <div class="flex header">
-    <div class="flex">
+    <div class="flex logo-container">
+      <img src="/viscarma_logo.png" alt="VisCarMa logo" class="logo-img" />
       <span class="logo">Vis<span class="accent">Car</span>Ma</span>
       <span class="badge">Hybrid</span>
     </div>
-    <div class="flex">
-      <span id="user-info" style="font-size:12px;color:#4a5568;"></span>
+    <div class="flex auth-section">
+      <span id="auth-status" class="auth-status">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="user-info" style="font-size:12px;color:#8aa9c9;">Not logged in</span>
+      </span>
       <button class="btn btn-ghost" id="login-btn" onclick="login()">Login with GitHub</button>
     </div>
   </div>
@@ -34,7 +39,7 @@
         <button class="btn btn-primary" id="scan-logged-btn" onclick="scanLoggedIn()" style="display:none;">🚀 Scan Selected</button>
       </div>
     </div>
-    <div style="font-size:10px;color:#4a5568;margin-top:6px;">
+    <div style="font-size:10px;color:#8aa9c9;margin-top:6px;">
       ℹ️ Log in to scan private repos and create PRs. Paste a public repo URL for quick scans.
     </div>
     <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
@@ -75,6 +80,25 @@
       <div id="report-content" style="padding:12px;"></div>
     </div>
   </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="flex footer-content">
+      <div class="flex">
+        <img src="/viscarma_logo.png" alt="VisCarMa logo" class="footer-logo-img" />
+        <span style="font-size:14px;font-weight:700;">Vis<span style="color:#3b82f6;">Car</span>Ma</span>
+        <span style="font-size:10px;color:#8aa9c9;margin-left:8px;">Hybrid Scanner</span>
+      </div>
+      <div class="flex footer-links">
+        <a href="#" onclick="alert('VisCarMa – a code scanner with ESLint, AI, and GitHub integration. Built by Sai Varakala.')">About</a>
+        <a href="https://github.com/suryasticsai/viscarma" target="_blank">GitHub</a>
+        <a href="mailto:suryasticsai@gmail.com">Contact</a>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:8px;font-size:10px;color:#6b7b8d;">
+      © 2026 VisCarMa · All rights reserved.
+    </div>
+  </footer>
 
   <!-- Toast -->
   <div id="toast"></div>
@@ -120,23 +144,40 @@
 
     /* ─── AUTH ──────────────────────────────────────────────────── */
     async function checkAuth() {
-      const res = await fetch('/api/user');
-      const data = await res.json();
-      if (data.user) {
-        STATE.user = data.user;
-        STATE.token = data.token;
-        $('user-info').textContent = `👤 ${data.user.login}`;
-        $('login-btn').textContent = 'Logout';
-        $('login-btn').onclick = () => window.location.href = '/auth/logout';
-        $('repo-select').style.display = 'inline-block';
-        $('scan-logged-btn').style.display = 'inline-flex';
-        await loadRepos();
-      } else {
-        $('user-info').textContent = '';
+      try {
+        const res = await fetch('/api/user');
+        const data = await res.json();
+        if (data.user) {
+          STATE.user = data.user;
+          STATE.token = data.token;
+          // Update UI
+          const userInfo = $('user-info');
+          userInfo.textContent = `Logged in as ${data.user.login}`;
+          const statusDot = $('status-dot');
+          statusDot.className = 'status-dot online';
+          const loginBtn = $('login-btn');
+          loginBtn.textContent = 'Logout';
+          loginBtn.onclick = () => window.location.href = '/auth/logout';
+          // Show repo selector
+          $('repo-select').style.display = 'inline-block';
+          $('scan-logged-btn').style.display = 'inline-flex';
+          await loadRepos();
+        } else {
+          // Not logged in
+          $('user-info').textContent = 'Not logged in';
+          $('status-dot').className = 'status-dot offline';
+          $('login-btn').textContent = 'Login with GitHub';
+          $('login-btn').onclick = login;
+          $('repo-select').style.display = 'none';
+          $('scan-logged-btn').style.display = 'none';
+        }
+      } catch (e) {
+        console.error('Auth check failed:', e);
+        // Fallback: show as not logged in
+        $('user-info').textContent = 'Auth error';
+        $('status-dot').className = 'status-dot offline';
         $('login-btn').textContent = 'Login with GitHub';
         $('login-btn').onclick = login;
-        $('repo-select').style.display = 'none';
-        $('scan-logged-btn').style.display = 'none';
       }
     }
 
@@ -145,15 +186,19 @@
     }
 
     async function loadRepos() {
-      const res = await fetch('/api/repos');
-      const repos = await res.json();
-      const select = $('repo-select');
-      select.innerHTML = '<option value="">Select repo</option>';
-      for (const repo of repos) {
-        const opt = document.createElement('option');
-        opt.value = repo.full_name;
-        opt.textContent = repo.full_name;
-        select.appendChild(opt);
+      try {
+        const res = await fetch('/api/repos');
+        const repos = await res.json();
+        const select = $('repo-select');
+        select.innerHTML = '<option value="">Select repo</option>';
+        for (const repo of repos) {
+          const opt = document.createElement('option');
+          opt.value = repo.full_name;
+          opt.textContent = repo.full_name;
+          select.appendChild(opt);
+        }
+      } catch (e) {
+        console.error('Failed to load repos:', e);
       }
     }
 
@@ -212,14 +257,13 @@
         progressFill.style.width = '80%';
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
-        // Store results with file contents
         STATE.scanResults = data.results;
         progressFill.style.width = '100%';
         setTimeout(() => { progressBar.style.display = 'none'; }, 600);
         renderReport(data.results);
         $('report-area').style.display = 'block';
         $('fix-btn').style.display = 'inline-flex';
-        $('pr-btn').style.display = 'none'; // hidden until fixes are applied
+        $('pr-btn').style.display = 'none';
         log('SCAN', 'tag-ok', `Scan complete: ${data.results.length} files analyzed`);
         toast('✅ Scan complete');
       } catch (e) {
@@ -240,15 +284,15 @@
         </div>
       `;
       if (!totalIssues) {
-        html += `<div style="color:#00ffa3;margin-top:12px;">✅ No issues found. Great job!</div>`;
+        html += `<div style="color:#10b981;margin-top:12px;">✅ No issues found. Great job!</div>`;
       } else {
         for (const item of results) {
           if (!item.issues.length) continue;
-          html += `<div style="font-weight:700;color:#58a6ff;margin-top:12px;">📄 ${item.file}</div>`;
+          html += `<div style="font-weight:700;color:#60a5fa;margin-top:12px;">📄 ${item.file}</div>`;
           for (const issue of item.issues) {
             const sevClass = (issue.severity || 'MED').toLowerCase();
             html += `
-              <div class="bug-item" style="border-left:2px solid ${sevClass==='high'?'#ff5370':sevClass==='med'?'#ffb547':'#58a6ff'};">
+              <div class="bug-item" style="border-left:2px solid ${sevClass==='high'?'#ef4444':sevClass==='med'?'#f59e0b':'#60a5fa'};">
                 <span class="sev-${sevClass}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">[${(issue.severity || 'MED').toUpperCase()}]</span>
                 <span>${escHtml(issue.description || 'Issue')}</span>
                 ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
@@ -270,7 +314,6 @@
         return;
       }
 
-      // Build list of files with issues
       const filesToFix = STATE.scanResults
         .filter(f => f.issues && f.issues.length > 0)
         .map(f => ({ file: f.file, code: f.code, issues: f.issues }));
@@ -296,7 +339,6 @@
         $('pr-btn').style.display = 'inline-flex';
         log('FIX', 'tag-ok', `Generated fixes for ${data.fixes.length} files`);
         toast('✅ Fixes generated. Review and click "Create PR".');
-        // Show a preview of fixes
         showFixPreview(data.fixes);
       } catch (e) {
         log('FIX', 'tag-err', e.message);
@@ -310,11 +352,11 @@
     function showFixPreview(fixes) {
       const container = $('report-content');
       let html = container.innerHTML;
-      html += `<div style="margin-top:16px;border-top:1px solid #1e2d3d;padding-top:12px;"><div style="font-weight:700;color:#00ffa3;">🔧 Fixes Generated</div>`;
+      html += `<div style="margin-top:16px;border-top:1px solid #2a3a4e;padding-top:12px;"><div style="font-weight:700;color:#10b981;">🔧 Fixes Generated</div>`;
       for (const fix of fixes) {
-        html += `<div style="margin-top:6px;font-size:11px;color:#4a5568;">📄 ${fix.file} – applied: ${fix.applied.join(', ') || 'none'}</div>`;
+        html += `<div style="margin-top:6px;font-size:11px;color:#8aa9c9;">📄 ${fix.file} – applied: ${fix.applied.join(', ') || 'none'}</div>`;
         if (fix.newCode) {
-          html += `<details style="margin-left:12px;"><summary>Show diff</summary><pre style="background:#07090c;padding:6px;border-radius:4px;font-size:10px;color:#c8d8e8;white-space:pre-wrap;max-height:200px;overflow:auto;">${escHtml(fix.newCode.slice(0, 800))}${fix.newCode.length > 800 ? '\n…truncated' : ''}</pre></details>`;
+          html += `<details style="margin-left:12px;"><summary>Show diff</summary><pre style="background:#0f172a;padding:6px;border-radius:4px;font-size:10px;color:#e0e8f0;white-space:pre-wrap;max-height:200px;overflow:auto;">${escHtml(fix.newCode.slice(0, 800))}${fix.newCode.length > 800 ? '\n…truncated' : ''}</pre></details>`;
         }
       }
       html += `</div>`;
@@ -355,9 +397,8 @@
         if (data.url) {
           log('PR', 'tag-ok', `PR created: ${data.url}`);
           toast(`✅ PR #${data.number} opened!`);
-          // Add a link to the PR
           const container = $('report-content');
-          container.innerHTML += `<div style="margin-top:12px;border-top:1px solid #00ffa3;padding-top:8px;">🔀 <a href="${data.url}" target="_blank" style="color:#00ffa3;">View PR #${data.number}</a></div>`;
+          container.innerHTML += `<div style="margin-top:12px;border-top:1px solid #10b981;padding-top:8px;">🔀 <a href="${data.url}" target="_blank" style="color:#10b981;">View PR #${data.number}</a></div>`;
         } else {
           throw new Error(data.error || 'PR creation failed');
         }
@@ -372,6 +413,7 @@
 
     /* ─── INIT ────────────────────────────────────────────────── */
     (function init() {
+      // Check auth on page load
       checkAuth();
       log('SYS', 'tag-sys', 'VisCarMa Hybrid Scanner ready.');
     })();
