@@ -68,6 +68,10 @@
       <div class="text-muted text-xs mono" style="margin-bottom:6px">Post AI review on an existing open PR</div>
       <input type="number" id="review-pr-number" placeholder="PR number e.g. 42" style="margin-bottom:6px"/>
       <button class="btn" onclick="reviewExistingPR()" style="width:100%">Review open PR</button>
+      <div class="divider"></div>
+      <div class="field-label">GitHub Action</div>
+      <div class="text-muted text-xs mono" style="margin-bottom:6px">Add auto-scan CI to this repo</div>
+      <button class="btn" onclick="generateGitHubAction()" style="width:100%">Add GitHub Action</button>
     </div>
 
     <!-- FEATURE mode sidebar -->
@@ -122,6 +126,10 @@
       <div class="divider"></div>
       <button class="btn btn-emerald" id="agent-start-btn" onclick="startAgent()" style="width:100%">Activate agent</button>
       <button class="btn btn-danger"  id="agent-stop-btn"  onclick="stopAgent()"  style="display:none;width:100%">Stop agent</button>
+      <div class="divider"></div>
+      <div class="field-label">Notifications</div>
+      <button class="btn" id="push-btn" onclick="enablePush()" style="width:100%">Enable push notifications</button>
+      <div id="push-status" class="text-muted text-xs mono" style="margin-top:4px"></div>
     </div>
 
     <!-- Log (always visible at bottom) -->
@@ -243,7 +251,7 @@ const STATE = {
   featureFiles: [], featureFixes: null, featureDescription: null,
   mode: 'fix',
   taskSource: 'manual',
-  agentRunning: false, agentInterval: null, agentQueue: [],
+  agentRunning: false, agentJobId: null, agentQueue: [], agentPollInterval: null,
   agentIndex: 0, agentEndTime: null,
   currentFile: null, showingDiff: false,
   history: [],
@@ -835,7 +843,9 @@ async function reviewExistingPR() {
 }
 
 /* ══════════════════════════════════════════════════════
-   AGENTIC IDLE MODE
+   AGENTIC IDLE MODE — server-side
+   Browser just starts the job and polls /api/agent/status
+   Agent survives tab close, runs entirely on server
 ══════════════════════════════════════════════════════ */
 function setTaskSource(src) {
   STATE.taskSource = src;
@@ -868,8 +878,8 @@ async function fetchJiraTasks() {
 }
 
 async function startAgent() {
-  if (!STATE.repoUrl)   { toast('Select a repo first'); return; }
-  if (!STATE.token)     { toast('Login required'); return; }
+  if (!STATE.repoUrl) { toast('Select a repo first'); return; }
+  if (!STATE.token)   { toast('Login required'); return; }
 
   let tasks = getAgentTasks();
   if (STATE.taskSource === 'jira') {
@@ -879,35 +889,66 @@ async function startAgent() {
   if (!tasks.length) { toast('Add at least one task'); return; }
 
   const mins = parseInt($('agent-duration').value) || 45;
-  STATE.agentQueue   = tasks.map(t=>({ text:t, status:'pending' }));
-  STATE.agentIndex   = 0;
-  STATE.agentRunning = true;
-  STATE.agentEndTime = Date.now() + mins * 60 * 1000;
 
-  $('agent-start-btn').style.display = 'none';
-  $('agent-stop-btn').style.display  = 'block';
-  $('agent-dot').className = 'agent-status-dot running';
-  $('agent-status-text').textContent = `Running — ${tasks.length} tasks queued`;
+  log('AGENT','tag-agent',`Sending ${tasks.length} tasks to server agent…`);
 
-  showPanel('agentlog');
-  renderAgentQueue();
-  agentLog(`Agent activated — ${tasks.length} tasks, ${mins} min window`);
+  try {
+    const res  = await apiFetch('/api/agent/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        tasks, repoUrl: STATE.repoUrl,
+        repoOwner: STATE.repoOwner, repoName: STATE.repoName,
+        repoBranch: STATE.repoBranch || 'main',
+        token: STATE.token, durationMins: mins,
+        pushSubscription: STATE.pushSubscription || null,
+      }),
+    });
+    const data = await res.json();
+    if (!data.jobId) throw new Error(data.error || 'Failed to start agent');
 
-  runAgentTick();
-  STATE.agentInterval = setInterval(runAgentTick, 100);
-  STATE.agentTimerInterval = setInterval(updateAgentTimer, 1000);
+    STATE.agentJobId   = data.jobId;
+    STATE.agentRunning = true;
+    STATE.agentEndTime = Date.now() + mins * 60 * 1000;
+
+    $('agent-start-btn').style.display = 'none';
+    $('agent-stop-btn').style.display  = 'block';
+    $('agent-dot').className = 'agent-status-dot running';
+    $('agent-status-text').textContent = `Running on server — ${tasks.length} tasks`;
+
+    showPanel('agentlog');
+    agentLog(`Agent activated on server — Job ID: ${data.jobId}`);
+    agentLog(`${tasks.length} task(s), ${mins} min window. You can close this tab.`);
+
+    // Start polling server for status
+    STATE.agentPollInterval   = setInterval(pollAgentStatus, 3000);
+    STATE.agentTimerInterval  = setInterval(updateAgentTimer, 1000);
+  } catch(e) {
+    log('AGENT','tag-err', e.message);
+    toast('Failed to start agent: ' + e.message);
+  }
 }
 
-function stopAgent() {
+async function stopAgent() {
+  try {
+    if (STATE.agentJobId) {
+      await apiFetch('/api/agent/stop', {
+        method: 'POST',
+        body: JSON.stringify({ jobId: STATE.agentJobId }),
+      });
+    }
+  } catch(e) { console.error('Stop error:', e); }
+
   STATE.agentRunning = false;
-  clearInterval(STATE.agentInterval);
+  clearInterval(STATE.agentPollInterval);
   clearInterval(STATE.agentTimerInterval);
+  STATE.agentJobId = null;
+
   $('agent-start-btn').style.display = 'block';
   $('agent-stop-btn').style.display  = 'none';
   $('agent-dot').className = 'agent-status-dot';
   $('agent-status-text').textContent = 'Agent stopped';
   $('agent-timer').className = 'timer-display';
-  agentLog('Agent stopped by user.');
+  agentLog('Agent stopped.');
 }
 
 function updateAgentTimer() {
@@ -925,100 +966,150 @@ function updateAgentTimer() {
   }
 }
 
-let agentBusy = false;
-async function runAgentTick() {
-  if (!STATE.agentRunning || agentBusy) return;
-  if (Date.now() >= STATE.agentEndTime) { stopAgent(); return; }
-  if (STATE.agentIndex >= STATE.agentQueue.length) {
-    agentLog('All tasks complete!');
-    stopAgent();
+// ── Server status polling (replaces browser-side agent loop) ──
+async function pollAgentStatus() {
+  if (!STATE.agentJobId) return;
+  try {
+    const res  = await apiFetch(`/api/agent/status?jobId=${STATE.agentJobId}`);
+    const data = await res.json();
+
+    if (data.status === 'idle') { stopAgent(); return; }
+
+    // Sync queue display from server
+    if (data.tasks?.length) renderAgentQueue(data.tasks);
+
+    // Sync log lines
+    if (data.log?.length) {
+      const el = $('agent-activity');
+      el.innerHTML = data.log.map(l =>
+        `<div class="log-line"><span class="mono text-xs" style="color:var(--text-3)">${esc(l)}</span></div>`
+      ).join('');
+      el.scrollTop = el.scrollHeight;
+    }
+
+    // Show opened PRs
+    if (data.prs?.length) {
+      data.prs.forEach(pr => {
+        const existingId = `pr-badge-${pr.number}`;
+        if (!document.getElementById(existingId)) {
+          $('agent-activity').insertAdjacentHTML('beforeend',
+            `<div id="${existingId}" class="pr-result" style="margin:4px 0">
+              🔀 <a href="${pr.url}" target="_blank" rel="noopener">${pr.type === 'feature' ? '✨' : '🔧'} PR #${pr.number}</a>
+              <span class="text-muted text-xs">${esc(pr.task.slice(0,40))}</span>
+            </div>`
+          );
+        }
+      });
+    }
+
+    // Agent finished on server
+    if (data.status === 'complete' || data.status === 'stopped' || data.status === 'error') {
+      clearInterval(STATE.agentPollInterval);
+      clearInterval(STATE.agentTimerInterval);
+      STATE.agentRunning = false;
+      $('agent-start-btn').style.display = 'block';
+      $('agent-stop-btn').style.display  = 'none';
+      $('agent-dot').className = 'agent-status-dot';
+      $('agent-timer').className = 'timer-display';
+      $('agent-status-text').textContent =
+        data.status === 'complete' ? `Done — ${data.prs?.length||0} PR(s) opened` : 'Agent stopped';
+    }
+  } catch(e) { console.error('[POLL]', e); }
+}
+
+function renderAgentQueue(tasks) {
+  const icons  = { pending:'○', running:'◉', done:'●', error:'✗' };
+  const colors = { pending:'var(--text-3)', running:'var(--blue)', done:'var(--emerald)', error:'var(--red)' };
+  const list   = tasks || STATE.agentQueue || [];
+  $('agent-queue-display').innerHTML = list.length
+    ? list.map(t => `
+        <div class="queue-item ${t.status}">
+          <span class="q-status" style="color:${colors[t.status]||colors.pending}">${icons[t.status]||'○'}</span>
+          <span class="q-text">${esc(t.text)}</span>
+          ${t.prUrl ? `<a href="${t.prUrl}" target="_blank" rel="noopener" style="color:var(--emerald);font-size:10px;margin-left:auto">PR #${t.prNumber}</a>` : ''}
+        </div>`).join('')
+    : '<div class="empty-state" style="padding:16px"><div>No tasks queued.</div></div>';
+}
+
+/* ══════════════════════════════════════════════════════
+   BROWSER PUSH NOTIFICATIONS
+══════════════════════════════════════════════════════ */
+async function enablePush() {
+  const btn = $('push-btn');
+  const status = $('push-status');
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    status.textContent = 'Push not supported in this browser.';
     return;
   }
 
-  const task = STATE.agentQueue[STATE.agentIndex];
-  if (task.status !== 'pending') { STATE.agentIndex++; return; }
-
-  agentBusy = true;
-  task.status = 'running';
-  renderAgentQueue();
-  agentLog(`Working on: "${task.text}"`);
-
   try {
-    const isFeature = /add|implement|build|create|generate/i.test(task.text);
+    // Get VAPID public key from server
+    const keyRes = await apiFetch('/api/push/vapid-public-key');
+    const keyData = await keyRes.json();
+    if (keyData.error) { status.textContent = 'Push not configured on server yet.'; return; }
 
-    if (isFeature) {
-      agentLog('Detected feature task — loading files…');
-      const scanRes  = await apiFetch('/api/scan-repo', {
-        method:'POST',
-        body: JSON.stringify({ repoUrl:STATE.repoUrl, repoOwner:STATE.repoOwner, repoName:STATE.repoName, token:STATE.token }),
-      });
-      const scanData = await scanRes.json();
-      if (!scanData.success) throw new Error(scanData.error);
-      const files = scanData.results.slice(0,3).map(r=>({ file:r.file, code:r.code }));
-      const featRes  = await apiFetch('/api/generate-feature', {
-        method:'POST', body:JSON.stringify({ files, featureDescription:task.text }),
-      });
-      const featData = await featRes.json();
-      if (featData.fixes) {
-        const pr = await apiFetch('/api/create-pr', {
-          method:'POST',
-          body:JSON.stringify({ repoOwner:STATE.repoOwner, repoName:STATE.repoName,
-            branch:STATE.repoBranch||'main', fixes:featData.fixes, token:STATE.token,
-            prType:'feature', featureDescription:task.text }),
-        });
-        const prData = await pr.json();
-        if (prData.url) agentLog(`PR opened: ${prData.url}`);
-      }
-    } else {
-      agentLog('Detected fix task — scanning…');
-      const scanRes  = await apiFetch('/api/scan-repo', {
-        method:'POST',
-        body: JSON.stringify({ repoUrl:STATE.repoUrl, repoOwner:STATE.repoOwner, repoName:STATE.repoName, token:STATE.token }),
-      });
-      const scanData = await scanRes.json();
-      if (!scanData.success) throw new Error(scanData.error);
-      const filesToFix = scanData.results.filter(f=>f.issues&&f.issues.length>0)
-        .map(f=>({ file:f.file, code:f.code, issues:f.issues }));
-      if (!filesToFix.length) { agentLog('No issues found for this task.'); }
-      else {
-        const fixRes  = await apiFetch('/api/generate-fixes', {
-          method:'POST', body:JSON.stringify({ files:filesToFix })
-        });
-        const fixData = await fixRes.json();
-        if (fixData.fixes) {
-          const pr = await apiFetch('/api/create-pr', {
-            method:'POST',
-            body:JSON.stringify({ repoOwner:STATE.repoOwner, repoName:STATE.repoName,
-              branch:STATE.repoBranch||'main', fixes:fixData.fixes, token:STATE.token, prType:'fix' }),
-          });
-          const prData = await pr.json();
-          if (prData.url) agentLog(`Fix PR opened: ${prData.url}`);
-        }
-      }
-    }
+    // Register service worker
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
 
-    task.status = 'done';
-    agentLog(`Task complete: "${task.text}"`);
+    // Request permission
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') { status.textContent = 'Notification permission denied.'; return; }
+
+    // Subscribe
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyData.key),
+    });
+
+    STATE.pushSubscription = sub.toJSON();
+    btn.textContent = '🔔 Notifications enabled';
+    btn.disabled    = true;
+    status.textContent = 'You'll get a notification when the agent finishes.';
+    log('PUSH','tag-ok','Push notifications enabled');
   } catch(e) {
-    task.status = 'error';
-    agentLog(`Task failed: ${e.message}`);
+    status.textContent = 'Error: ' + e.message;
+    log('PUSH','tag-err', e.message);
   }
-
-  STATE.agentIndex++;
-  renderAgentQueue();
-  agentBusy = false;
 }
 
-function renderAgentQueue() {
-  const icons = { pending:'○', running:'◉', done:'●', error:'✗' };
-  const colors = { pending:'var(--text-3)', running:'var(--blue)', done:'var(--emerald)', error:'var(--red)' };
-  $('agent-queue-display').innerHTML = STATE.agentQueue.length
-    ? STATE.agentQueue.map(t => `
-        <div class="queue-item ${t.status}">
-          <span class="q-status" style="color:${colors[t.status]}">${icons[t.status]}</span>
-          <span class="q-text">${esc(t.text)}</span>
-        </div>`).join('')
-    : '<div class="empty-state" style="padding:16px"><div>No tasks queued.</div></div>';
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw     = window.atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+/* ══════════════════════════════════════════════════════
+   GITHUB ACTION GENERATOR
+══════════════════════════════════════════════════════ */
+async function generateGitHubAction() {
+  if (!STATE.repoOwner) { toast('Select a repo first'); return; }
+  if (!STATE.token)     { toast('Login required'); return; }
+
+  log('ACTION','tag-info',`Generating GitHub Action for ${STATE.repoOwner}/${STATE.repoName}…`);
+
+  try {
+    const res  = await apiFetch('/api/generate-action', {
+      method: 'POST',
+      body: JSON.stringify({
+        repoOwner: STATE.repoOwner, repoName: STATE.repoName,
+        branch: STATE.repoBranch || 'main', token: STATE.token,
+      }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    log('ACTION','tag-ok',`GitHub Action PR #${data.number} opened: ${data.url}`);
+    toast(`Action PR #${data.number} opened!`);
+    $('report-content').insertAdjacentHTML('beforeend',
+      `<div class="pr-result">⚡ <a href="${data.url}" target="_blank" rel="noopener">View GitHub Action PR #${data.number}</a>
+       <span class="text-muted text-xs">— auto-scan on every push</span></div>`
+    );
+    showPanel('report');
+  } catch(e) {
+    log('ACTION','tag-err', e.message); toast('Action generation failed: '+e.message);
+  }
 }
 
 /* ══════════════════════════════════════════════════════
