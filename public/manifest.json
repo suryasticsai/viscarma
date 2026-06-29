@@ -1,0 +1,51 @@
+{
+  "name": "VisCarMa — Divine Code Architect",
+  "short_name": "VisCarMa",
+  "description": "AI-powered code scanner, fixer, and agentic developer",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#388bfd",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/viscarma_logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/viscarma_logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Fix Mode",
+      "short_name": "Fix",
+      "description": "Scan and fix a repository",
+      "url": "/?mode=fix",
+      "icons": [{ "src": "/viscarma_logo.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Agent Mode",
+      "short_name": "Agent",
+      "description": "Activate the autonomous agent",
+      "url": "/?mode=agent",
+      "icons": [{ "src": "/viscarma_logo.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "God Mode",
+      "short_name": "God",
+      "description": "Live URL scan and deep analysis",
+      "url": "/?mode=god",
+      "icons": [{ "src": "/viscarma_logo.png", "sizes": "96x96" }]
+    }
+  ],
+  "categories": ["developer", "productivity", "utilities"],
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
