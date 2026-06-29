@@ -7,6 +7,40 @@
   <title>VisCarMa · Hybrid Scanner</title>
   <link rel="icon" type="image/png" href="/viscarma_logo.png" />
   <link rel="stylesheet" href="style.css" />
+  <style>
+    /* ── Avatar styles (added) ───────────────────────────── */
+    .avatar-wrap {
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+    .avatar-wrap.visible {
+      display: flex;
+    }
+    .gh-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid #3b82f6;
+      object-fit: cover;
+    }
+    .gh-username {
+      font-size: 12px;
+      color: #8aa9c9;
+      font-weight: 600;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4b5563;
+      display: inline-block;
+      margin-right: 4px;
+      transition: background 0.3s;
+    }
+    .status-dot.online  { background: #10b981; }
+    .status-dot.offline { background: #ef4444; }
+  </style>
 </head>
 <body>
 
@@ -20,7 +54,13 @@
     <div class="flex auth-section">
       <span id="auth-status" class="auth-status">
         <span class="status-dot" id="status-dot"></span>
-        <span id="user-info" style="font-size:12px;color:#8aa9c9;">Checking auth…</span>
+        <!-- Avatar + username shown after login -->
+        <span class="avatar-wrap" id="avatar-wrap">
+          <img id="gh-avatar" class="gh-avatar" src="" alt="GitHub avatar" />
+          <span id="gh-username" class="gh-username"></span>
+        </span>
+        <!-- Fallback text when not logged in / checking -->
+        <span id="user-info" style="font-size:12px;color:#8aa9c9;">Checking…</span>
       </span>
       <button class="btn btn-ghost" id="login-btn" onclick="login()">Login with GitHub</button>
     </div>
@@ -105,19 +145,19 @@
   <div id="toast"></div>
 
   <script>
-    /* ─── STATE ────────────────────────────────────────────────── */
+    /* ─── STATE ─────────────────────────────────────────────────── */
     const STATE = {
-      user: null,
-      token: null,
-      repoUrl: null,
-      repoOwner: null,
-      repoName: null,
-      repoBranch: 'main',
+      user:        null,
+      token:       null,
+      repoUrl:     null,
+      repoOwner:   null,
+      repoName:    null,
+      repoBranch:  'main',
       scanResults: null,
-      fixes: null,
+      fixes:       null,
     };
 
-    const $ = id => document.getElementById(id);
+    const $   = id => document.getElementById(id);
     const logBox = $('log-box');
 
     function ts() {
@@ -127,7 +167,9 @@
     function log(tag, cls, msg) {
       const line = document.createElement('div');
       line.className = 'log-line';
-      line.innerHTML = `<span class="log-ts">${ts()}</span><span class="log-tag ${cls}">${tag}</span><span>${escHtml(msg)}</span>`;
+      line.innerHTML = `<span class="log-ts">${ts()}</span>`
+                     + `<span class="log-tag ${cls}">${tag}</span>`
+                     + `<span>${escHtml(msg)}</span>`;
       logBox.appendChild(line);
       logBox.scrollTop = logBox.scrollHeight;
     }
@@ -138,38 +180,38 @@
     }
 
     function escHtml(s) {
-      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
     }
 
     function toast(msg) {
       const el = $('toast');
       el.textContent = msg;
       el.style.opacity = '1';
-      clearTimeout(window.toastTimer);
-      window.toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
     }
 
-    /* ─── AUTH ──────────────────────────────────────────────────── */
-
-    // FIX: all fetch calls now include credentials:'include' so the
-    // cookie-session cookie is sent with every request.
+    /* ─── FETCH WRAPPER ─────────────────────────────────────────── */
+    // KEY FIX: credentials:'include' sends the session cookie on every request.
+    // Without this the server never sees the cookie and thinks you're logged out.
     async function apiFetch(url, options = {}) {
+      const { headers = {}, ...rest } = options;
       return fetch(url, {
-        ...options,
+        ...rest,
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(options.headers || {}),
-        },
+        headers: { 'Content-Type': 'application/json', ...headers },
       });
     }
 
+    /* ─── AUTH ──────────────────────────────────────────────────── */
     async function checkAuth() {
       try {
         const res = await apiFetch('/api/user');
         if (!res.ok) {
-          // Non-200 from server — retry once after 1.5s
-          console.warn('[AUTH] /api/user returned', res.status, '— retrying in 1.5s');
+          console.warn('[AUTH] /api/user returned', res.status, '— retrying…');
           setTimeout(checkAuth, 1500);
           return;
         }
@@ -177,85 +219,98 @@
         applyAuthState(data.user, data.token);
       } catch (e) {
         console.error('[AUTH] checkAuth error:', e);
-        // Network error — retry once
         setTimeout(checkAuth, 1500);
       }
     }
 
     function applyAuthState(user, token) {
+      const avatarWrap = $('avatar-wrap');
+      const userInfo   = $('user-info');
+      const dot        = $('status-dot');
+      const loginBtn   = $('login-btn');
+
       if (user) {
-        STATE.user = user;
+        STATE.user  = user;
         STATE.token = token;
-        $('user-info').textContent = `Logged in as ${user.login}`;
-        $('status-dot').className = 'status-dot online';
-        $('login-btn').textContent = 'Logout';
-        $('login-btn').onclick = logout;
-        $('repo-select').style.display = 'inline-block';
+
+        // ── Show avatar + username ──────────────────────────────
+        $('gh-avatar').src = user.avatar || '';
+        $('gh-avatar').alt = user.login + ' avatar';
+        $('gh-username').textContent = user.login;
+        avatarWrap.classList.add('visible');
+        userInfo.style.display = 'none';
+
+        dot.className       = 'status-dot online';
+        loginBtn.textContent = 'Logout';
+        loginBtn.onclick     = logout;
+
+        $('repo-select').style.display    = 'inline-block';
         $('scan-logged-btn').style.display = 'inline-flex';
+
         loadRepos();
         log('AUTH', 'tag-ok', `Authenticated as ${user.login}`);
       } else {
-        STATE.user = null;
+        STATE.user  = null;
         STATE.token = null;
-        $('user-info').textContent = 'Not logged in';
-        $('status-dot').className = 'status-dot offline';
-        $('login-btn').textContent = 'Login with GitHub';
-        $('login-btn').onclick = login;
-        $('repo-select').style.display = 'none';
+
+        // ── Hide avatar, show plain text ────────────────────────
+        avatarWrap.classList.remove('visible');
+        userInfo.style.display  = '';
+        userInfo.textContent    = 'Not logged in';
+
+        dot.className        = 'status-dot offline';
+        loginBtn.textContent  = 'Login with GitHub';
+        loginBtn.onclick      = login;
+
+        $('repo-select').style.display    = 'none';
         $('scan-logged-btn').style.display = 'none';
+
         log('AUTH', 'tag-sys', 'Not authenticated.');
       }
     }
 
-    function login() {
-      window.location.href = '/auth/github';
-    }
-
-    function logout() {
-      window.location.href = '/auth/logout';
-    }
+    function login()  { window.location.href = '/auth/github';  }
+    function logout() { window.location.href = '/auth/logout'; }
 
     async function loadRepos() {
       try {
-        const res = await apiFetch('/api/repos');
-        if (!res.ok) throw new Error('Failed to load repos');
+        const res   = await apiFetch('/api/repos');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const repos = await res.json();
         const select = $('repo-select');
         select.innerHTML = '<option value="">Select repo</option>';
         for (const repo of repos) {
-          const opt = document.createElement('option');
-          opt.value = repo.full_name;
+          const opt     = document.createElement('option');
+          opt.value     = repo.full_name;
           opt.textContent = repo.full_name;
           select.appendChild(opt);
         }
         log('AUTH', 'tag-ok', `Loaded ${repos.length} repos`);
       } catch (e) {
-        console.error('[REPOS]', e);
         log('AUTH', 'tag-err', 'Failed to load repos: ' + e.message);
       }
     }
 
     function selectRepo() {
       const val = $('repo-select').value;
-      if (val) {
-        const [owner, name] = val.split('/');
-        STATE.repoOwner = owner;
-        STATE.repoName = name;
-        STATE.repoUrl = `https://github.com/${val}.git`;
-        STATE.repoBranch = 'main';
-        $('repo-url-input').value = `https://github.com/${val}`;
-      }
+      if (!val) return;
+      const [owner, name] = val.split('/');
+      STATE.repoOwner  = owner;
+      STATE.repoName   = name;
+      STATE.repoUrl    = `https://github.com/${val}.git`;
+      STATE.repoBranch = 'main';
+      $('repo-url-input').value = `https://github.com/${val}`;
     }
 
-    /* ─── SCANNING ─────────────────────────────────────────────── */
+    /* ─── SCANNING ──────────────────────────────────────────────── */
     async function scanManual() {
-      const url = $('repo-url-input').value.trim();
+      const url   = $('repo-url-input').value.trim();
       if (!url) { toast('⚠ Enter a repo URL'); return; }
       const match = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
       if (!match) { toast('⚠ Invalid GitHub URL'); return; }
-      STATE.repoOwner = match[1];
-      STATE.repoName = match[2];
-      STATE.repoUrl = `https://github.com/${match[1]}/${match[2]}.git`;
+      STATE.repoOwner  = match[1];
+      STATE.repoName   = match[2];
+      STATE.repoUrl    = `https://github.com/${match[1]}/${match[2]}.git`;
       STATE.repoBranch = 'main';
       await doScan(null);
     }
@@ -267,37 +322,38 @@
 
     async function doScan(token) {
       const payload = {
-        repoUrl: STATE.repoUrl,
+        repoUrl:   STATE.repoUrl,
         repoOwner: STATE.repoOwner,
-        repoName: STATE.repoName,
-        token: token || null,
+        repoName:  STATE.repoName,
+        token:     token || null,
       };
 
       $('report-area').style.display = 'none';
-      $('fix-btn').style.display = 'none';
-      $('pr-btn').style.display = 'none';
+      $('fix-btn').style.display     = 'none';
+      $('pr-btn').style.display      = 'none';
 
       const progressFill = $('progress-fill');
-      const progressBar = $('progress-bar');
-      progressBar.style.display = 'block';
-      progressFill.style.width = '10%';
+      const progressBar  = $('progress-bar');
+      progressBar.style.display  = 'block';
+      progressFill.style.width   = '10%';
       log('SCAN', 'tag-info', `Scanning ${STATE.repoOwner}/${STATE.repoName}…`);
 
       try {
-        const res = await apiFetch('/api/scan-repo', {
+        const res  = await apiFetch('/api/scan-repo', {
           method: 'POST',
-          body: JSON.stringify(payload),
+          body:   JSON.stringify(payload),
         });
         progressFill.style.width = '80%';
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Scan failed');
-        STATE.scanResults = data.results;
+
+        STATE.scanResults        = data.results;
         progressFill.style.width = '100%';
         setTimeout(() => { progressBar.style.display = 'none'; }, 600);
+
         renderReport(data.results);
         $('report-area').style.display = 'block';
-        $('fix-btn').style.display = 'inline-flex';
-        $('pr-btn').style.display = 'none';
+        $('fix-btn').style.display     = 'inline-flex';
         log('SCAN', 'tag-ok', `Scan complete: ${data.results.length} files analyzed`);
         toast('✅ Scan complete');
       } catch (e) {
@@ -308,16 +364,15 @@
     }
 
     function renderReport(results) {
-      const container = $('report-content');
-      const totalFiles = results.length;
+      const container   = $('report-content');
+      const totalFiles  = results.length;
       const totalIssues = results.reduce((sum, f) => sum + f.issues.length, 0);
 
       let html = `
         <div class="summary-box">
           <div class="summary-line"><span>Files scanned</span><span class="val">${totalFiles}</span></div>
           <div class="summary-line"><span>Total issues</span><span class="val red">${totalIssues}</span></div>
-        </div>
-      `;
+        </div>`;
 
       if (!totalIssues) {
         html += `<div style="color:#10b981;margin-top:12px;">✅ No issues found. Great job!</div>`;
@@ -326,15 +381,16 @@
           if (!item.issues.length) continue;
           html += `<div style="font-weight:700;color:#60a5fa;margin-top:12px;">📄 ${escHtml(item.file)}</div>`;
           for (const issue of item.issues) {
-            const sevClass = (issue.severity || 'MED').toLowerCase();
-            const borderColor = sevClass === 'high' ? '#ef4444' : sevClass === 'med' ? '#f59e0b' : '#60a5fa';
+            const sev         = (issue.severity || 'MED').toLowerCase();
+            const borderColor = sev === 'high' ? '#ef4444' : sev === 'med' ? '#f59e0b' : '#60a5fa';
             html += `
               <div class="bug-item" style="border-left:2px solid ${borderColor};">
-                <span class="sev-${sevClass}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">[${(issue.severity || 'MED').toUpperCase()}]</span>
+                <span class="sev-${sev}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">
+                  [${(issue.severity || 'MED').toUpperCase()}]
+                </span>
                 <span>${escHtml(issue.description || 'Issue')}</span>
                 ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
-              </div>
-            `;
+              </div>`;
           }
         }
       }
@@ -342,55 +398,49 @@
       container.innerHTML = html;
       $('s-files').textContent = totalFiles;
       $('s-issues').textContent = totalIssues;
-      $('s-time').textContent = new Date().toLocaleTimeString();
+      $('s-time').textContent   = new Date().toLocaleTimeString();
     }
 
-    /* ─── FIXES & PR ───────────────────────────────────────────── */
+    /* ─── FIXES ─────────────────────────────────────────────────── */
     async function generateFixes() {
-      if (!STATE.scanResults) {
-        toast('⚠ No scan results. Please scan a repo first.');
-        return;
-      }
+      if (!STATE.scanResults) { toast('⚠ No scan results.'); return; }
 
       const filesToFix = STATE.scanResults
         .filter(f => f.issues && f.issues.length > 0)
         .map(f => ({ file: f.file, code: f.code, issues: f.issues }));
 
-      if (!filesToFix.length) {
-        toast('⚠ No issues found to fix.');
-        return;
-      }
+      if (!filesToFix.length) { toast('⚠ No issues to fix.'); return; }
 
       log('FIX', 'tag-info', `Generating fixes for ${filesToFix.length} files…`);
-      $('fix-btn').disabled = true;
-      $('fix-btn').textContent = '⏳ Generating…';
+      $('fix-btn').disabled     = true;
+      $('fix-btn').textContent  = '⏳ Generating…';
 
       try {
-        const res = await apiFetch('/api/generate-fixes', {
+        const res  = await apiFetch('/api/generate-fixes', {
           method: 'POST',
-          body: JSON.stringify({ files: filesToFix }),
+          body:   JSON.stringify({ files: filesToFix }),
         });
         const data = await res.json();
         if (!data.fixes) throw new Error('No fixes returned');
         STATE.fixes = data.fixes;
         $('pr-btn').style.display = 'inline-flex';
         log('FIX', 'tag-ok', `Generated fixes for ${data.fixes.length} files`);
-        toast('✅ Fixes generated. Review and click "Create PR".');
+        toast('✅ Fixes generated. Click "Create PR" to open a pull request.');
         showFixPreview(data.fixes);
       } catch (e) {
         log('FIX', 'tag-err', e.message);
         toast('❌ ' + e.message);
       } finally {
-        $('fix-btn').disabled = false;
+        $('fix-btn').disabled    = false;
         $('fix-btn').textContent = '🔧 Apply Fixes';
       }
     }
 
     function showFixPreview(fixes) {
       const container = $('report-content');
-      let html = container.innerHTML;
-      html += `<div style="margin-top:16px;border-top:1px solid #2a3a4e;padding-top:12px;">
-                 <div style="font-weight:700;color:#10b981;">🔧 Fixes Generated</div>`;
+      let html = container.innerHTML
+               + `<div style="margin-top:16px;border-top:1px solid #2a3a4e;padding-top:12px;">
+                    <div style="font-weight:700;color:#10b981;">🔧 Fixes Generated</div>`;
       for (const fix of fixes) {
         html += `<div style="margin-top:6px;font-size:11px;color:#8aa9c9;">
                    📄 ${escHtml(fix.file)} – applied: ${escHtml(fix.applied.join(', ') || 'none')}
@@ -398,7 +448,9 @@
         if (fix.newCode) {
           html += `<details style="margin-left:12px;">
                      <summary style="cursor:pointer;color:#8aa9c9;font-size:11px;">Show preview</summary>
-                     <pre style="background:#0f172a;padding:6px;border-radius:4px;font-size:10px;color:#e0e8f0;white-space:pre-wrap;max-height:200px;overflow:auto;">${escHtml(fix.newCode.slice(0, 800))}${fix.newCode.length > 800 ? '\n…truncated' : ''}</pre>
+                     <pre style="background:#0f172a;padding:6px;border-radius:4px;font-size:10px;
+                                 color:#e0e8f0;white-space:pre-wrap;max-height:200px;overflow:auto;">
+${escHtml(fix.newCode.slice(0, 800))}${fix.newCode.length > 800 ? '\n…truncated' : ''}</pre>
                    </details>`;
         }
       }
@@ -406,61 +458,51 @@
       container.innerHTML = html;
     }
 
+    /* ─── CREATE PR ─────────────────────────────────────────────── */
     async function createPR() {
-      if (!STATE.fixes || !STATE.fixes.length) {
-        toast('⚠ Generate fixes first.');
-        return;
-      }
-      if (!STATE.repoOwner || !STATE.repoName) {
-        toast('⚠ Repo owner/name not set.');
-        return;
-      }
-      if (!STATE.token) {
-        toast('⚠ You must be logged in to create a PR.');
-        return;
-      }
+      if (!STATE.fixes || !STATE.fixes.length) { toast('⚠ Generate fixes first.'); return; }
+      if (!STATE.repoOwner || !STATE.repoName) { toast('⚠ Repo owner/name not set.'); return; }
+      if (!STATE.token)                         { toast('⚠ You must be logged in to create a PR.'); return; }
 
       log('PR', 'tag-info', 'Creating pull request…');
-      $('pr-btn').disabled = true;
+      $('pr-btn').disabled    = true;
       $('pr-btn').textContent = '⏳ Creating…';
 
       try {
-        const res = await apiFetch('/api/create-pr', {
+        const res  = await apiFetch('/api/create-pr', {
           method: 'POST',
-          body: JSON.stringify({
+          body:   JSON.stringify({
             repoOwner: STATE.repoOwner,
-            repoName: STATE.repoName,
-            branch: STATE.repoBranch || 'main',
-            fixes: STATE.fixes,
-            token: STATE.token,
+            repoName:  STATE.repoName,
+            branch:    STATE.repoBranch || 'main',
+            fixes:     STATE.fixes,
+            token:     STATE.token,
           }),
         });
         const data = await res.json();
-        if (data.url) {
-          log('PR', 'tag-ok', `PR created: ${data.url}`);
-          toast(`✅ PR #${data.number} opened!`);
-          const container = $('report-content');
-          container.innerHTML += `
-            <div style="margin-top:12px;border-top:1px solid #10b981;padding-top:8px;">
-              🔀 <a href="${data.url}" target="_blank" rel="noopener" style="color:#10b981;">View PR #${data.number}</a>
-            </div>`;
-        } else {
-          throw new Error(data.error || 'PR creation failed');
-        }
+        if (!data.url) throw new Error(data.error || 'PR creation failed');
+        log('PR', 'tag-ok', `PR created: ${data.url}`);
+        toast(`✅ PR #${data.number} opened!`);
+        $('report-content').innerHTML +=
+          `<div style="margin-top:12px;border-top:1px solid #10b981;padding-top:8px;">
+             🔀 <a href="${data.url}" target="_blank" rel="noopener" style="color:#10b981;">
+               View PR #${data.number}
+             </a>
+           </div>`;
       } catch (e) {
         log('PR', 'tag-err', e.message);
         toast('❌ ' + e.message);
       } finally {
-        $('pr-btn').disabled = false;
+        $('pr-btn').disabled    = false;
         $('pr-btn').textContent = '🔀 Create PR';
       }
     }
 
-    /* ─── INIT ────────────────────────────────────────────────── */
+    /* ─── INIT ──────────────────────────────────────────────────── */
     (function init() {
       log('SYS', 'tag-sys', 'VisCarMa Hybrid Scanner ready.');
-      // FIX: small delay so the cookie-session cookie is fully set
-      // after an OAuth redirect before we read it back via /api/user
+      // Small delay so cookie-session cookie is fully set after OAuth redirect
+      // before we try to read it back via /api/user
       setTimeout(checkAuth, 150);
     })();
   </script>
