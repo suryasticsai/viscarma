@@ -18,6 +18,7 @@ import path         from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
 import crypto       from 'crypto';
+import webpush      from 'web-push';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -809,6 +810,360 @@ app.post('/api/jira-tasks', async (req, res) => {
   } catch (e) {
     console.error('[JIRA]', e);
     res.status(500).json({ error: 'Jira fetch failed: ' + e.message });
+  }
+});
+
+// ─── SERVER-SIDE AGENT ───────────────────────────────────────────
+// Runs entirely on the server — survives browser tab close.
+// Browser polls /api/agent/status every 3s to get live updates.
+
+const agentJobs = new Map(); // sessionId -> job state
+
+function makeJobId() { return crypto.randomBytes(8).toString('hex'); }
+
+async function runAgentJob(job) {
+  const { tasks, repoUrl, repoOwner, repoName, repoBranch, ghToken, pushSubscription } = job;
+
+  for (let i = 0; i < tasks.length; i++) {
+    if (job.stopped) break;
+    if (Date.now() > job.endTime) { job.log.push('Time window expired.'); break; }
+
+    const task = tasks[i];
+    task.status = 'running';
+    job.currentIndex = i;
+    job.log.push(`[${new Date().toLocaleTimeString()}] Starting: "${task.text}"`);
+
+    try {
+      const isFeature = /\b(add|implement|build|create|generate|make)\b/i.test(task.text);
+
+      // Always scan first
+      const folderId = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+      const repoPath = path.join(TEMP_DIR, folderId);
+      await fs.mkdir(repoPath, { recursive: true });
+      let cloneUrl = repoUrl;
+      if (ghToken) cloneUrl = repoUrl.replace('https://', `https://x-access-token:${ghToken}@`);
+
+      try {
+        await simpleGit().clone(cloneUrl, repoPath, ['--depth','1']);
+        const files   = await walkDir(repoPath);
+        const results = [];
+        for (const fp of files) {
+          const rel  = path.relative(repoPath, fp);
+          const code = await fs.readFile(fp, 'utf-8');
+          const issues = await analyzeFile(code, rel);
+          results.push({ file: rel, code, issues });
+        }
+        await fs.rm(repoPath, { recursive: true, force: true });
+
+        if (isFeature) {
+          const selected = results.slice(0, 3).map(r => ({ file: r.file, code: r.code }));
+          const featRes  = await fetch(`http://localhost:${PORT}/api/generate-feature`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: selected, featureDescription: task.text }),
+          });
+          const featData = await featRes.json();
+          if (featData.fixes?.length) {
+            const prRes  = await fetch(`http://localhost:${PORT}/api/create-pr`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ repoOwner, repoName, branch: repoBranch||'main', fixes: featData.fixes, token: ghToken, prType:'feature', featureDescription: task.text }),
+            });
+            const prData = await prRes.json();
+            if (prData.url) {
+              task.prUrl = prData.url;
+              task.prNumber = prData.number;
+              job.log.push(`[${new Date().toLocaleTimeString()}] Feature PR #${prData.number} opened: ${prData.url}`);
+              job.prs.push({ number: prData.number, url: prData.url, type: 'feature', task: task.text });
+            }
+          }
+        } else {
+          const filesToFix = results.filter(f => f.issues?.length > 0).map(f => ({ file:f.file, code:f.code, issues:f.issues }));
+          if (!filesToFix.length) {
+            job.log.push(`[${new Date().toLocaleTimeString()}] No issues found for this task.`);
+          } else {
+            const fixRes  = await fetch(`http://localhost:${PORT}/api/generate-fixes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ files: filesToFix }),
+            });
+            const fixData = await fixRes.json();
+            if (fixData.fixes?.length) {
+              const prRes  = await fetch(`http://localhost:${PORT}/api/create-pr`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repoOwner, repoName, branch: repoBranch||'main', fixes: fixData.fixes, token: ghToken, prType:'fix' }),
+              });
+              const prData = await prRes.json();
+              if (prData.url) {
+                task.prUrl = prData.url;
+                task.prNumber = prData.number;
+                job.log.push(`[${new Date().toLocaleTimeString()}] Fix PR #${prData.number} opened: ${prData.url}`);
+                job.prs.push({ number: prData.number, url: prData.url, type: 'fix', task: task.text });
+              }
+            }
+          }
+        }
+        task.status = 'done';
+        job.log.push(`[${new Date().toLocaleTimeString()}] Done: "${task.text}"`);
+      } catch (e) {
+        await fs.rm(repoPath, { recursive: true, force: true }).catch(()=>{});
+        throw e;
+      }
+    } catch (e) {
+      task.status = 'error';
+      job.log.push(`[${new Date().toLocaleTimeString()}] Failed: ${e.message}`);
+    }
+  }
+
+  job.status   = 'complete';
+  job.endedAt  = new Date().toISOString();
+  const summary = `VisCarMa finished! ${job.prs.length} PR(s) opened on ${repoOwner}/${repoName}.`;
+  job.log.push(`[${new Date().toLocaleTimeString()}] ${summary}`);
+
+  // Send browser push notification
+  if (pushSubscription) {
+    try {
+      await webpush.sendNotification(pushSubscription, JSON.stringify({
+        title: '🕵️ VisCarMa Done',
+        body:  summary,
+        icon:  '/viscarma_logo.png',
+        badge: '/viscarma_logo.png',
+        data:  { prs: job.prs },
+      }));
+      job.log.push(`[${new Date().toLocaleTimeString()}] Push notification sent.`);
+    } catch (e) {
+      job.log.push(`[${new Date().toLocaleTimeString()}] Push notification failed: ${e.message}`);
+    }
+  }
+}
+
+// Agent API
+app.post('/api/agent/start', async (req, res) => {
+  const { tasks, repoUrl, repoOwner, repoName, repoBranch, durationMins, token, pushSubscription } = req.body;
+  const ghToken = token || req.session?.githubToken;
+  if (!ghToken)    return res.status(401).json({ error: 'Not authenticated' });
+  if (!tasks?.length) return res.status(400).json({ error: 'No tasks provided' });
+  if (!repoUrl)    return res.status(400).json({ error: 'repoUrl required' });
+
+  const jobId  = makeJobId();
+  const endTime = Date.now() + (durationMins || 45) * 60 * 1000;
+
+  const job = {
+    id: jobId, status: 'running',
+    startedAt: new Date().toISOString(), endedAt: null,
+    endTime, stopped: false,
+    repoUrl, repoOwner, repoName, repoBranch: repoBranch||'main',
+    ghToken, pushSubscription: pushSubscription || null,
+    tasks: tasks.map(t => ({ text: t, status: 'pending', prUrl: null, prNumber: null })),
+    currentIndex: 0, prs: [], log: [],
+  };
+
+  agentJobs.set(jobId, job);
+  // Store jobId in session so status can be polled
+  req.session.agentJobId = jobId;
+
+  job.log.push(`[${new Date().toLocaleTimeString()}] Agent activated — ${tasks.length} task(s), ${durationMins||45} min window`);
+  res.json({ jobId, status: 'running', message: 'Agent started on server' });
+
+  // Run async — don't await (non-blocking)
+  runAgentJob(job).catch(e => {
+    job.status = 'error';
+    job.log.push(`[${new Date().toLocaleTimeString()}] Agent crashed: ${e.message}`);
+  });
+});
+
+app.get('/api/agent/status', (req, res) => {
+  const jobId = req.query.jobId || req.session?.agentJobId;
+  if (!jobId || !agentJobs.has(jobId)) {
+    return res.json({ status: 'idle', jobId: null });
+  }
+  const job = agentJobs.get(jobId);
+  res.json({
+    jobId:        job.id,
+    status:       job.status,
+    startedAt:    job.startedAt,
+    endedAt:      job.endedAt,
+    endTime:      job.endTime,
+    currentIndex: job.currentIndex,
+    tasks:        job.tasks.map(t => ({ text: t.text, status: t.status, prUrl: t.prUrl, prNumber: t.prNumber })),
+    prs:          job.prs,
+    log:          job.log.slice(-50), // last 50 log lines
+  });
+});
+
+app.post('/api/agent/stop', (req, res) => {
+  const jobId = req.body.jobId || req.session?.agentJobId;
+  if (jobId && agentJobs.has(jobId)) {
+    const job = agentJobs.get(jobId);
+    job.stopped = true;
+    job.status  = 'stopped';
+    job.log.push(`[${new Date().toLocaleTimeString()}] Agent stopped by user.`);
+  }
+  req.session.agentJobId = null;
+  res.json({ ok: true });
+});
+
+// ─── BROWSER PUSH NOTIFICATIONS ──────────────────────────────────
+// VAPID keys — generate once and store in env vars:
+//   npx web-push generate-vapid-keys
+// Then set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in Render env vars.
+
+const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY  || null;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || null;
+const VAPID_EMAIL       = process.env.VAPID_EMAIL       || 'mailto:suryasticsai@gmail.com';
+
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+  console.log('🔔 Web Push VAPID configured');
+} else {
+  console.log('⚠️  VAPID keys not set — push notifications disabled (set VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY)');
+}
+
+app.get('/api/push/vapid-public-key', (req, res) => {
+  if (!VAPID_PUBLIC_KEY) return res.status(503).json({ error: 'Push notifications not configured' });
+  res.json({ key: VAPID_PUBLIC_KEY });
+});
+
+// ─── GITHUB ACTION GENERATOR ──────────────────────────────────────
+// Generates .github/workflows/viscarma.yml and commits it via PR
+
+app.post('/api/generate-action', async (req, res) => {
+  const { repoOwner, repoName, branch, token } = req.body;
+  const ghToken = token || req.session?.githubToken;
+  if (!ghToken) return res.status(401).json({ error: 'Not authenticated' });
+
+  const workflowYml = `# VisCarMa Auto-Scan Workflow
+# Auto-generated by VisCarMa (https://viscarma.onrender.com)
+# Scans your code on every push and pull request
+
+name: VisCarMa Code Scan
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # Run every day at 2am UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    # Allow manual trigger from GitHub Actions UI
+
+jobs:
+  viscarma-scan:
+    name: VisCarMa Scan & Fix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run VisCarMa scan
+        id: scan
+        run: |
+          echo "Triggering VisCarMa scan..."
+          RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d '{
+              "repoUrl": "https://github.com/\${{ github.repository }}.git",
+              "repoOwner": "\${{ github.repository_owner }}",
+              "repoName": "\${{ github.event.repository.name }}",
+              "token": "\${{ secrets.VISCARMA_TOKEN }}"
+            }' \
+            https://viscarma.onrender.com/api/scan-repo)
+          echo "scan_result=\$RESPONSE" >> \$GITHUB_OUTPUT
+          echo "Scan complete"
+
+      - name: Comment scan summary on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🕵️ **VisCarMa scan complete.** [View full report](https://viscarma.onrender.com) | Powered by [VisCarMa](https://viscarma.onrender.com)'
+            })
+
+# Required secrets:
+# VISCARMA_TOKEN — your GitHub personal access token (repo scope)
+# Add it at: Settings → Secrets and variables → Actions → New repository secret
+`;
+
+  try {
+    const baseUrl   = `https://api.github.com/repos/${repoOwner}/${repoName}`;
+    const baseSha   = await fetch(`${baseUrl}/git/refs/heads/${branch}`, {
+      headers: { Authorization: `token ${ghToken}` },
+    }).then(r => r.json()).then(d => d.object?.sha);
+    if (!baseSha) throw new Error(`Branch "${branch}" not found`);
+
+    const newBranch = `viscarma-action-${Date.now()}`;
+    await fetch(`${baseUrl}/git/refs`, {
+      method: 'POST',
+      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: baseSha }),
+    });
+
+    // Check if workflow file already exists
+    const existing = await fetch(`${baseUrl}/contents/.github/workflows/viscarma.yml?ref=${newBranch}`, {
+      headers: { Authorization: `token ${ghToken}` },
+    }).then(r => r.ok ? r.json() : null);
+
+    await fetch(`${baseUrl}/contents/.github/workflows/viscarma.yml`, {
+      method: existing?.sha ? 'PUT' : 'PUT',
+      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'ci: add VisCarMa auto-scan GitHub Action',
+        content: Buffer.from(workflowYml).toString('base64'),
+        ...(existing?.sha ? { sha: existing.sha } : {}),
+        branch: newBranch,
+      }),
+    });
+
+    const now        = new Date().toUTCString();
+    const badge      = `[![VisCarMa](https://img.shields.io/badge/auto--scan%20by-VisCarMa-388bfd?style=flat-square&logo=github)](https://viscarma.onrender.com)`;
+    const prBody     = `${badge}
+
+## ⚡ VisCarMa GitHub Action
+
+This PR adds a VisCarMa auto-scan workflow to your repository.
+
+### What it does
+- Scans your code on every push to \`main\`, \`master\`, \`develop\`
+- Scans every pull request automatically
+- Runs a scheduled daily scan at 2am UTC
+- Can be triggered manually from the GitHub Actions UI
+- Posts a comment on PRs with the scan summary
+
+### Setup required
+Add \`VISCARMA_TOKEN\` to your repository secrets:
+1. Go to **Settings → Secrets and variables → Actions**
+2. Click **New repository secret**
+3. Name: \`VISCARMA_TOKEN\`, Value: your GitHub personal access token (repo scope)
+
+---
+🤖 Auto-generated by **[VisCarMa](https://viscarma.onrender.com)** · 🕐 ${now}`;
+
+    const pr     = await fetch(`${baseUrl}/pulls`, {
+      method: 'POST',
+      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: 'ci: add VisCarMa auto-scan GitHub Action',
+        head:  newBranch, base: branch, body: prBody,
+      }),
+    });
+    const prData = await pr.json();
+    if (!prData.html_url) throw new Error(prData.message || 'PR failed');
+
+    res.json({ url: prData.html_url, number: prData.number, workflow: workflowYml });
+  } catch (e) {
+    console.error('[ACTION]', e);
+    res.status(500).json({ error: 'Action generation failed: ' + e.message });
   }
 });
 
