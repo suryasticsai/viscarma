@@ -1,0 +1,2131 @@
+<!DOCTYPE html>
+<!--
+  ╔══════════════════════════════════════════════════════════════╗
+  ║                        VisCarMa v3.0                        ║
+  ║           The Divine Code Architect — God Mode              ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║  Author   : Sai Varakala (@suryasticsai)                    ║
+  ║  GitHub   : https://github.com/suryasticsai                 ║
+  ║  Live     : https://viscarma.onrender.com                   ║
+  ║  Built    : June 2026                                       ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║  Inspired by Vishwakarma — the divine architect of gods     ║
+  ║  "विश्वतः चक्षुः" — Eyes everywhere, silence everywhere   ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║  Stack: Node.js · Express · Monaco · ESLint · cheerio       ║
+  ║         node-cron · web-push · GitHub API · OpenRouter      ║
+  ╚══════════════════════════════════════════════════════════════╝
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="VisCarMa — AI-powered code scanner, fixer, and agentic developer."/>
+  <title>VisCarMa</title>
+  <link rel="icon" type="image/png" href="/viscarma_logo.png"/>
+  <link rel="stylesheet" href="style.css"/>
+  <link rel="manifest" href="/manifest.json"/>
+  <meta name="theme-color" content="#388bfd"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="VisCarMa"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap"/>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- ── HEADER ── -->
+  <header class="header">
+    <a class="logo" href="#">
+      <img src="/viscarma_logo.png" alt="VisCarMa"/>
+      Vis<span class="accent">Car</span>Ma
+    </a>
+    <span class="badge">v2.0</span>
+
+    <div class="header-right">
+      <span class="status-dot" id="status-dot"></span>
+      <span class="avatar-wrap" id="avatar-wrap">
+        <img id="gh-avatar" class="gh-avatar" src="" alt="avatar"/>
+        <span id="gh-username" class="gh-username"></span>
+      </span>
+      <span id="user-info" class="text-muted text-xs mono">Checking…</span>
+      <button class="btn btn-sm" id="pwa-install-btn" onclick="installPWA()" style="display:none;border-color:var(--amber);color:var(--amber)">Install app</button>
+      <button class="btn btn-sm btn-ghost" onclick="godExplainFile()" title="Explain current file with AI">Explain</button>
+      <button class="btn btn-sm btn-ghost" onclick="showAbout()" title="About VisCarMa">About</button>
+      <button class="btn btn-sm" id="login-btn" onclick="login()">Login with GitHub</button>
+    </div>
+  </header>
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+
+    <!-- Mode tabs -->
+    <div class="sidebar-section">
+      <div class="mode-tabs">
+        <button class="mode-tab active" id="tab-fix"     onclick="switchMode('fix')">Fix</button>
+        <button class="mode-tab"        id="tab-feature" onclick="switchMode('feature')">Feature</button>
+        <button class="mode-tab"        id="tab-agent"   onclick="switchMode('agent')">Agent</button>
+        <button class="mode-tab"        id="tab-god"     onclick="switchMode('god')" style="color:var(--amber);border-color:var(--amber)">God</button>
+      </div>
+    </div>
+
+    <!-- FIX mode sidebar -->
+    <div id="sidebar-fix" class="sidebar-scroll">
+      <div>
+        <div class="field-label">Repository URL</div>
+        <input type="text" id="repo-url-input" placeholder="https://github.com/owner/repo"/>
+      </div>
+      <div>
+        <div class="field-label">Your repos</div>
+        <select id="repo-select" onchange="selectRepo()">
+          <option value="">Select repo (login required)</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn flex-1" onclick="scanManual()">Scan URL</button>
+        <button class="btn btn-primary flex-1" id="scan-logged-btn" onclick="scanLoggedIn()">Scan repo</button>
+      </div>
+      <div class="divider"></div>
+      <div class="field-label">Actions</div>
+      <button class="btn btn-emerald" id="fix-btn" onclick="generateFixes()" style="display:none;width:100%">Apply fixes</button>
+      <button class="btn btn-primary" id="pr-btn"  onclick="createPR()"      style="display:none;width:100%">Create PR</button>
+      <div class="divider"></div>
+      <div class="field-label">PR Reviewer</div>
+      <div class="text-muted text-xs mono" style="margin-bottom:6px">Post AI review on an existing open PR</div>
+      <input type="number" id="review-pr-number" placeholder="PR number e.g. 42" style="margin-bottom:6px"/>
+      <button class="btn" onclick="reviewExistingPR()" style="width:100%">Review open PR</button>
+      <div class="divider"></div>
+      <div class="field-label">GitHub Action</div>
+      <div class="text-muted text-xs mono" style="margin-bottom:6px">Add auto-scan CI to this repo</div>
+      <button class="btn" onclick="generateGitHubAction()" style="width:100%">Add GitHub Action</button>
+    </div>
+
+    <!-- FEATURE mode sidebar -->
+    <div id="sidebar-feature" class="sidebar-scroll" style="display:none">
+      <div>
+        <div class="field-label">Repository</div>
+        <select id="feature-repo-select" onchange="selectFeatureRepo()">
+          <option value="">Select repo</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label">Feature description</div>
+        <textarea id="feature-description" placeholder="Add a dark mode toggle to the header…"></textarea>
+      </div>
+      <div id="feature-file-list" style="display:none">
+        <div class="field-label">Files to modify</div>
+        <div id="feature-file-checkboxes"></div>
+      </div>
+      <button class="btn" onclick="loadFeatureFiles()" style="width:100%">Load files</button>
+      <button class="btn btn-primary" onclick="generateFeature()" style="width:100%">Generate feature</button>
+      <button class="btn btn-emerald" id="feat-pr-btn" onclick="createFeaturePR()" style="display:none;width:100%">Create PR</button>
+    </div>
+
+    <!-- AGENT mode sidebar -->
+    <div id="sidebar-agent" class="sidebar-scroll" style="display:none">
+      <div>
+        <div class="field-label">Target repository</div>
+        <select id="agent-repo-select" onchange="selectAgentRepo()">
+          <option value="">Select repo</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label">Idle duration (minutes)</div>
+        <input type="number" id="agent-duration" value="45" min="1" max="480"/>
+      </div>
+      <div>
+        <div class="field-label">Task source</div>
+        <div class="source-tabs">
+          <button class="source-tab active" id="src-manual" onclick="setTaskSource('manual')">Manual</button>
+          <button class="source-tab" id="src-jira" onclick="setTaskSource('jira')">Jira</button>
+        </div>
+        <div id="task-manual-input">
+          <textarea id="agent-tasks" placeholder="One task per line:&#10;Fix all HIGH issues&#10;Add input validation to forms&#10;Refactor auth module"></textarea>
+        </div>
+        <div id="task-jira-input" style="display:none">
+          <input type="text" id="jira-url"     placeholder="https://yourco.atlassian.net" style="margin-bottom:6px"/>
+          <input type="text" id="jira-token"   placeholder="Jira API token" style="margin-bottom:6px"/>
+          <input type="text" id="jira-email"   placeholder="your@email.com" style="margin-bottom:6px"/>
+          <input type="text" id="jira-project" placeholder="Project key (e.g. DEV)"/>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <button class="btn btn-emerald" id="agent-start-btn" onclick="startAgent()" style="width:100%">Activate agent</button>
+      <button class="btn btn-danger"  id="agent-stop-btn"  onclick="stopAgent()"  style="display:none;width:100%">Stop agent</button>
+      <div class="divider"></div>
+      <div class="field-label">Notifications</div>
+      <button class="btn" id="push-btn" onclick="enablePush()" style="width:100%">Enable push notifications</button>
+      <div id="push-status" class="text-muted text-xs mono" style="margin-top:4px"></div>
+    </div>
+
+    <!-- GOD MODE sidebar -->
+    <div id="sidebar-god" class="sidebar-scroll" style="display:none">
+      <div>
+        <div class="field-label" style="color:var(--amber)">Live URL scan</div>
+        <input type="text" id="god-url" placeholder="https://yourapp.com" style="margin-bottom:6px"/>
+        <div class="row" style="margin-bottom:6px">
+          <label class="feature-file-check" style="flex:1">
+            <input type="checkbox" id="god-deep"/> Deep scan (follow links)
+          </label>
+        </div>
+        <button class="btn" onclick="godScanUrl()" style="width:100%;border-color:var(--amber);color:var(--amber)">Scan live URL</button>
+      </div>
+      <div class="divider"></div>
+      <div class="field-label" style="color:var(--amber)">Dependency scanner</div>
+      <select id="god-dep-repo" style="margin-bottom:6px">
+        <option value="">Select repo</option>
+      </select>
+      <button class="btn" onclick="godScanDeps()" style="width:100%">Scan dependencies</button>
+      <div class="divider"></div>
+      <div class="field-label" style="color:var(--amber)">Multi-repo sweep</div>
+      <textarea id="god-multi-repos" placeholder="One GitHub repo URL per line:&#10;https://github.com/owner/repo1&#10;https://github.com/owner/repo2" style="margin-bottom:6px;min-height:80px"></textarea>
+      <button class="btn" onclick="godMultiRepo()" style="width:100%">Sweep all repos</button>
+      <div class="divider"></div>
+      <div class="field-label" style="color:var(--amber)">Auto-merge</div>
+      <div class="text-muted text-xs mono" style="margin-bottom:6px">Merge a VisCarMa PR after verification</div>
+      <input type="number" id="god-merge-pr" placeholder="PR number" style="margin-bottom:6px"/>
+      <button class="btn" onclick="godAutoMerge()" style="width:100%">Auto-merge PR</button>
+      <div class="divider"></div>
+      <div class="field-label" style="color:var(--amber)">Voice activation</div>
+      <button class="btn" id="voice-btn" onclick="toggleVoice()" style="width:100%;border-color:var(--purple);color:var(--purple)">Start listening</button>
+      <div id="voice-status" class="text-muted text-xs mono" style="margin-top:4px"></div>
+    </div>
+
+    <!-- Log (always visible at bottom) -->
+    <div class="log-wrap">
+      <div class="log-header">
+        <span>LOG</span>
+        <button class="btn btn-ghost btn-sm" onclick="clearLog()">clear</button>
+      </div>
+      <div class="log-box" id="log-box">
+        <div class="log-line">
+          <span class="log-ts">--:--:--</span>
+          <span class="log-tag tag-sys">SYS</span>
+          <span>VisCarMa v2.0 ready.</span>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── MAIN PANEL ── -->
+  <main class="main-panel">
+
+    <!-- Stats bar -->
+    <div class="stats-bar">
+      <div class="stat-chip"><div class="label">Files</div><div class="value" id="s-files">—</div></div>
+      <div class="stat-chip"><div class="label">Issues</div><div class="value red" id="s-issues">—</div></div>
+      <div class="stat-chip"><div class="label">HIGH</div><div class="value red" id="s-high">—</div></div>
+      <div class="stat-chip"><div class="label">MED</div><div class="value amber" id="s-med">—</div></div>
+      <div class="stat-chip"><div class="label">LOW</div><div class="value" id="s-low">—</div></div>
+      <div class="stat-chip"><div class="label">Last scan</div><div class="value" id="s-time" style="font-size:12px">—</div></div>
+    </div>
+
+    <!-- Panel tabs -->
+    <nav class="panel-tabs">
+      <button class="panel-tab active" onclick="showPanel('report')">Report</button>
+      <button class="panel-tab"        onclick="showPanel('editor')">Editor / Diff</button>
+      <button class="panel-tab"        onclick="showPanel('history')">History</button>
+      <button class="panel-tab"        onclick="showPanel('agentlog')">Agent log</button>
+      <button class="panel-tab"        onclick="showPanel('rules')">Rules</button>
+      <button class="panel-tab"        onclick="showPanel('schedules')">Schedules</button>
+      <button class="panel-tab"        onclick="showPanel('tests')">Tests</button>
+      <button class="panel-tab"        onclick="showPanel('marketplace')">Marketplace</button>
+      <button class="panel-tab"        onclick="showPanel('godmode')" style="color:var(--amber)">God Mode</button>
+    </nav>
+
+    <!-- REPORT panel -->
+    <div class="panel-content active" id="panel-report">
+      <div class="report-scroll" id="report-content">
+        <div class="empty-state">
+          <div class="e-icon">⬡</div>
+          <div>No scan yet. Enter a repo URL and click Scan.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EDITOR / DIFF panel -->
+    <div class="panel-content" id="panel-editor">
+      <div class="editor-toolbar">
+        <div class="editor-filename">
+          <span id="editor-file-label">No file selected</span>
+        </div>
+        <button class="btn btn-sm" id="view-toggle-btn" onclick="toggleDiff()" style="display:none">Switch to diff</button>
+        <button class="btn btn-sm btn-ghost" onclick="copyEditorContent()">Copy</button>
+      </div>
+      <div class="editor-layout">
+        <div class="file-list" id="file-list-panel"></div>
+        <div class="editor-main">
+          <div id="monaco-container" style="flex:1;min-height:0;display:block"></div>
+          <div id="diff-container"   style="flex:1;min-height:0;display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY panel -->
+    <div class="panel-content" id="panel-history">
+      <div class="history-list" id="history-list">
+        <div class="empty-state">
+          <div class="e-icon">◷</div>
+          <div>No scan history yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AGENT LOG panel -->
+    <div class="panel-content" id="panel-agentlog">
+      <div id="agent-panel" class="agent-panel">
+        <div class="agent-status-bar">
+          <div class="agent-status-dot" id="agent-dot"></div>
+          <span id="agent-status-text" class="mono">Agent inactive</span>
+          <div class="timer-display" id="agent-timer" style="font-size:16px;padding:4px 12px;margin-left:auto">--:--</div>
+        </div>
+        <div>
+          <div class="agent-section-title">Task queue</div>
+          <div id="agent-queue-display">
+            <div class="empty-state" style="padding:20px">
+              <div>No tasks queued.</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="agent-section-title">Activity</div>
+          <div id="agent-activity" class="log-box" style="max-height:200px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:8px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RULES panel -->
+    <div class="panel-content" id="panel-rules">
+      <div class="report-scroll">
+        <div class="row-between" style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600">Custom Rules</div>
+          <button class="btn btn-primary btn-sm" onclick="showRuleForm()">+ New rule</button>
+        </div>
+        <div id="rule-form" style="display:none;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+          <div class="field-label" style="margin-bottom:6px">Rule name</div>
+          <input type="text" id="rule-name" placeholder="No console.log in production" style="margin-bottom:8px"/>
+          <div class="field-label" style="margin-bottom:6px">Regex pattern</div>
+          <input type="text" id="rule-pattern" placeholder="console\.log\(" style="margin-bottom:8px;font-family:var(--font-mono)"/>
+          <div class="field-label" style="margin-bottom:6px">Description</div>
+          <input type="text" id="rule-description" placeholder="console.log found in code" style="margin-bottom:8px"/>
+          <div class="field-label" style="margin-bottom:6px">Fix suggestion</div>
+          <input type="text" id="rule-fix" placeholder="Remove or replace with logger" style="margin-bottom:8px"/>
+          <div class="row" style="margin-bottom:8px;gap:12px">
+            <div style="flex:1">
+              <div class="field-label" style="margin-bottom:4px">Severity</div>
+              <select id="rule-severity"><option value="HIGH">HIGH</option><option value="MED" selected>MED</option><option value="LOW">LOW</option></select>
+            </div>
+            <div style="flex:1">
+              <div class="field-label" style="margin-bottom:4px">File types (comma sep)</div>
+              <input type="text" id="rule-filetypes" placeholder="js,ts,jsx (blank=all)"/>
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn btn-primary" onclick="saveRule()">Save rule</button>
+            <button class="btn btn-ghost" onclick="$('rule-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
+        <div id="rules-list"><div class="empty-state"><div class="e-icon">◈</div><div>No custom rules yet.</div></div></div>
+        <div style="margin-top:16px;padding:12px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius)">
+          <div class="field-label" style="margin-bottom:6px">Usage limit</div>
+          <div id="usage-display" class="mono text-xs text-muted">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULES panel -->
+    <div class="panel-content" id="panel-schedules">
+      <div class="report-scroll">
+        <div class="row-between" style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600">Scheduled Auto-Fix</div>
+          <button class="btn btn-primary btn-sm" onclick="showScheduleForm()">+ New schedule</button>
+        </div>
+        <div id="schedule-form" style="display:none;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+          <div class="field-label" style="margin-bottom:6px">Schedule name</div>
+          <input type="text" id="sched-name" placeholder="Nightly fix" style="margin-bottom:8px"/>
+          <div class="field-label" style="margin-bottom:6px">Repository URL</div>
+          <input type="text" id="sched-repo-url" placeholder="https://github.com/owner/repo" style="margin-bottom:8px"/>
+          <div class="field-label" style="margin-bottom:6px">GitHub token (needs repo scope)</div>
+          <input type="text" id="sched-token" placeholder="ghp_..." style="margin-bottom:8px;font-family:var(--font-mono)"/>
+          <div class="field-label" style="margin-bottom:6px">Cron expression (UTC)</div>
+          <input type="text" id="sched-cron" placeholder="0 2 * * *  (daily at 2am)" style="margin-bottom:4px;font-family:var(--font-mono)"/>
+          <div class="text-muted text-xs mono" style="margin-bottom:8px">Examples: 0 2 * * * (daily 2am) · 0 9 * * 1 (Mon 9am) · 0 */6 * * * (every 6h)</div>
+          <div class="row">
+            <button class="btn btn-primary" onclick="saveSchedule()">Save schedule</button>
+            <button class="btn btn-ghost" onclick="$('schedule-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
+        <div id="schedules-list"><div class="empty-state"><div class="e-icon">⏰</div><div>No schedules yet.</div></div></div>
+      </div>
+    </div>
+
+    <!-- TESTS panel -->
+    <div class="panel-content" id="panel-tests">
+      <div class="report-scroll">
+        <div style="font-size:13px;font-weight:600;margin-bottom:16px">Test Generator</div>
+        <div style="background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+          <div class="text-muted text-xs" style="margin-bottom:12px">Generate unit tests for your scanned files. Tests are committed to the repo as a PR.</div>
+          <div class="field-label" style="margin-bottom:6px">Select files to test</div>
+          <div id="test-file-checkboxes" style="margin-bottom:12px"><div class="text-muted text-xs">Scan a repo first to load files.</div></div>
+          <button class="btn btn-primary" onclick="generateTests()">Generate tests + PR</button>
+        </div>
+        <div id="test-results"></div>
+      </div>
+    </div>
+
+    <!-- MARKETPLACE panel -->
+    <div class="panel-content" id="panel-marketplace">
+      <div class="report-scroll">
+        <div class="row-between" style="margin-bottom:12px">
+          <div style="font-size:13px;font-weight:600">Rule Marketplace</div>
+          <button class="btn btn-sm" onclick="publishRulePack()">Publish my rules</button>
+        </div>
+        <div class="row" style="margin-bottom:16px;gap:8px">
+          <input type="text" id="market-search" placeholder="Search packs…" style="flex:1" oninput="loadMarketplace()"/>
+          <select id="market-category" onchange="loadMarketplace()" style="width:140px">
+            <option value="">All categories</option>
+            <option value="security">Security</option>
+            <option value="performance">Performance</option>
+            <option value="style">Style</option>
+            <option value="general">General</option>
+          </select>
+        </div>
+        <div id="marketplace-list"><div class="empty-state"><div class="e-icon">◈</div><div>Loading marketplace…</div></div></div>
+      </div>
+    </div>
+
+    <!-- GOD MODE panel -->
+    <div class="panel-content" id="panel-godmode">
+      <div class="report-scroll">
+        <div class="row-between" style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;color:var(--amber)">God Mode</div>
+          <div class="text-muted text-xs mono">Live URL · Deps · Multi-repo · Voice · Auto-merge</div>
+        </div>
+        <div id="god-results">
+          <div class="empty-state">
+            <div class="e-icon" style="color:var(--amber)">⬡</div>
+            <div>Select a God Mode action from the sidebar.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<!-- Monaco Editor loader -->
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// VisCarMa v3.0 — The Divine Code Architect
+// Author: Sai Varakala (@suryasticsai) · June 2026
+// https://viscarma.onrender.com · MIT License
+// ─────────────────────────────────────────────────────────────
+
+/* ══════════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════════ */
+const STATE = {
+  user: null, token: null,
+  repoUrl: null, repoOwner: null, repoName: null, repoBranch: 'main',
+  scanResults: null,
+  fixes: null,
+  featureFiles: [], featureFixes: null, featureDescription: null,
+  mode: 'fix',
+  taskSource: 'manual',
+  agentRunning: false, agentJobId: null, agentQueue: [], agentPollInterval: null,
+  agentIndex: 0, agentEndTime: null,
+  currentFile: null, showingDiff: false,
+  history: [],
+};
+
+/* Monaco instances */
+let monacoEditor = null;
+let diffEditor    = null;
+let monacoReady   = false;
+
+/* Init Monaco */
+require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+require(['vs/editor/editor.main'], () => {
+  monacoReady = true;
+  monacoEditor = monaco.editor.create(document.getElementById('monaco-container'), {
+    value: '// Select a file from the list to view its code',
+    language: 'javascript',
+    theme: 'vs-dark',
+    readOnly: true,
+    fontSize: 13,
+    fontFamily: '"JetBrains Mono", monospace',
+    minimap: { enabled: true },
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    lineNumbers: 'on',
+    renderLineHighlight: 'all',
+    smoothScrolling: true,
+  });
+  diffEditor = monaco.editor.createDiffEditor(document.getElementById('diff-container'), {
+    theme: 'vs-dark',
+    readOnly: true,
+    fontSize: 13,
+    fontFamily: '"JetBrains Mono", monospace',
+    automaticLayout: true,
+    renderSideBySide: true,
+    enableSplitViewResizing: true,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+  });
+  log('SYS', 'tag-sys', 'Monaco editor loaded.');
+});
+
+/* ══════════════════════════════════════════════════════
+   UTILS
+══════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const logBox = $('log-box');
+
+function ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
+
+function log(tag, cls, msg) {
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-ts">${ts()}</span>`
+    + `<span class="log-tag ${cls}">${tag}</span>`
+    + `<span>${esc(msg)}</span>`;
+  logBox.appendChild(line);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+function clearLog() { logBox.innerHTML = ''; log('SYS','tag-sys','Log cleared.'); }
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toast(msg, dur=2500) {
+  const el = $('toast');
+  el.textContent = msg; el.style.opacity = '1';
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => { el.style.opacity = '0'; }, dur);
+}
+
+function setProgress(pct, visible=true) {
+  /* No standalone progress bar in new layout — use log */
+}
+
+function agentLog(msg) {
+  const el = $('agent-activity');
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-ts">${ts()}</span><span>${esc(msg)}</span>`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  log('AGENT', 'tag-agent', msg);
+}
+
+/* History is persisted server-side via /api/history */
+
+/* ══════════════════════════════════════════════════════
+   FETCH WRAPPER
+══════════════════════════════════════════════════════ */
+async function apiFetch(url, opts={}) {
+  const { headers={}, ...rest } = opts;
+  return fetch(url, {
+    ...rest,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...headers },
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   MODE SWITCH
+══════════════════════════════════════════════════════ */
+function switchMode(mode) {
+  STATE.mode = mode;
+  ['fix','feature','agent','god'].forEach(m => {
+    $(`tab-${m}`).classList.toggle('active', m === mode);
+    $(`sidebar-${m}`).style.display = m === mode ? 'flex' : 'none';
+  });
+  if (mode === 'feature' || mode === 'agent') syncRepoSelects();
+}
+
+function syncRepoSelects() {
+  const src = $('repo-select');
+  [$('feature-repo-select'), $('agent-repo-select'), $('god-dep-repo')].forEach(dest => {
+    if (dest) dest.innerHTML = src.innerHTML;
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   PANEL TABS
+══════════════════════════════════════════════════════ */
+function showPanel(name) {
+  document.querySelectorAll('.panel-tab').forEach((t,i) => {
+    const names = ['report','editor','history','agentlog','rules','schedules','tests','marketplace','godmode'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.panel-content').forEach(p => p.classList.remove('active'));
+  $(`panel-${name}`).classList.add('active');
+  if (name === 'editor' && monacoReady) {
+    monacoEditor.layout();
+    diffEditor.layout();
+  }
+  if (name === 'history')     renderHistory();
+  if (name === 'rules')       { loadRules(); loadUsage(); }
+  if (name === 'schedules')   loadSchedules();
+  if (name === 'marketplace') loadMarketplace();
+  if (name === 'godmode') syncGodRepoSelect();
+  if (name === 'tests')       loadTestFiles();
+}
+
+/* ══════════════════════════════════════════════════════
+   AUTH
+══════════════════════════════════════════════════════ */
+async function checkAuth() {
+  try {
+    const res = await apiFetch('/api/user');
+    if (!res.ok) { setTimeout(checkAuth, 1500); return; }
+    const data = await res.json();
+    applyAuthState(data.user, data.token);
+  } catch { setTimeout(checkAuth, 1500); }
+}
+
+function applyAuthState(user, token) {
+  if (user) {
+    STATE.user = user; STATE.token = token;
+    $('gh-avatar').src = user.avatar || '';
+    $('gh-username').textContent = user.login;
+    $('avatar-wrap').classList.add('visible');
+    $('user-info').style.display = 'none';
+    $('status-dot').className = 'status-dot online';
+    $('login-btn').textContent = 'Logout';
+    $('login-btn').onclick = logout;
+    loadRepos();
+    log('AUTH','tag-ok',`Signed in as ${user.login}`);
+  } else {
+    STATE.user = null; STATE.token = null;
+    $('avatar-wrap').classList.remove('visible');
+    $('user-info').style.display = '';
+    $('user-info').textContent = 'Not signed in';
+    $('status-dot').className = 'status-dot offline';
+    $('login-btn').textContent = 'Login with GitHub';
+    $('login-btn').onclick = login;
+    log('AUTH','tag-sys','Not signed in.');
+  }
+}
+
+function login()  { window.location.href = '/auth/github'; }
+function logout() { window.location.href = '/auth/logout'; }
+
+async function loadRepos() {
+  try {
+    const res = await apiFetch('/api/repos');
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const repos = await res.json();
+    const html = '<option value="">Select repo</option>'
+      + repos.map(r => `<option value="${r.full_name}">${r.full_name}</option>`).join('');
+    ['repo-select','feature-repo-select','agent-repo-select'].forEach(id => {
+      if ($(id)) $(id).innerHTML = html;
+    });
+    log('AUTH','tag-ok',`Loaded ${repos.length} repos`);
+  } catch(e) { log('AUTH','tag-err','Failed to load repos: '+e.message); }
+}
+
+/* ══════════════════════════════════════════════════════
+   REPO SELECT
+══════════════════════════════════════════════════════ */
+function _setRepo(val) {
+  if (!val) return;
+  const [owner, name] = val.split('/');
+  STATE.repoOwner = owner; STATE.repoName = name;
+  STATE.repoUrl   = `https://github.com/${val}.git`;
+  STATE.repoBranch = 'main';
+  $('repo-url-input').value = `https://github.com/${val}`;
+}
+function selectRepo()        { _setRepo($('repo-select').value); }
+function selectFeatureRepo() { _setRepo($('feature-repo-select').value); }
+function selectAgentRepo()   { _setRepo($('agent-repo-select').value); }
+
+/* ══════════════════════════════════════════════════════
+   SCAN
+══════════════════════════════════════════════════════ */
+async function scanManual() {
+  const url = $('repo-url-input').value.trim();
+  if (!url) { toast('Enter a repo URL'); return; }
+  const m = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
+  if (!m) { toast('Invalid GitHub URL'); return; }
+  STATE.repoOwner = m[1]; STATE.repoName = m[2];
+  STATE.repoUrl   = `https://github.com/${m[1]}/${m[2]}.git`;
+  STATE.repoBranch = 'main';
+  await doScan(null);
+}
+
+async function scanLoggedIn() {
+  if (!STATE.repoUrl) { toast('Select a repo first'); return; }
+  await doScan(STATE.token);
+}
+
+async function doScan(token) {
+  log('SCAN','tag-info',`Scanning ${STATE.repoOwner}/${STATE.repoName}…`);
+  showPanel('report');
+  $('report-content').innerHTML = '<div class="empty-state"><div class="e-icon">⟳</div><div>Scanning repository…</div></div>';
+  $('fix-btn').style.display = 'none';
+  $('pr-btn').style.display  = 'none';
+
+  try {
+    const res  = await apiFetch('/api/scan-repo', {
+      method: 'POST',
+      body: JSON.stringify({ repoUrl:STATE.repoUrl, repoOwner:STATE.repoOwner, repoName:STATE.repoName, token:token||null }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error||'Scan failed');
+    STATE.scanResults = data.results;
+    renderReport(data.results);
+    buildFileList(data.results);
+    $('fix-btn').style.display = 'block';
+    log('SCAN','tag-ok',`Done: ${data.results.length} files, ${data.results.reduce((s,f)=>s+f.issues.length,0)} issues`);
+    toast('Scan complete');
+    /* history saved server-side */
+  } catch(e) {
+    log('SCAN','tag-err',e.message);
+    toast('Scan failed: '+e.message);
+    $('report-content').innerHTML = `<div class="empty-state"><div class="e-icon">✗</div><div>${esc(e.message)}</div></div>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   RENDER REPORT (with severity chart)
+══════════════════════════════════════════════════════ */
+function renderReport(results) {
+  const totalFiles  = results.length;
+  const totalIssues = results.reduce((s,f) => s+f.issues.length, 0);
+  const high  = results.reduce((s,f) => s+f.issues.filter(i=>i.severity==='HIGH').length, 0);
+  const med   = results.reduce((s,f) => s+f.issues.filter(i=>i.severity==='MED').length, 0);
+  const low   = results.reduce((s,f) => s+f.issues.filter(i=>i.severity==='LOW').length, 0);
+
+  $('s-files').textContent  = totalFiles;
+  $('s-issues').textContent = totalIssues;
+  $('s-high').textContent   = high;
+  $('s-med').textContent    = med;
+  $('s-low').textContent    = low;
+  $('s-time').textContent   = new Date().toLocaleTimeString();
+
+  const maxBar = Math.max(high, med, low, 1);
+  const pct = n => Math.round((n/maxBar)*100);
+
+  let html = `
+    <div class="summary-row">
+      <div class="summary-card"><div class="s-label">Files</div><div class="s-val">${totalFiles}</div></div>
+      <div class="summary-card"><div class="s-label">Issues</div><div class="s-val" style="color:var(--red)">${totalIssues}</div></div>
+      <div class="summary-card"><div class="s-label">Clean files</div><div class="s-val" style="color:var(--emerald)">${results.filter(f=>!f.issues.length).length}</div></div>
+    </div>
+    <div class="sev-chart-wrap">
+      <div class="sev-bar-group">
+        <div class="sev-bar-row">
+          <div class="sev-bar-label" style="color:var(--red)">HIGH</div>
+          <div class="sev-bar-track"><div class="sev-bar-fill" style="width:${pct(high)}%;background:var(--red)"></div></div>
+          <div class="sev-bar-count" style="color:var(--red)">${high}</div>
+        </div>
+        <div class="sev-bar-row">
+          <div class="sev-bar-label" style="color:var(--amber)">MED</div>
+          <div class="sev-bar-track"><div class="sev-bar-fill" style="width:${pct(med)}%;background:var(--amber)"></div></div>
+          <div class="sev-bar-count" style="color:var(--amber)">${med}</div>
+        </div>
+        <div class="sev-bar-row">
+          <div class="sev-bar-label" style="color:var(--blue)">LOW</div>
+          <div class="sev-bar-track"><div class="sev-bar-fill" style="width:${pct(low)}%;background:var(--blue)"></div></div>
+          <div class="sev-bar-count" style="color:var(--blue)">${low}</div>
+        </div>
+      </div>
+    </div>`;
+
+  if (!totalIssues) {
+    html += `<div class="empty-state" style="padding:40px"><div class="e-icon" style="color:var(--emerald)">✓</div><div style="color:var(--emerald)">No issues found. Repository is clean.</div></div>`;
+  } else {
+    for (const item of results) {
+      if (!item.issues.length) continue;
+      html += `<div class="file-heading">
+        <span style="opacity:0.5">◈</span>
+        ${esc(item.file)}
+        <span class="badge" style="margin-left:auto">${item.issues.length}</span>
+      </div>`;
+      for (const issue of item.issues) {
+        const sev = (issue.severity||'MED').toLowerCase();
+        html += `<div class="issue-card ${sev}">
+          <div class="issue-meta">
+            <span class="sev sev-${sev}">${(issue.severity||'MED').toUpperCase()}</span>
+          </div>
+          <div class="issue-desc">${esc(issue.description||'Issue detected')}</div>
+          ${issue.fix ? `<div class="issue-fix">💡 ${esc(issue.fix)}</div>` : ''}
+        </div>`;
+      }
+    }
+  }
+
+  $('report-content').innerHTML = html;
+}
+
+/* ══════════════════════════════════════════════════════
+   FILE LIST + MONACO EDITOR
+══════════════════════════════════════════════════════ */
+function buildFileList(results) {
+  const panel = $('file-list-panel');
+  if (!results || !results.length) { panel.innerHTML = ''; return; }
+  panel.innerHTML = results.map((r, i) => {
+    const issues = r.issues ? r.issues.length : 0;
+    const sevClass = r.issues && r.issues.some(x=>x.severity==='HIGH') ? 'sev-high'
+                   : r.issues && r.issues.some(x=>x.severity==='MED')  ? 'sev-med'  : 'sev-low';
+    return `<div class="file-item" onclick="openFile(${i})" id="fi-${i}">
+      <span style="opacity:0.5;font-size:10px">◈</span>
+      <span class="flex-1" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.file)}</span>
+      ${issues ? `<span class="sev ${sevClass} fi-badge">${issues}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function openFile(idx) {
+  const results = STATE.fixes || STATE.scanResults;
+  if (!results) return;
+  const item = results[idx];
+  if (!item) return;
+  STATE.currentFile = idx;
+
+  document.querySelectorAll('.file-item').forEach((el,i) => el.classList.toggle('active', i===idx));
+  $('editor-file-label').textContent = item.file || item.file;
+  showPanel('editor');
+
+  const lang = detectLang(item.file);
+
+  if (STATE.showingDiff && item.newCode && STATE.scanResults && STATE.scanResults[idx]) {
+    showDiff(STATE.scanResults[idx].code || '', item.newCode, lang);
+  } else {
+    showCode(item.code || item.newCode || '', lang);
+  }
+
+  const hasDiff = STATE.fixes && STATE.fixes[idx] && STATE.fixes[idx].newCode
+               && STATE.scanResults && STATE.scanResults[idx];
+  $('view-toggle-btn').style.display = hasDiff ? 'inline-flex' : 'none';
+  $('view-toggle-btn').textContent = STATE.showingDiff ? 'Switch to code' : 'Switch to diff';
+}
+
+function showCode(code, lang='javascript') {
+  if (!monacoReady) return;
+  $('monaco-container').style.display = 'block';
+  $('diff-container').style.display   = 'none';
+  monacoEditor.setValue(code);
+  monaco.editor.setModelLanguage(monacoEditor.getModel(), lang);
+  monacoEditor.layout();
+}
+
+function showDiff(original, modified, lang='javascript') {
+  if (!monacoReady) return;
+  $('monaco-container').style.display = 'none';
+  $('diff-container').style.display   = 'block';
+  const origModel = monaco.editor.createModel(original, lang);
+  const modModel  = monaco.editor.createModel(modified, lang);
+  diffEditor.setModel({ original: origModel, modified: modModel });
+  diffEditor.layout();
+}
+
+function toggleDiff() {
+  STATE.showingDiff = !STATE.showingDiff;
+  $('view-toggle-btn').textContent = STATE.showingDiff ? 'Switch to code' : 'Switch to diff';
+  if (STATE.currentFile !== null) openFile(STATE.currentFile);
+}
+
+function copyEditorContent() {
+  const text = monacoEditor.getValue();
+  navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard'));
+}
+
+function detectLang(filename) {
+  if (!filename) return 'plaintext';
+  const ext = filename.split('.').pop().toLowerCase();
+  const map = { js:'javascript', ts:'typescript', jsx:'javascript', tsx:'typescript',
+    html:'html', css:'css', py:'python', go:'go', java:'java',
+    rs:'rust', c:'c', cpp:'cpp', h:'c', json:'json', md:'markdown' };
+  return map[ext] || 'plaintext';
+}
+
+/* ══════════════════════════════════════════════════════
+   FIXES
+══════════════════════════════════════════════════════ */
+async function generateFixes() {
+  if (!STATE.scanResults) { toast('Run a scan first'); return; }
+  const filesToFix = STATE.scanResults.filter(f=>f.issues&&f.issues.length>0)
+    .map(f=>({ file:f.file, code:f.code, issues:f.issues }));
+  if (!filesToFix.length) { toast('No issues to fix'); return; }
+
+  log('FIX','tag-info',`Generating fixes for ${filesToFix.length} files…`);
+  $('fix-btn').disabled = true; $('fix-btn').textContent = 'Generating…';
+
+  try {
+    const res  = await apiFetch('/api/generate-fixes', {
+      method:'POST', body:JSON.stringify({ files:filesToFix })
+    });
+    const data = await res.json();
+    if (!data.fixes) throw new Error('No fixes returned');
+    STATE.fixes = data.fixes;
+    buildFileList(data.fixes);
+    $('pr-btn').style.display = 'block';
+    log('FIX','tag-ok',`Fixes ready for ${data.fixes.length} files`);
+    toast('Fixes generated — open Editor/Diff to review');
+    showPanel('editor');
+    if (data.fixes.length) openFile(0);
+  } catch(e) {
+    log('FIX','tag-err',e.message); toast('Fix failed: '+e.message);
+  } finally {
+    $('fix-btn').disabled = false; $('fix-btn').textContent = 'Apply fixes';
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   CREATE PR
+══════════════════════════════════════════════════════ */
+async function createPR(fixes, prType='fix', featureDescription=null) {
+  const f = fixes || STATE.fixes;
+  if (!f||!f.length)             { toast('Generate fixes first'); return; }
+  if (!STATE.repoOwner)          { toast('No repo selected'); return; }
+  if (!STATE.token)              { toast('Login required'); return; }
+
+  log('PR','tag-info','Opening pull request…');
+  $('pr-btn').disabled = true; $('pr-btn').textContent = 'Creating PR…';
+
+  try {
+    const res  = await apiFetch('/api/create-pr', {
+      method:'POST',
+      body: JSON.stringify({
+        repoOwner: STATE.repoOwner, repoName: STATE.repoName,
+        branch: STATE.repoBranch||'main',
+        fixes: f, token: STATE.token, prType, featureDescription,
+      }),
+    });
+    const data = await res.json();
+    if (!data.url) throw new Error(data.error||'PR failed');
+    log('PR','tag-ok',`PR #${data.number}: ${data.url}`);
+    toast(`PR #${data.number} opened!`);
+    $('report-content').insertAdjacentHTML('beforeend',
+      `<div class="pr-result">🔀 <a href="${data.url}" target="_blank" rel="noopener">View PR #${data.number}</a> <span class="text-muted text-xs">— README updated with VisCarMa log</span></div>`
+    );
+    return data;
+  } catch(e) {
+    log('PR','tag-err',e.message); toast('PR failed: '+e.message);
+  } finally {
+    $('pr-btn').disabled = false; $('pr-btn').textContent = 'Create PR';
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   FEATURE MODE
+══════════════════════════════════════════════════════ */
+async function loadFeatureFiles() {
+  if (!STATE.repoUrl) { toast('Select a repo first'); return; }
+  if (!STATE.token)   { toast('Login required'); return; }
+  log('FEAT','tag-info','Loading repo files…');
+  try {
+    const res  = await apiFetch('/api/scan-repo', {
+      method:'POST',
+      body: JSON.stringify({ repoUrl:STATE.repoUrl, repoOwner:STATE.repoOwner, repoName:STATE.repoName, token:STATE.token }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    STATE.featureFiles = data.results.map(r=>({ file:r.file, code:r.code }));
+    $('feature-file-checkboxes').innerHTML = STATE.featureFiles.map((f,i) =>
+      `<label class="feature-file-check">
+        <input type="checkbox" value="${i}" checked/>
+        ${esc(f.file)}
+       </label>`
+    ).join('');
+    $('feature-file-list').style.display = 'block';
+    log('FEAT','tag-ok',`${STATE.featureFiles.length} files loaded`);
+    toast(`${STATE.featureFiles.length} files ready`);
+  } catch(e) { log('FEAT','tag-err',e.message); toast(e.message); }
+}
+
+async function generateFeature() {
+  const desc = $('feature-description').value.trim();
+  if (!desc)                        { toast('Describe the feature'); return; }
+  if (!STATE.featureFiles.length)   { toast('Load files first'); return; }
+  if (!STATE.token)                 { toast('Login required'); return; }
+
+  const selected = [...document.querySelectorAll('#feature-file-checkboxes input:checked')]
+    .map(cb => STATE.featureFiles[parseInt(cb.value)]);
+  if (!selected.length) { toast('Select at least one file'); return; }
+
+  STATE.featureDescription = desc;
+  log('FEAT','tag-info',`Generating: "${desc}" across ${selected.length} files…`);
+
+  try {
+    const res  = await apiFetch('/api/generate-feature', {
+      method:'POST', body:JSON.stringify({ files:selected, featureDescription:desc }),
+    });
+    const data = await res.json();
+    if (!data.fixes) throw new Error('No result');
+    STATE.featureFixes = data.fixes;
+    buildFileList(data.fixes);
+    showPanel('editor');
+    if (data.fixes.length) openFile(0);
+    $('feat-pr-btn').style.display = 'block';
+    log('FEAT','tag-ok',`Feature generated for ${data.fixes.length} files`);
+    toast('Feature generated — review in Editor/Diff');
+  } catch(e) { log('FEAT','tag-err',e.message); toast(e.message); }
+}
+
+async function createFeaturePR() {
+  await createPR(STATE.featureFixes, 'feature', STATE.featureDescription);
+}
+
+/* ══════════════════════════════════════════════════════
+   SCAN HISTORY
+══════════════════════════════════════════════════════ */
+async function renderHistory() {
+  const list = $('history-list');
+  list.innerHTML = '<div class="empty-state"><div class="e-icon">⟳</div><div>Loading history…</div></div>';
+  try {
+    const res  = await apiFetch('/api/history');
+    const data = await res.json();
+    const history = data.history || [];
+    if (!history.length) {
+      list.innerHTML = '<div class="empty-state"><div class="e-icon">◷</div><div>No scan history yet.</div></div>';
+      return;
+    }
+    list.innerHTML = history.map(h => `
+      <div class="history-item">
+        <div class="history-date">${new Date(h.date).toLocaleString()}</div>
+        <div class="history-repo">${esc(h.repo)}</div>
+        <div class="history-stats">
+          <span class="sev sev-high">${h.high||0}</span>
+          <span class="sev sev-med">${h.med||0}</span>
+          <span class="sev sev-low">${h.low||0}</span>
+          ${h.security ? `<span class="sev" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple)">${h.security} sec</span>` : ''}
+          <span class="text-muted text-xs">${h.files} files</span>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="empty-state"><div>Failed to load history: ${e.message}</div></div>`;
+  }
+}
+
+async function reviewExistingPR() {
+  const prNum = $('review-pr-number').value.trim();
+  if (!prNum)           { toast('Enter a PR number'); return; }
+  if (!STATE.repoOwner) { toast('Select a repo first'); return; }
+  if (!STATE.token)     { toast('Login required'); return; }
+
+  log('REVIEW','tag-info',`Reviewing PR #${prNum} on ${STATE.repoOwner}/${STATE.repoName}…`);
+  try {
+    const res  = await apiFetch('/api/review-pr', {
+      method:'POST',
+      body: JSON.stringify({ repoOwner:STATE.repoOwner, repoName:STATE.repoName, prNumber:parseInt(prNum), token:STATE.token }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    log('REVIEW','tag-ok',`Review posted on PR #${prNum} — ${data.issueCount} issue(s) found`);
+    toast(`Review posted on PR #${prNum}`);
+    $('report-content').insertAdjacentHTML('beforeend',
+      `<div class="pr-result">🔍 <a href="${data.url||'#'}" target="_blank" rel="noopener">View review on PR #${prNum}</a> <span class="text-muted text-xs">— ${data.issueCount} AI comment(s)</span></div>`
+    );
+    showPanel('report');
+  } catch(e) {
+    log('REVIEW','tag-err',e.message); toast('Review failed: '+e.message);
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   AGENTIC IDLE MODE — server-side
+   Browser just starts the job and polls /api/agent/status
+   Agent survives tab close, runs entirely on server
+══════════════════════════════════════════════════════ */
+function setTaskSource(src) {
+  STATE.taskSource = src;
+  ['manual','jira'].forEach(s => {
+    $(`src-${s}`).classList.toggle('active', s===src);
+    $(`task-${s}-input`).style.display = s===src ? 'block' : 'none';
+  });
+}
+
+function getAgentTasks() {
+  if (STATE.taskSource === 'manual') {
+    return $('agent-tasks').value.split('\n').map(t=>t.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+async function fetchJiraTasks() {
+  const url     = $('jira-url').value.trim();
+  const token   = $('jira-token').value.trim();
+  const email   = $('jira-email').value.trim();
+  const project = $('jira-project').value.trim();
+  if (!url||!token||!email||!project) { toast('Fill all Jira fields'); return []; }
+  try {
+    const res = await apiFetch('/api/jira-tasks', {
+      method:'POST', body:JSON.stringify({ url,token,email,project }),
+    });
+    const data = await res.json();
+    return (data.tasks || []).map(t => `${t.key}: ${t.summary}`);
+  } catch(e) { log('AGENT','tag-err','Jira fetch failed: '+e.message); return []; }
+}
+
+async function startAgent() {
+  if (!STATE.repoUrl) { toast('Select a repo first'); return; }
+  if (!STATE.token)   { toast('Login required'); return; }
+
+  let tasks = getAgentTasks();
+  if (STATE.taskSource === 'jira') {
+    agentLog('Fetching Jira tickets…');
+    tasks = await fetchJiraTasks();
+  }
+  if (!tasks.length) { toast('Add at least one task'); return; }
+
+  const mins = parseInt($('agent-duration').value) || 45;
+
+  log('AGENT','tag-agent',`Sending ${tasks.length} tasks to server agent…`);
+
+  try {
+    const res  = await apiFetch('/api/agent/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        tasks, repoUrl: STATE.repoUrl,
+        repoOwner: STATE.repoOwner, repoName: STATE.repoName,
+        repoBranch: STATE.repoBranch || 'main',
+        token: STATE.token, durationMins: mins,
+        pushSubscription: STATE.pushSubscription || null,
+      }),
+    });
+    const data = await res.json();
+    if (!data.jobId) throw new Error(data.error || 'Failed to start agent');
+
+    STATE.agentJobId   = data.jobId;
+    STATE.agentRunning = true;
+    STATE.agentEndTime = Date.now() + mins * 60 * 1000;
+
+    $('agent-start-btn').style.display = 'none';
+    $('agent-stop-btn').style.display  = 'block';
+    $('agent-dot').className = 'agent-status-dot running';
+    $('agent-status-text').textContent = `Running on server — ${tasks.length} tasks`;
+
+    showPanel('agentlog');
+    agentLog(`Agent activated on server — Job ID: ${data.jobId}`);
+    agentLog(`${tasks.length} task(s), ${mins} min window. You can close this tab.`);
+
+    // Start polling server for status
+    STATE.agentPollInterval   = setInterval(pollAgentStatus, 3000);
+    STATE.agentTimerInterval  = setInterval(updateAgentTimer, 1000);
+  } catch(e) {
+    log('AGENT','tag-err', e.message);
+    toast('Failed to start agent: ' + e.message);
+  }
+}
+
+async function stopAgent() {
+  try {
+    if (STATE.agentJobId) {
+      await apiFetch('/api/agent/stop', {
+        method: 'POST',
+        body: JSON.stringify({ jobId: STATE.agentJobId }),
+      });
+    }
+  } catch(e) { console.error('Stop error:', e); }
+
+  STATE.agentRunning = false;
+  clearInterval(STATE.agentPollInterval);
+  clearInterval(STATE.agentTimerInterval);
+  STATE.agentJobId = null;
+
+  $('agent-start-btn').style.display = 'block';
+  $('agent-stop-btn').style.display  = 'none';
+  $('agent-dot').className = 'agent-status-dot';
+  $('agent-status-text').textContent = 'Agent stopped';
+  $('agent-timer').className = 'timer-display';
+  agentLog('Agent stopped.');
+}
+
+function updateAgentTimer() {
+  if (!STATE.agentEndTime) return;
+  const remaining = Math.max(0, STATE.agentEndTime - Date.now());
+  const m = Math.floor(remaining / 60000);
+  const s = Math.floor((remaining % 60000) / 1000);
+  const display = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  $('agent-timer').textContent = display;
+  if (remaining <= 0) {
+    $('agent-timer').className = 'timer-display expired';
+    stopAgent();
+    agentLog('Time window expired. Agent signing off.');
+    toast('Agent session complete — check Agent log for summary', 5000);
+  }
+}
+
+// ── Server status polling (replaces browser-side agent loop) ──
+async function pollAgentStatus() {
+  if (!STATE.agentJobId) return;
+  try {
+    const res  = await apiFetch(`/api/agent/status?jobId=${STATE.agentJobId}`);
+    const data = await res.json();
+
+    if (data.status === 'idle') { stopAgent(); return; }
+
+    // Sync queue display from server
+    if (data.tasks?.length) renderAgentQueue(data.tasks);
+
+    // Sync log lines
+    if (data.log?.length) {
+      const el = $('agent-activity');
+      el.innerHTML = data.log.map(l =>
+        `<div class="log-line"><span class="mono text-xs" style="color:var(--text-3)">${esc(l)}</span></div>`
+      ).join('');
+      el.scrollTop = el.scrollHeight;
+    }
+
+    // Show opened PRs
+    if (data.prs?.length) {
+      data.prs.forEach(pr => {
+        const existingId = `pr-badge-${pr.number}`;
+        if (!document.getElementById(existingId)) {
+          $('agent-activity').insertAdjacentHTML('beforeend',
+            `<div id="${existingId}" class="pr-result" style="margin:4px 0">
+              🔀 <a href="${pr.url}" target="_blank" rel="noopener">${pr.type === 'feature' ? '✨' : '🔧'} PR #${pr.number}</a>
+              <span class="text-muted text-xs">${esc(pr.task.slice(0,40))}</span>
+            </div>`
+          );
+        }
+      });
+    }
+
+    // Agent finished on server
+    if (data.status === 'complete' || data.status === 'stopped' || data.status === 'error') {
+      clearInterval(STATE.agentPollInterval);
+      clearInterval(STATE.agentTimerInterval);
+      STATE.agentRunning = false;
+      $('agent-start-btn').style.display = 'block';
+      $('agent-stop-btn').style.display  = 'none';
+      $('agent-dot').className = 'agent-status-dot';
+      $('agent-timer').className = 'timer-display';
+      $('agent-status-text').textContent =
+        data.status === 'complete' ? `Done — ${data.prs?.length||0} PR(s) opened` : 'Agent stopped';
+    }
+  } catch(e) { console.error('[POLL]', e); }
+}
+
+function renderAgentQueue(tasks) {
+  const icons  = { pending:'○', running:'◉', done:'●', error:'✗' };
+  const colors = { pending:'var(--text-3)', running:'var(--blue)', done:'var(--emerald)', error:'var(--red)' };
+  const list   = tasks || STATE.agentQueue || [];
+  $('agent-queue-display').innerHTML = list.length
+    ? list.map(t => `
+        <div class="queue-item ${t.status}">
+          <span class="q-status" style="color:${colors[t.status]||colors.pending}">${icons[t.status]||'○'}</span>
+          <span class="q-text">${esc(t.text)}</span>
+          ${t.prUrl ? `<a href="${t.prUrl}" target="_blank" rel="noopener" style="color:var(--emerald);font-size:10px;margin-left:auto">PR #${t.prNumber}</a>` : ''}
+        </div>`).join('')
+    : '<div class="empty-state" style="padding:16px"><div>No tasks queued.</div></div>';
+}
+
+/* ══════════════════════════════════════════════════════
+   BROWSER PUSH NOTIFICATIONS
+══════════════════════════════════════════════════════ */
+async function enablePush() {
+  const btn = $('push-btn');
+  const status = $('push-status');
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    status.textContent = 'Push not supported in this browser.';
+    return;
+  }
+
+  try {
+    // Get VAPID public key from server
+    const keyRes = await apiFetch('/api/push/vapid-public-key');
+    const keyData = await keyRes.json();
+    if (keyData.error) { status.textContent = 'Push not configured on server yet.'; return; }
+
+    // Register service worker
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+
+    // Request permission
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') { status.textContent = 'Notification permission denied.'; return; }
+
+    // Subscribe
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyData.key),
+    });
+
+    STATE.pushSubscription = sub.toJSON();
+    btn.textContent = '🔔 Notifications enabled';
+    btn.disabled    = true;
+    status.textContent = 'You will get a notification when the agent finishes.';
+    log('PUSH','tag-ok','Push notifications enabled');
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    log('PUSH','tag-err', e.message);
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw     = window.atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+/* ══════════════════════════════════════════════════════
+   GITHUB ACTION GENERATOR
+══════════════════════════════════════════════════════ */
+async function generateGitHubAction() {
+  if (!STATE.repoOwner) { toast('Select a repo first'); return; }
+  if (!STATE.token)     { toast('Login required'); return; }
+
+  log('ACTION','tag-info',`Generating GitHub Action for ${STATE.repoOwner}/${STATE.repoName}…`);
+
+  try {
+    const res  = await apiFetch('/api/generate-action', {
+      method: 'POST',
+      body: JSON.stringify({
+        repoOwner: STATE.repoOwner, repoName: STATE.repoName,
+        branch: STATE.repoBranch || 'main', token: STATE.token,
+      }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    log('ACTION','tag-ok',`GitHub Action PR #${data.number} opened: ${data.url}`);
+    toast(`Action PR #${data.number} opened!`);
+    $('report-content').insertAdjacentHTML('beforeend',
+      `<div class="pr-result">⚡ <a href="${data.url}" target="_blank" rel="noopener">View GitHub Action PR #${data.number}</a>
+       <span class="text-muted text-xs">— auto-scan on every push</span></div>`
+    );
+    showPanel('report');
+  } catch(e) {
+    log('ACTION','tag-err', e.message); toast('Action generation failed: '+e.message);
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   TIER 3: CUSTOM RULES
+══════════════════════════════════════════════════════ */
+function showRuleForm() { $('rule-form').style.display = 'block'; }
+
+async function loadRules() {
+  try {
+    const res  = await apiFetch('/api/rules');
+    const data = await res.json();
+    const list = $('rules-list');
+    if (!data.rules?.length) {
+      list.innerHTML = '<div class="empty-state"><div class="e-icon">◈</div><div>No custom rules yet. Create one above.</div></div>';
+      return;
+    }
+    list.innerHTML = data.rules.map(r => `
+      <div class="issue-card" style="border-left:3px solid var(--${r.severity==='HIGH'?'red':r.severity==='MED'?'amber':'blue'})">
+        <div class="issue-meta">
+          <span class="sev sev-${r.severity.toLowerCase()}">${r.severity}</span>
+          <span style="font-weight:600;font-size:12px">${esc(r.name)}</span>
+          ${r.disabled ? '<span class="badge" style="opacity:0.5">disabled</span>' : ''}
+          ${r.marketplace ? '<span class="badge" style="background:var(--purple-dim);color:var(--purple);border-color:var(--purple)">marketplace</span>' : ''}
+          <span style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="toggleRule('${r.id}','${r.disabled}')">${r.disabled ? 'Enable' : 'Disable'}</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteRule('${r.id}')">Delete</button>
+          </span>
+        </div>
+        <div class="issue-desc">${esc(r.description)}</div>
+        <div class="issue-fix mono" style="margin-top:4px">${esc(r.pattern)} ${r.fileTypes?.length ? '· '+r.fileTypes.join(',') : '· all files'}</div>
+        ${r.fix ? `<div class="issue-fix" style="margin-top:4px">💡 ${esc(r.fix)}</div>` : ''}
+      </div>`).join('');
+  } catch(e) { log('RULES','tag-err',e.message); }
+}
+
+async function saveRule() {
+  const name    = $('rule-name').value.trim();
+  const pattern = $('rule-pattern').value.trim();
+  if (!name || !pattern) { toast('Name and pattern required'); return; }
+  try {
+    const res  = await apiFetch('/api/rules', {
+      method: 'POST',
+      body: JSON.stringify({
+        name, pattern,
+        description: $('rule-description').value.trim(),
+        fix:         $('rule-fix').value.trim(),
+        severity:    $('rule-severity').value,
+        fileTypes:   $('rule-filetypes').value.split(',').map(s=>s.trim()).filter(Boolean),
+      }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    toast('Rule saved');
+    $('rule-form').style.display = 'none';
+    ['rule-name','rule-pattern','rule-description','rule-fix','rule-filetypes'].forEach(id => $(id).value = '');
+    loadRules();
+  } catch(e) { toast('Error: '+e.message); }
+}
+
+async function deleteRule(id) {
+  await apiFetch(`/api/rules/${id}`, { method: 'DELETE' });
+  loadRules();
+}
+
+async function toggleRule(id, currentlyDisabled) {
+  await apiFetch(`/api/rules/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ disabled: currentlyDisabled === 'true' ? false : true }),
+  });
+  loadRules();
+}
+
+async function loadUsage() {
+  try {
+    const res  = await apiFetch('/api/usage');
+    const data = await res.json();
+    const isPro = data.plan === 'pro';
+    const rem   = data.remaining === Infinity ? '∞' : data.remaining;
+    const lim   = data.limit    === Infinity ? '∞' : data.limit;
+    const planColor = isPro ? 'var(--purple)' : data.plan === 'free' ? 'var(--blue)' : 'var(--text-3)';
+    const planBg    = isPro ? 'var(--purple-dim)' : 'var(--blue-dim)';
+    const planBorder= isPro ? 'var(--purple)' : 'var(--blue)';
+
+    $('usage-display').innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;
+          background:${planBg};color:${planColor};border:1px solid ${planBorder}">
+          ${data.plan.toUpperCase()}${data.isWhitelisted ? ' (whitelisted)' : ''}
+        </span>
+        <span class="text-muted">Scans this month:</span>
+        <span style="color:var(--${data.remaining===0?'red':'emerald'});font-weight:700">${data.count} / ${lim}</span>
+        <span class="text-muted">·</span>
+        <span style="color:var(--emerald)">${rem} remaining</span>
+        ${!isPro ? `<button class="btn btn-sm" style="margin-left:auto;border-color:var(--purple);color:var(--purple)" onclick="upgradeToPro()">⚡ Upgrade to Pro</button>` : ''}
+      </div>`;
+  } catch(e) { $('usage-display').textContent = 'Could not load usage.'; }
+}
+
+async function upgradeToPro() {
+  if (!STATE.token) { toast('Login with GitHub first'); return; }
+  try {
+    const res  = await apiFetch('/api/stripe/create-checkout', { method: 'POST', body: JSON.stringify({}) });
+    const data = await res.json();
+    if (data.error) {
+      // Stripe not configured yet — show setup instructions
+      toast(data.error, 5000);
+      log('PRO','tag-warn', data.error);
+      return;
+    }
+    if (data.url) window.open(data.url, '_blank');
+  } catch(e) { toast('Upgrade failed: ' + e.message); }
+}
+
+/* ══════════════════════════════════════════════════════
+   TIER 3: SCHEDULES
+══════════════════════════════════════════════════════ */
+function showScheduleForm() { $('schedule-form').style.display = 'block'; }
+
+async function loadSchedules() {
+  try {
+    const res  = await apiFetch('/api/schedules');
+    const data = await res.json();
+    const list = $('schedules-list');
+    if (!data.schedules?.length) {
+      list.innerHTML = '<div class="empty-state"><div class="e-icon">⏰</div><div>No schedules yet.</div></div>';
+      return;
+    }
+    list.innerHTML = data.schedules.map(s => `
+      <div class="issue-card" style="border-left:3px solid var(--${s.disabled?'border-hi':'blue'})" >
+        <div class="issue-meta">
+          <span class="mono text-xs" style="color:var(--blue)">${esc(s.cron)}</span>
+          <span style="font-weight:600;font-size:12px;margin-left:8px">${esc(s.name)}</span>
+          ${s.disabled ? '<span class="badge" style="opacity:0.5">paused</span>' : '<span class="badge" style="background:var(--emerald-dim);color:var(--emerald);border-color:var(--emerald)">active</span>'}
+          <span style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="toggleSchedule('${s.id}')">${s.disabled ? 'Resume' : 'Pause'}</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteSchedule('${s.id}')">Delete</button>
+          </span>
+        </div>
+        <div class="issue-desc mono" style="color:var(--text-2)">${esc(s.repoOwner)}/${esc(s.repoName)} · branch: ${esc(s.branch)}</div>
+        <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--text-3)">
+          <span>Runs: ${s.runCount||0}</span>
+          ${s.lastRunAt ? `<span>Last: ${new Date(s.lastRunAt).toLocaleString()}</span>` : ''}
+          ${s.lastRunStatus ? `<span style="color:var(--${s.lastRunStatus==='success'?'emerald':s.lastRunStatus==='error'?'red':'text-3'})">${esc(s.lastRunStatus)}${s.lastPrUrl ? ` — <a href="${s.lastPrUrl}" target="_blank" style="color:var(--emerald)">PR</a>` : ''}</span>` : ''}
+        </div>
+      </div>`).join('');
+  } catch(e) { log('SCHED','tag-err',e.message); }
+}
+
+async function saveSchedule() {
+  const name  = $('sched-name').value.trim();
+  const cron  = $('sched-cron').value.trim();
+  const url   = $('sched-repo-url').value.trim();
+  const token = $('sched-token').value.trim();
+  if (!name||!cron||!url||!token) { toast('All fields required'); return; }
+  const m = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
+  if (!m) { toast('Invalid GitHub URL'); return; }
+  try {
+    const res = await apiFetch('/api/schedules', {
+      method: 'POST',
+      body: JSON.stringify({ name, cron, repoUrl: url, repoOwner: m[1], repoName: m[2], branch:'main', token }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    toast('Schedule saved — runs automatically');
+    $('schedule-form').style.display = 'none';
+    ['sched-name','sched-cron','sched-repo-url','sched-token'].forEach(id => $(id).value='');
+    loadSchedules();
+  } catch(e) { toast('Error: '+e.message); }
+}
+
+async function deleteSchedule(id) {
+  await apiFetch(`/api/schedules/${id}`, { method: 'DELETE' });
+  loadSchedules();
+}
+
+async function toggleSchedule(id) {
+  await apiFetch(`/api/schedules/${id}/toggle`, { method: 'POST' });
+  loadSchedules();
+}
+
+/* ══════════════════════════════════════════════════════
+   TIER 3: TEST GENERATOR
+══════════════════════════════════════════════════════ */
+function loadTestFiles() {
+  const container = $('test-file-checkboxes');
+  const results   = STATE.scanResults;
+  if (!results?.length) {
+    container.innerHTML = '<div class="text-muted text-xs">Scan a repo first to load files.</div>';
+    return;
+  }
+  container.innerHTML = results.map((r,i) => `
+    <label class="feature-file-check">
+      <input type="checkbox" value="${i}" checked/>
+      ${esc(r.file)}
+    </label>`).join('');
+}
+
+async function generateTests() {
+  if (!STATE.scanResults?.length) { toast('Scan a repo first'); return; }
+  if (!STATE.token) { toast('Login required'); return; }
+
+  const selected = [...document.querySelectorAll('#test-file-checkboxes input:checked')]
+    .map(cb => STATE.scanResults[parseInt(cb.value)])
+    .filter(Boolean)
+    .map(r => ({ file: r.file, code: r.code }));
+
+  if (!selected.length) { toast('Select at least one file'); return; }
+
+  log('TEST','tag-info',`Generating tests for ${selected.length} file(s)…`);
+  $('test-results').innerHTML = '<div class="empty-state"><div class="e-icon">⟳</div><div>Generating tests…</div></div>';
+
+  try {
+    const res  = await apiFetch('/api/generate-tests', {
+      method: 'POST',
+      body: JSON.stringify({
+        files: selected,
+        repoOwner: STATE.repoOwner, repoName: STATE.repoName,
+        branch: STATE.repoBranch||'main', token: STATE.token,
+      }),
+    });
+    const data = await res.json();
+    if (!data.results?.length) throw new Error('No tests generated');
+
+    log('TEST','tag-ok',`Generated ${data.results.length} test file(s)`);
+    let html = '';
+    if (data.prUrl) {
+      html += `<div class="pr-result" style="margin-bottom:12px">🧪 <a href="${data.prUrl}" target="_blank" rel="noopener">View test PR #${data.prNumber}</a></div>`;
+    }
+    html += data.results.map(r => `
+      <div class="issue-card" style="border-left:3px solid var(--blue)">
+        <div class="issue-meta">
+          <span class="badge" style="background:var(--blue-dim);color:var(--blue);border-color:var(--blue)">${esc(r.framework)}</span>
+          <span class="mono text-xs">${esc(r.testFile)}</span>
+        </div>
+        <details style="margin-top:8px">
+          <summary class="text-xs text-muted" style="cursor:pointer">Preview test code</summary>
+          <pre style="background:var(--bg0);padding:8px;border-radius:4px;font-size:10px;color:var(--text-1);white-space:pre-wrap;max-height:200px;overflow:auto;margin-top:6px">${esc(r.testCode.slice(0,600))}${r.testCode.length>600?'\n…truncated':''}</pre>
+        </details>
+      </div>`).join('');
+    $('test-results').innerHTML = html;
+    toast(`${data.results.length} test file(s) generated!`);
+  } catch(e) {
+    $('test-results').innerHTML = `<div class="empty-state"><div>Failed: ${esc(e.message)}</div></div>`;
+    log('TEST','tag-err',e.message);
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   TIER 4: MARKETPLACE
+══════════════════════════════════════════════════════ */
+async function loadMarketplace() {
+  const search   = $('market-search')?.value || '';
+  const category = $('market-category')?.value || '';
+  const list     = $('marketplace-list');
+  list.innerHTML = '<div class="empty-state"><div class="e-icon">⟳</div><div>Loading…</div></div>';
+  try {
+    const url = `/api/marketplace?search=${encodeURIComponent(search)}&category=${encodeURIComponent(category)}`;
+    const res  = await apiFetch(url);
+    const data = await res.json();
+    if (!data.packs?.length) {
+      list.innerHTML = '<div class="empty-state"><div class="e-icon">◈</div><div>No packs found. Be the first to publish!</div></div>';
+      return;
+    }
+    list.innerHTML = data.packs.map(p => `
+      <div class="issue-card" style="border-left:3px solid var(--purple)">
+        <div class="issue-meta">
+          <span class="badge" style="background:var(--purple-dim);color:var(--purple);border-color:var(--purple)">${esc(p.category)}</span>
+          <span style="font-weight:600;font-size:12px">${esc(p.name)}</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
+            <span class="text-xs text-muted">${p.rules?.length||0} rules · ${p.installs||0} installs · ⭐ ${(p.rating||0).toFixed(1)}</span>
+            <button class="btn btn-sm btn-primary" onclick="installPack('${p.id}')">Install</button>
+          </span>
+        </div>
+        <div class="issue-desc">${esc(p.description||'')}</div>
+        <div class="text-xs text-muted" style="margin-top:4px">by @${esc(p.author)} · ${new Date(p.publishedAt).toLocaleDateString()}</div>
+      </div>`).join('');
+  } catch(e) { list.innerHTML = `<div class="empty-state"><div>Failed: ${esc(e.message)}</div></div>`; }
+}
+
+async function installPack(id) {
+  try {
+    const res  = await apiFetch(`/api/marketplace/${id}/install`, { method: 'POST' });
+    const data = await res.json();
+    toast(`Installed ${data.installed} rule(s) from pack`);
+    loadMarketplace();
+  } catch(e) { toast('Install failed: '+e.message); }
+}
+
+async function publishRulePack() {
+  if (!STATE.token) { toast('Login required to publish'); return; }
+  try {
+    const rulesRes = await apiFetch('/api/rules');
+    const { rules } = await rulesRes.json();
+    if (!rules?.length) { toast('Create some custom rules first'); return; }
+    const name = prompt('Pack name:');
+    if (!name) return;
+    const description = prompt('Pack description:') || '';
+    const category    = prompt('Category (security/performance/style/general):') || 'general';
+    const res  = await apiFetch('/api/marketplace/publish', {
+      method: 'POST',
+      body: JSON.stringify({ name, description, category, rules }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    toast('Pack published to marketplace!');
+    loadMarketplace();
+  } catch(e) { toast('Publish failed: '+e.message); }
+}
+
+/* ══════════════════════════════════════════════════════
+   GOD MODE
+══════════════════════════════════════════════════════ */
+function syncGodRepoSelect() {
+  const src  = $('repo-select');
+  const dest = $('god-dep-repo');
+  if (dest && src) dest.innerHTML = src.innerHTML;
+}
+
+async function godScanUrl() {
+  const url  = $('god-url').value.trim();
+  if (!url) { toast('Enter a URL to scan'); return; }
+  const deep = $('god-deep').checked;
+
+  log('GOD','tag-agent',`Scanning live URL: ${url}${deep ? ' (deep)' : ''}…`);
+  showPanel('godmode');
+  $('god-results').innerHTML = '<div class="empty-state"><div class="e-icon" style="color:var(--amber)">⟳</div><div>Fetching and analysing…</div></div>';
+
+  try {
+    const res  = await apiFetch('/api/godmode/scan-url', {
+      method: 'POST', body: JSON.stringify({ url, deepScan: deep }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    $('s-files').textContent  = data.results.length;
+    $('s-issues').textContent = data.totalIssues;
+    const high = data.results.reduce((s,r) => s + r.issues.filter(i=>i.severity==='HIGH').length, 0);
+    const med  = data.results.reduce((s,r) => s + r.issues.filter(i=>i.severity==='MED').length, 0);
+    const low  = data.results.reduce((s,r) => s + r.issues.filter(i=>i.severity==='LOW').length, 0);
+    $('s-high').textContent = high;
+    $('s-med').textContent  = med;
+    $('s-low').textContent  = low;
+    $('s-time').textContent = new Date().toLocaleTimeString();
+
+    let html = `<div class="summary-row">
+      <div class="summary-card"><div class="s-label">Pages scanned</div><div class="s-val" style="color:var(--amber)">${data.results.length}</div></div>
+      <div class="summary-card"><div class="s-label">Total issues</div><div class="s-val" style="color:var(--red)">${data.totalIssues}</div></div>
+      <div class="summary-card"><div class="s-label">HIGH</div><div class="s-val" style="color:var(--red)">${high}</div></div>
+    </div>`;
+
+    for (const page of data.results) {
+      html += `<div class="file-heading"><span style="opacity:0.5">⬡</span>${esc(page.url)}<span class="badge" style="margin-left:auto">${page.issues.length}</span></div>`;
+      if (page.meta) {
+        html += `<div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono);margin-bottom:8px;padding:6px 10px;background:var(--bg1);border-radius:4px">
+          ${page.meta.title ? `Title: ${esc(page.meta.title)} &nbsp;·&nbsp;` : ''}
+          Words: ${page.meta.wordCount} &nbsp;·&nbsp;
+          Links: ${page.meta.links} &nbsp;·&nbsp;
+          Images: ${page.meta.images} &nbsp;·&nbsp;
+          Scripts: ${page.meta.scripts}
+        </div>`;
+      }
+      for (const issue of page.issues) {
+        const sev   = (issue.severity||'MED').toLowerCase();
+        const color = sev==='high'?'var(--red)':sev==='med'?'var(--amber)':'var(--blue)';
+        html += `<div class="issue-card ${sev}" style="border-left:3px solid ${color}">
+          <div class="issue-meta"><span class="sev sev-${sev}">${(issue.severity||'MED').toUpperCase()}</span></div>
+          <div class="issue-desc">${esc(issue.description)}</div>
+          ${issue.fix ? `<div class="issue-fix">💡 ${esc(issue.fix)}</div>` : ''}
+        </div>`;
+      }
+    }
+
+    $('god-results').innerHTML = html;
+    log('GOD','tag-ok',`URL scan complete — ${data.totalIssues} issues across ${data.results.length} page(s)`);
+    toast(`URL scan done — ${data.totalIssues} issues found`);
+  } catch(e) {
+    $('god-results').innerHTML = `<div class="empty-state"><div>${esc(e.message)}</div></div>`;
+    log('GOD','tag-err', e.message); toast('Scan failed: '+e.message);
+  }
+}
+
+async function godScanDeps() {
+  const val = $('god-dep-repo').value;
+  if (!val) { toast('Select a repo first'); return; }
+  if (!STATE.token) { toast('Login required'); return; }
+  const [owner, name] = val.split('/');
+
+  log('GOD','tag-agent',`Scanning dependencies for ${owner}/${name}…`);
+  showPanel('godmode');
+  $('god-results').innerHTML = '<div class="empty-state"><div class="e-icon" style="color:var(--amber)">⟳</div><div>Checking npm registry…</div></div>';
+
+  try {
+    const res  = await apiFetch('/api/godmode/scan-deps', {
+      method: 'POST', body: JSON.stringify({ repoOwner: owner, repoName: name, token: STATE.token }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    let html = `<div class="summary-row">
+      <div class="summary-card"><div class="s-label">Total deps</div><div class="s-val">${data.totalDeps}</div></div>
+      <div class="summary-card"><div class="s-label">Checked</div><div class="s-val">${data.checked}</div></div>
+      <div class="summary-card"><div class="s-label">Vulnerabilities</div><div class="s-val" style="color:var(--${data.vulns.length?'red':'emerald'})">${data.vulns.length}</div></div>
+    </div>`;
+
+    if (!data.vulns.length) {
+      html += `<div class="empty-state" style="padding:30px"><div style="color:var(--emerald)">All checked dependencies look healthy.</div></div>`;
+    } else {
+      html += `<div class="file-heading"><span style="opacity:0.5">⬡</span>Dependency issues</div>`;
+      for (const v of data.vulns) {
+        const sev = (v.severity||'MED').toLowerCase();
+        const color = sev==='high'?'var(--red)':sev==='med'?'var(--amber)':'var(--blue)';
+        html += `<div class="issue-card ${sev}" style="border-left:3px solid ${color}">
+          <div class="issue-meta">
+            <span class="sev sev-${sev}">${(v.severity||'MED').toUpperCase()}</span>
+            <span class="mono" style="font-size:12px;font-weight:600">${esc(v.package)}</span>
+            ${v.currentRange ? `<span class="text-muted text-xs">${esc(v.currentRange)}</span>` : ''}
+            ${v.latestVersion ? `<span class="text-xs" style="color:var(--emerald);margin-left:auto">latest: ${esc(v.latestVersion)}</span>` : ''}
+          </div>
+          <div class="issue-desc">${esc(v.description||v.issue)}</div>
+          ${v.fix ? `<div class="issue-fix">💡 ${esc(v.fix)}</div>` : ''}
+        </div>`;
+      }
+    }
+    $('god-results').innerHTML = html;
+    log('GOD','tag-ok',`Dep scan done — ${data.vulns.length} issue(s) in ${data.checked} packages checked`);
+  } catch(e) {
+    $('god-results').innerHTML = `<div class="empty-state"><div>${esc(e.message)}</div></div>`;
+    log('GOD','tag-err',e.message); toast(e.message);
+  }
+}
+
+async function godMultiRepo() {
+  const raw = $('god-multi-repos').value.trim();
+  if (!raw) { toast('Enter at least one repo URL'); return; }
+  if (!STATE.token) { toast('Login required'); return; }
+
+  const lines = raw.split('
+').map(l => l.trim()).filter(Boolean);
+  const repos  = lines.map(url => {
+    const m = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
+    return m ? { repoUrl: `https://github.com/${m[1]}/${m[2]}.git`, repoOwner: m[1], repoName: m[2] } : null;
+  }).filter(Boolean);
+
+  if (!repos.length) { toast('No valid GitHub URLs found'); return; }
+  log('GOD','tag-agent',`Starting multi-repo sweep of ${repos.length} repo(s)…`);
+  showPanel('godmode');
+  $('god-results').innerHTML = `<div class="empty-state"><div class="e-icon" style="color:var(--amber)">⟳</div><div>Sweeping ${repos.length} repo(s)…</div></div>`;
+
+  try {
+    const res  = await apiFetch('/api/godmode/multi-repo', {
+      method: 'POST', body: JSON.stringify({ repos, token: STATE.token }),
+    });
+    const data = await res.json();
+
+    let html = `<div class="summary-row">
+      <div class="summary-card"><div class="s-label">Repos swept</div><div class="s-val" style="color:var(--amber)">${data.totalRepos}</div></div>
+      <div class="summary-card"><div class="s-label">Total issues</div><div class="s-val" style="color:var(--red)">${data.totalIssues}</div></div>
+    </div>`;
+
+    for (const repo of data.repos) {
+      html += `<div class="file-heading">
+        <span style="opacity:0.5">⬡</span>${esc(repo.repoOwner)}/${esc(repo.repoName)}
+        ${repo.success ? `<span class="badge" style="margin-left:auto">${repo.issues} issues · ${repo.files} files</span>` : `<span style="color:var(--red);font-size:11px;margin-left:auto">${esc(repo.error)}</span>`}
+      </div>`;
+      if (repo.success && repo.results) {
+        STATE.scanResults = repo.results;
+        STATE.repoOwner   = repo.repoOwner;
+        STATE.repoName    = repo.repoName;
+        STATE.repoUrl     = repo.repoUrl;
+      }
+    }
+    html += `<div style="margin-top:12px;padding:10px;background:var(--bg1);border:1px solid var(--amber);border-radius:var(--radius);font-size:11px;color:var(--amber);font-family:var(--font-mono)">
+      Last repo loaded into Fix Mode. Switch to Fix tab to apply fixes and create PRs.
+    </div>`;
+    $('god-results').innerHTML = html;
+    log('GOD','tag-ok',`Multi-repo sweep complete — ${data.totalIssues} issues across ${data.totalRepos} repos`);
+  } catch(e) {
+    $('god-results').innerHTML = `<div class="empty-state"><div>${esc(e.message)}</div></div>`;
+    log('GOD','tag-err',e.message); toast(e.message);
+  }
+}
+
+async function godAutoMerge() {
+  const prNum = $('god-merge-pr').value.trim();
+  if (!prNum) { toast('Enter a PR number'); return; }
+  if (!STATE.repoOwner) { toast('Select a repo in Fix mode first'); return; }
+  if (!STATE.token) { toast('Login required'); return; }
+
+  log('GOD','tag-agent',`Auto-merging PR #${prNum} on ${STATE.repoOwner}/${STATE.repoName}…`);
+  try {
+    const res  = await apiFetch('/api/godmode/auto-merge', {
+      method: 'POST',
+      body: JSON.stringify({ repoOwner:STATE.repoOwner, repoName:STATE.repoName, prNumber:parseInt(prNum), token:STATE.token }),
+    });
+    const data = await res.json();
+    if (data.merged) {
+      log('GOD','tag-ok',`PR #${prNum} merged! SHA: ${data.sha}`);
+      toast(`PR #${prNum} auto-merged successfully`);
+      $('god-results').innerHTML = `<div class="pr-result" style="border-color:var(--amber)">
+        Merged PR #${prNum} · SHA: <span class="mono text-xs">${data.sha?.slice(0,8)}</span>
+      </div>`;
+    } else {
+      log('GOD','tag-warn', data.reason);
+      toast('Not merged: ' + data.reason);
+    }
+  } catch(e) { log('GOD','tag-err',e.message); toast(e.message); }
+}
+
+/* ══════════════════════════════════════════════════════
+   VOICE ACTIVATION
+══════════════════════════════════════════════════════ */
+let voiceActive = false;
+let recognition  = null;
+
+function toggleVoice() {
+  if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
+    toast('Voice not supported in this browser. Try Chrome.');
+    return;
+  }
+  if (voiceActive) {
+    recognition?.stop();
+    voiceActive = false;
+    $('voice-btn').textContent = 'Start listening';
+    $('voice-btn').style.color = 'var(--purple)';
+    $('voice-status').textContent = 'Stopped.';
+    return;
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition  = new SR();
+  recognition.continuous    = true;
+  recognition.interimResults = true;
+  recognition.lang          = 'en-US';
+
+  recognition.onstart = () => {
+    voiceActive = true;
+    $('voice-btn').textContent = 'Listening… (click to stop)';
+    $('voice-btn').style.color = 'var(--emerald)';
+    $('voice-status').textContent = 'Say a command — e.g. "scan my repo" or "fix all issues"';
+    log('VOICE','tag-agent','Voice activation listening…');
+  };
+
+  recognition.onresult = (e) => {
+    const transcript = Array.from(e.results)
+      .map(r => r[0].transcript).join(' ').toLowerCase().trim();
+    $('voice-status').textContent = `Heard: "${transcript}"`;
+
+    if (e.results[e.results.length - 1].isFinal) {
+      processVoiceCommand(transcript);
+    }
+  };
+
+  recognition.onerror = (e) => {
+    $('voice-status').textContent = 'Error: ' + e.error;
+    voiceActive = false;
+  };
+
+  recognition.onend = () => {
+    if (voiceActive) recognition.start(); // keep listening
+  };
+
+  recognition.start();
+}
+
+function processVoiceCommand(text) {
+  log('VOICE','tag-agent',`Command: "${text}"`);
+
+  if (/scan.*(repo|code|project)/i.test(text)) {
+    if (STATE.repoUrl) { scanLoggedIn(); toast('Voice: scanning repo…'); }
+    else toast('Select a repo first');
+  } else if (/fix.*(all|issue|bug)/i.test(text)) {
+    generateFixes(); toast('Voice: generating fixes…');
+  } else if (/create.*(pr|pull request)/i.test(text)) {
+    createPR(); toast('Voice: creating PR…');
+  } else if (/switch.*(fix|code)/i.test(text)) {
+    switchMode('fix'); toast('Voice: switched to Fix mode');
+  } else if (/switch.*(feature)/i.test(text)) {
+    switchMode('feature'); toast('Voice: switched to Feature mode');
+  } else if (/switch.*(agent)/i.test(text)) {
+    switchMode('agent'); toast('Voice: switched to Agent mode');
+  } else if (/god.*(mode|scan)/i.test(text)) {
+    switchMode('god'); showPanel('godmode'); toast('Voice: God Mode activated');
+  } else if (/start.*(agent|mission)/i.test(text)) {
+    startAgent(); toast('Voice: starting agent…');
+  } else if (/stop.*(agent)/i.test(text)) {
+    stopAgent(); toast('Voice: agent stopped');
+  } else if (/show.*(history)/i.test(text)) {
+    showPanel('history'); toast('Voice: showing history');
+  } else if (/explain.*(code|file)/i.test(text)) {
+    if (STATE.currentFile !== null) godExplainFile();
+    else toast('Select a file in the editor first');
+  } else {
+    // Pass unknown commands directly as agent tasks
+    if (STATE.agentJobId) {
+      toast(`Voice: queuing task — "${text}"`);
+    } else {
+      $('agent-tasks').value += (($('agent-tasks').value ? '
+' : '') + text);
+      switchMode('agent');
+      toast(`Voice: task added — "${text}"`);
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   AI CODE EXPLAINER
+══════════════════════════════════════════════════════ */
+async function godExplainFile() {
+  if (STATE.currentFile === null) { toast('Select a file in the editor first'); return; }
+  const results = STATE.fixes || STATE.scanResults;
+  if (!results) { toast('Scan a repo first'); return; }
+  const item = results[STATE.currentFile];
+  if (!item) return;
+
+  log('GOD','tag-agent',`Explaining ${item.file}…`);
+  showPanel('godmode');
+  $('god-results').innerHTML = `<div class="empty-state"><div class="e-icon" style="color:var(--amber)">⟳</div><div>AI is reading ${esc(item.file)}…</div></div>`;
+
+  try {
+    const res  = await apiFetch('/api/godmode/explain', {
+      method: 'POST',
+      body: JSON.stringify({ code: item.code || item.newCode, filename: item.file }),
+    });
+    const data = await res.json();
+    $('god-results').innerHTML = `
+      <div class="file-heading"><span style="opacity:0.5">⬡</span>${esc(item.file)}</div>
+      <div style="background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;line-height:1.8;white-space:pre-wrap">${esc(data.explanation)}</div>`;
+    log('GOD','tag-ok',`Explanation ready for ${item.file}`);
+  } catch(e) { log('GOD','tag-err',e.message); toast(e.message); }
+}
+
+/* ══════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════ */
+async function installPWA() {
+  if (!window._pwaPrompt) { toast('Install not available — open in Chrome on mobile'); return; }
+  window._pwaPrompt.prompt();
+  const result = await window._pwaPrompt.userChoice;
+  if (result.outcome === 'accepted') {
+    toast('VisCarMa installed as app!');
+    $('pwa-install-btn').style.display = 'none';
+    log('PWA','tag-ok','App installed to home screen');
+  }
+  window._pwaPrompt = null;
+}
+
+(function init() {
+  setTimeout(checkAuth, 150);
+
+  // PWA install prompt
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    window._pwaPrompt = e;
+    $('pwa-install-btn').style.display = 'inline-flex';
+  });
+
+  // Handle ?mode= shortcut from PWA shortcuts
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get('mode');
+  if (mode && ['fix','feature','agent','god'].includes(mode)) {
+    setTimeout(() => switchMode(mode), 300);
+  }
+
+  // Handle Stripe redirect back after payment
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('pro') === 'success') {
+    toast('🎉 Welcome to Pro! Unlimited scans activated.', 5000);
+    log('PRO','tag-ok','Pro plan activated via Stripe.');
+    history.replaceState({}, '', '/'); // clean URL
+    // Switch to Rules tab to show updated plan
+    setTimeout(() => { switchMode('fix'); showPanel('rules'); }, 500);
+  }
+  if (params.get('pro') === 'cancelled') {
+    toast('Upgrade cancelled — you can upgrade anytime from the Rules tab.');
+    history.replaceState({}, '', '/');
+  }
+})();
+</script>
+<!-- ── FOOTER ── -->
+<footer style="
+  grid-column:1/-1;
+  background:var(--bg1);
+  border-top:1px solid var(--border);
+  padding:10px 20px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:10px;
+  font-family:var(--font-mono);
+  font-size:11px;
+  color:var(--text-3);
+">
+  <div style="display:flex;align-items:center;gap:6px">
+    <img src="/viscarma_logo.png" alt="VisCarMa" style="width:16px;height:16px;border-radius:3px;opacity:0.7"/>
+    <span>VisCarMa v3.0</span>
+    <span style="opacity:0.4">·</span>
+    <span>Built by <a href="https://github.com/suryasticsai" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">@suryasticsai</a></span>
+    <span style="opacity:0.4">·</span>
+    <span style="opacity:0.5">The Divine Code Architect</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px">
+    <!-- GitHub -->
+    <a href="https://github.com/suryasticsai" target="_blank" rel="noopener" title="GitHub" style="color:var(--text-2);opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+    </a>
+    <!-- LinkedIn -->
+    <a href="https://linkedin.com/in/suryasticsai" target="_blank" rel="noopener" title="LinkedIn" style="color:var(--text-2);opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+    </a>
+    <!-- Instagram -->
+    <a href="https://instagram.com/suryasticsai" target="_blank" rel="noopener" title="Instagram" style="color:var(--text-2);opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+    </a>
+    <!-- Twitter/X -->
+    <a href="https://twitter.com/suryasticsaii" target="_blank" rel="noopener" title="X (Twitter)" style="color:var(--text-2);opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.737-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+    </a>
+    <!-- Hugging Face -->
+    <a href="https://huggingface.co/Suryasticsai" target="_blank" rel="noopener" title="Hugging Face" style="color:var(--text-2);opacity:0.7;transition:opacity 0.2s;font-size:15px;text-decoration:none;line-height:1" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">🤗</a>
+    <!-- Gmail -->
+    <a href="mailto:suryasticsai@gmail.com" title="Email" style="color:var(--text-2);opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 010 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/></svg>
+    </a>
+  </div>
+</footer>
+
+<!-- ── ABOUT MODAL ── -->
+<div id="about-overlay" style="
+  display:none;
+  position:fixed;inset:0;
+  background:rgba(0,0,0,0.7);
+  z-index:1000;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+" onclick="if(event.target===this)hideAbout()">
+  <div style="
+    background:var(--bg1);
+    border:1px solid var(--border-hi);
+    border-radius:12px;
+    max-width:560px;
+    width:100%;
+    max-height:85vh;
+    overflow-y:auto;
+    font-family:var(--font-mono);
+    font-size:12px;
+  ">
+    <!-- Modal header -->
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border)">
+      <img src="/viscarma_logo.png" alt="VisCarMa" style="width:28px;height:28px;border-radius:6px"/>
+      <div>
+        <div style="font-size:14px;font-weight:700;color:var(--text-1)">VisCarMa <span style="color:var(--blue)">v3.0</span></div>
+        <div style="font-size:11px;color:var(--text-3)">The Divine Code Architect</div>
+      </div>
+      <button onclick="hideAbout()" style="margin-left:auto;background:none;border:none;color:var(--text-2);cursor:pointer;font-size:18px;padding:0 4px;line-height:1">✕</button>
+    </div>
+
+    <!-- Author -->
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px">
+      <img src="https://github.com/suryasticsai.png" alt="Sai Varakala" style="width:48px;height:48px;border-radius:50%;border:2px solid var(--blue)"/>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--text-1)">Sai Varakala</div>
+        <div style="color:var(--text-3);margin:2px 0">Senior Scrum Master · TCS Hyderabad</div>
+        <div style="display:flex;gap:10px;margin-top:6px">
+          <a href="https://github.com/suryasticsai"         target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">GitHub</a>
+          <a href="https://linkedin.com/in/suryasticsai"    target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">LinkedIn</a>
+          <a href="https://twitter.com/suryasticsaii"       target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">X</a>
+          <a href="https://instagram.com/suryasticsai"      target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">Instagram</a>
+          <a href="https://huggingface.co/Suryasticsai"     target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">HuggingFace</a>
+          <a href="mailto:suryasticsai@gmail.com"           style="color:var(--blue);text-decoration:none">Email</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- How to use -->
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:10px;letter-spacing:1px">HOW TO USE</div>
+      <div style="display:flex;flex-direction:column;gap:8px;color:var(--text-2);line-height:1.7">
+        <div><span style="color:var(--blue)">Fix mode</span> — Paste a GitHub repo URL or select from dropdown → Scan → Apply fixes → Create PR</div>
+        <div><span style="color:var(--blue)">Feature mode</span> — Select repo → Load files → Describe feature in plain English → Generate → Create PR</div>
+        <div><span style="color:var(--blue)">Agent mode</span> — Select repo → Set duration (e.g. 45 min) → Add tasks → Activate agent → Go for lunch ☕</div>
+        <div><span style="color:var(--amber)">God mode</span> — Scan any live URL · Scan dependencies · Sweep multiple repos · Voice commands · Auto-merge</div>
+        <div><span style="color:var(--purple)">Rules tab</span> — Write custom lint rules, publish to marketplace, install community packs</div>
+        <div><span style="color:var(--purple)">Schedules tab</span> — Set cron expressions for automatic nightly or weekly scans</div>
+        <div><span style="color:var(--purple)">Tests tab</span> — Select files, generate Jest/pytest/JUnit unit tests, commit as PR</div>
+        <div><span style="color:var(--text-3)">Voice</span> — Say "scan my repo", "fix all issues", "create PR", "god mode" and agent executes</div>
+      </div>
+    </div>
+
+    <!-- Keyboard shortcuts -->
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:10px;letter-spacing:1px">TIPS</div>
+      <div style="display:flex;flex-direction:column;gap:6px;color:var(--text-2)">
+        <div>Add <code style="background:var(--bg0);padding:1px 5px;border-radius:3px;color:var(--emerald)">[![VisCarMa](https://viscarma.onrender.com/badge/owner/repo.svg)](https://viscarma.onrender.com)</code> to any README</div>
+        <div>Set <code style="background:var(--bg0);padding:1px 5px;border-radius:3px;color:var(--blue)">VISCARMA_PRO_USERS=yourusername</code> in Render env for unlimited scans</div>
+        <div>Click <strong style="color:var(--text-1)">Explain</strong> in the header to get an AI walkthrough of the current file</div>
+        <div>Click <strong style="color:var(--amber)">Install app</strong> (when visible) to add VisCarMa to your home screen</div>
+        <div>In Agent mode, Jira tickets are auto-converted to tasks — just enter your project key</div>
+      </div>
+    </div>
+
+    <!-- Vishwakarma quote -->
+    <div style="padding:16px 20px;text-align:center;color:var(--text-3)">
+      <div style="font-size:15px;color:var(--gold, #d4af37);margin-bottom:6px">विश्वतः चक्षुः उत विश्वतो मुखो</div>
+      <div style="font-size:11px;opacity:0.6;margin-bottom:10px">"His eyes are everywhere, His faces in all directions" — Rigveda 10.81.3</div>
+      <div style="font-size:10px;opacity:0.4">MIT License · viscarma.onrender.com · Built with ❤ by @suryasticsai</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showAbout() {
+  const el = document.getElementById('about-overlay');
+  el.style.display = 'flex';
+}
+function hideAbout() {
+  const el = document.getElementById('about-overlay');
+  el.style.display = 'none';
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') hideAbout();
+});
+</script>
+
+</body>
+</html>
