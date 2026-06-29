@@ -7,6 +7,11 @@
   <title>VisCarMa</title>
   <link rel="icon" type="image/png" href="/viscarma_logo.png"/>
   <link rel="stylesheet" href="style.css"/>
+  <link rel="manifest" href="/manifest.json"/>
+  <meta name="theme-color" content="#388bfd"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="VisCarMa"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap"/>
 </head>
 <body>
@@ -27,6 +32,8 @@
         <span id="gh-username" class="gh-username"></span>
       </span>
       <span id="user-info" class="text-muted text-xs mono">Checking…</span>
+      <button class="btn btn-sm" id="pwa-install-btn" onclick="installPWA()" style="display:none;border-color:var(--amber);color:var(--amber)">Install app</button>
+      <button class="btn btn-sm btn-ghost" onclick="godExplainFile()" title="Explain current file with AI">Explain</button>
       <button class="btn btn-sm" id="login-btn" onclick="login()">Login with GitHub</button>
     </div>
   </header>
@@ -40,6 +47,7 @@
         <button class="mode-tab active" id="tab-fix"     onclick="switchMode('fix')">Fix</button>
         <button class="mode-tab"        id="tab-feature" onclick="switchMode('feature')">Feature</button>
         <button class="mode-tab"        id="tab-agent"   onclick="switchMode('agent')">Agent</button>
+        <button class="mode-tab"        id="tab-god"     onclick="switchMode('god')" style="color:var(--amber);border-color:var(--amber)">God</button>
       </div>
     </div>
 
@@ -132,6 +140,39 @@
       <div id="push-status" class="text-muted text-xs mono" style="margin-top:4px"></div>
     </div>
 
+    <!-- GOD MODE sidebar -->
+    <div id="sidebar-god" class="sidebar-scroll" style="display:none">
+      <div>
+        <div class="field-label" style="color:var(--amber)">Live URL scan</div>
+        <input type="text" id="god-url" placeholder="https://yourapp.com" style="margin-bottom:6px"/>
+        <div class="row" style="margin-bottom:6px">
+          <label class="feature-file-check" style="flex:1">
+            <input type="checkbox" id="god-deep"/> Deep scan (follow links)
+          </label>
+        </div>
+        <button class="btn" onclick="godScanUrl()" style="width:100%;border-color:var(--amber);color:var(--amber)">Scan live URL</button>
+      </div>
+      <div class="divider"></div>
+      <div class="field-label" style="color:var(--amber)">Dependency scanner</div>
+      <select id="god-dep-repo" style="margin-bottom:6px">
+        <option value="">Select repo</option>
+      </select>
+      <button class="btn" onclick="godScanDeps()" style="width:100%">Scan dependencies</button>
+      <div class="divider"></div>
+      <div class="field-label" style="color:var(--amber)">Multi-repo sweep</div>
+      <textarea id="god-multi-repos" placeholder="One GitHub repo URL per line:&#10;https://github.com/owner/repo1&#10;https://github.com/owner/repo2" style="margin-bottom:6px;min-height:80px"></textarea>
+      <button class="btn" onclick="godMultiRepo()" style="width:100%">Sweep all repos</button>
+      <div class="divider"></div>
+      <div class="field-label" style="color:var(--amber)">Auto-merge</div>
+      <div class="text-muted text-xs mono" style="margin-bottom:6px">Merge a VisCarMa PR after verification</div>
+      <input type="number" id="god-merge-pr" placeholder="PR number" style="margin-bottom:6px"/>
+      <button class="btn" onclick="godAutoMerge()" style="width:100%">Auto-merge PR</button>
+      <div class="divider"></div>
+      <div class="field-label" style="color:var(--amber)">Voice activation</div>
+      <button class="btn" id="voice-btn" onclick="toggleVoice()" style="width:100%;border-color:var(--purple);color:var(--purple)">Start listening</button>
+      <div id="voice-status" class="text-muted text-xs mono" style="margin-top:4px"></div>
+    </div>
+
     <!-- Log (always visible at bottom) -->
     <div class="log-wrap">
       <div class="log-header">
@@ -172,6 +213,7 @@
       <button class="panel-tab"        onclick="showPanel('schedules')">Schedules</button>
       <button class="panel-tab"        onclick="showPanel('tests')">Tests</button>
       <button class="panel-tab"        onclick="showPanel('marketplace')">Marketplace</button>
+      <button class="panel-tab"        onclick="showPanel('godmode')" style="color:var(--amber)">God Mode</button>
     </nav>
 
     <!-- REPORT panel -->
@@ -335,6 +377,22 @@
       </div>
     </div>
 
+    <!-- GOD MODE panel -->
+    <div class="panel-content" id="panel-godmode">
+      <div class="report-scroll">
+        <div class="row-between" style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;color:var(--amber)">God Mode</div>
+          <div class="text-muted text-xs mono">Live URL · Deps · Multi-repo · Voice · Auto-merge</div>
+        </div>
+        <div id="god-results">
+          <div class="empty-state">
+            <div class="e-icon" style="color:var(--amber)">⬡</div>
+            <div>Select a God Mode action from the sidebar.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -462,7 +520,7 @@ async function apiFetch(url, opts={}) {
 ══════════════════════════════════════════════════════ */
 function switchMode(mode) {
   STATE.mode = mode;
-  ['fix','feature','agent'].forEach(m => {
+  ['fix','feature','agent','god'].forEach(m => {
     $(`tab-${m}`).classList.toggle('active', m === mode);
     $(`sidebar-${m}`).style.display = m === mode ? 'flex' : 'none';
   });
@@ -471,7 +529,7 @@ function switchMode(mode) {
 
 function syncRepoSelects() {
   const src = $('repo-select');
-  [$('feature-repo-select'), $('agent-repo-select')].forEach(dest => {
+  [$('feature-repo-select'), $('agent-repo-select'), $('god-dep-repo')].forEach(dest => {
     if (dest) dest.innerHTML = src.innerHTML;
   });
 }
@@ -481,7 +539,7 @@ function syncRepoSelects() {
 ══════════════════════════════════════════════════════ */
 function showPanel(name) {
   document.querySelectorAll('.panel-tab').forEach((t,i) => {
-    const names = ['report','editor','history','agentlog','rules','schedules','tests','marketplace'];
+    const names = ['report','editor','history','agentlog','rules','schedules','tests','marketplace','godmode'];
     t.classList.toggle('active', names[i] === name);
   });
   document.querySelectorAll('.panel-content').forEach(p => p.classList.remove('active'));
@@ -494,6 +552,7 @@ function showPanel(name) {
   if (name === 'rules')       { loadRules(); loadUsage(); }
   if (name === 'schedules')   loadSchedules();
   if (name === 'marketplace') loadMarketplace();
+  if (name === 'godmode') syncGodRepoSelect();
   if (name === 'tests')       loadTestFiles();
 }
 
@@ -1528,10 +1587,358 @@ async function publishRulePack() {
 }
 
 /* ══════════════════════════════════════════════════════
+   GOD MODE
+══════════════════════════════════════════════════════ */
+function syncGodRepoSelect() {
+  const src  = $('repo-select');
+  const dest = $('god-dep-repo');
+  if (dest && src) dest.innerHTML = src.innerHTML;
+}
+
+async function godScanUrl() {
+  const url  = $('god-url').value.trim();
+  if (!url) { toast('Enter a URL to scan'); return; }
+  const deep = $('god-deep').checked;
+
+  log('GOD','tag-agent',`Scanning live URL: ${url}${deep ? ' (deep)' : ''}…`);
+  showPanel('godmode');
+  $('god-results').innerHTML = '<div class="empty-state"><div class="e-icon" style="color:var(--amber)">⟳</div><div>Fetching and analysing…</div></div>';
+
+  try {
+    const res  = await apiFetch('/api/godmode/scan-url', {
+      method: 'POST', body: JSON.stringify({ url, deepScan: deep }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    $('s-files').textContent  = data.results.length;
+    $('s-issues').textContent = data.totalIssues;
+    const high = data.results.reduce((s,r) => s + r.issues.filter(i=>i.severity==='HIGH').length, 0);
+    const med  = data.results.reduce((s,r) => s + r.issues.filter(i=>i.severity==='MED').length, 0);
+    const low  = data.results.reduce((s,r) => s + r.issues.filter(i=>i.severity==='LOW').length, 0);
+    $('s-high').textContent = high;
+    $('s-med').textContent  = med;
+    $('s-low').textContent  = low;
+    $('s-time').textContent = new Date().toLocaleTimeString();
+
+    let html = `<div class="summary-row">
+      <div class="summary-card"><div class="s-label">Pages scanned</div><div class="s-val" style="color:var(--amber)">${data.results.length}</div></div>
+      <div class="summary-card"><div class="s-label">Total issues</div><div class="s-val" style="color:var(--red)">${data.totalIssues}</div></div>
+      <div class="summary-card"><div class="s-label">HIGH</div><div class="s-val" style="color:var(--red)">${high}</div></div>
+    </div>`;
+
+    for (const page of data.results) {
+      html += `<div class="file-heading"><span style="opacity:0.5">⬡</span>${esc(page.url)}<span class="badge" style="margin-left:auto">${page.issues.length}</span></div>`;
+      if (page.meta) {
+        html += `<div style="font-size:11px;color:var(--text-3);font-family:var(--font-mono);margin-bottom:8px;padding:6px 10px;background:var(--bg1);border-radius:4px">
+          ${page.meta.title ? `Title: ${esc(page.meta.title)} &nbsp;·&nbsp;` : ''}
+          Words: ${page.meta.wordCount} &nbsp;·&nbsp;
+          Links: ${page.meta.links} &nbsp;·&nbsp;
+          Images: ${page.meta.images} &nbsp;·&nbsp;
+          Scripts: ${page.meta.scripts}
+        </div>`;
+      }
+      for (const issue of page.issues) {
+        const sev   = (issue.severity||'MED').toLowerCase();
+        const color = sev==='high'?'var(--red)':sev==='med'?'var(--amber)':'var(--blue)';
+        html += `<div class="issue-card ${sev}" style="border-left:3px solid ${color}">
+          <div class="issue-meta"><span class="sev sev-${sev}">${(issue.severity||'MED').toUpperCase()}</span></div>
+          <div class="issue-desc">${esc(issue.description)}</div>
+          ${issue.fix ? `<div class="issue-fix">💡 ${esc(issue.fix)}</div>` : ''}
+        </div>`;
+      }
+    }
+
+    $('god-results').innerHTML = html;
+    log('GOD','tag-ok',`URL scan complete — ${data.totalIssues} issues across ${data.results.length} page(s)`);
+    toast(`URL scan done — ${data.totalIssues} issues found`);
+  } catch(e) {
+    $('god-results').innerHTML = `<div class="empty-state"><div>${esc(e.message)}</div></div>`;
+    log('GOD','tag-err', e.message); toast('Scan failed: '+e.message);
+  }
+}
+
+async function godScanDeps() {
+  const val = $('god-dep-repo').value;
+  if (!val) { toast('Select a repo first'); return; }
+  if (!STATE.token) { toast('Login required'); return; }
+  const [owner, name] = val.split('/');
+
+  log('GOD','tag-agent',`Scanning dependencies for ${owner}/${name}…`);
+  showPanel('godmode');
+  $('god-results').innerHTML = '<div class="empty-state"><div class="e-icon" style="color:var(--amber)">⟳</div><div>Checking npm registry…</div></div>';
+
+  try {
+    const res  = await apiFetch('/api/godmode/scan-deps', {
+      method: 'POST', body: JSON.stringify({ repoOwner: owner, repoName: name, token: STATE.token }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    let html = `<div class="summary-row">
+      <div class="summary-card"><div class="s-label">Total deps</div><div class="s-val">${data.totalDeps}</div></div>
+      <div class="summary-card"><div class="s-label">Checked</div><div class="s-val">${data.checked}</div></div>
+      <div class="summary-card"><div class="s-label">Vulnerabilities</div><div class="s-val" style="color:var(--${data.vulns.length?'red':'emerald'})">${data.vulns.length}</div></div>
+    </div>`;
+
+    if (!data.vulns.length) {
+      html += `<div class="empty-state" style="padding:30px"><div style="color:var(--emerald)">All checked dependencies look healthy.</div></div>`;
+    } else {
+      html += `<div class="file-heading"><span style="opacity:0.5">⬡</span>Dependency issues</div>`;
+      for (const v of data.vulns) {
+        const sev = (v.severity||'MED').toLowerCase();
+        const color = sev==='high'?'var(--red)':sev==='med'?'var(--amber)':'var(--blue)';
+        html += `<div class="issue-card ${sev}" style="border-left:3px solid ${color}">
+          <div class="issue-meta">
+            <span class="sev sev-${sev}">${(v.severity||'MED').toUpperCase()}</span>
+            <span class="mono" style="font-size:12px;font-weight:600">${esc(v.package)}</span>
+            ${v.currentRange ? `<span class="text-muted text-xs">${esc(v.currentRange)}</span>` : ''}
+            ${v.latestVersion ? `<span class="text-xs" style="color:var(--emerald);margin-left:auto">latest: ${esc(v.latestVersion)}</span>` : ''}
+          </div>
+          <div class="issue-desc">${esc(v.description||v.issue)}</div>
+          ${v.fix ? `<div class="issue-fix">💡 ${esc(v.fix)}</div>` : ''}
+        </div>`;
+      }
+    }
+    $('god-results').innerHTML = html;
+    log('GOD','tag-ok',`Dep scan done — ${data.vulns.length} issue(s) in ${data.checked} packages checked`);
+  } catch(e) {
+    $('god-results').innerHTML = `<div class="empty-state"><div>${esc(e.message)}</div></div>`;
+    log('GOD','tag-err',e.message); toast(e.message);
+  }
+}
+
+async function godMultiRepo() {
+  const raw = $('god-multi-repos').value.trim();
+  if (!raw) { toast('Enter at least one repo URL'); return; }
+  if (!STATE.token) { toast('Login required'); return; }
+
+  const lines = raw.split('
+').map(l => l.trim()).filter(Boolean);
+  const repos  = lines.map(url => {
+    const m = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
+    return m ? { repoUrl: `https://github.com/${m[1]}/${m[2]}.git`, repoOwner: m[1], repoName: m[2] } : null;
+  }).filter(Boolean);
+
+  if (!repos.length) { toast('No valid GitHub URLs found'); return; }
+  log('GOD','tag-agent',`Starting multi-repo sweep of ${repos.length} repo(s)…`);
+  showPanel('godmode');
+  $('god-results').innerHTML = `<div class="empty-state"><div class="e-icon" style="color:var(--amber)">⟳</div><div>Sweeping ${repos.length} repo(s)…</div></div>`;
+
+  try {
+    const res  = await apiFetch('/api/godmode/multi-repo', {
+      method: 'POST', body: JSON.stringify({ repos, token: STATE.token }),
+    });
+    const data = await res.json();
+
+    let html = `<div class="summary-row">
+      <div class="summary-card"><div class="s-label">Repos swept</div><div class="s-val" style="color:var(--amber)">${data.totalRepos}</div></div>
+      <div class="summary-card"><div class="s-label">Total issues</div><div class="s-val" style="color:var(--red)">${data.totalIssues}</div></div>
+    </div>`;
+
+    for (const repo of data.repos) {
+      html += `<div class="file-heading">
+        <span style="opacity:0.5">⬡</span>${esc(repo.repoOwner)}/${esc(repo.repoName)}
+        ${repo.success ? `<span class="badge" style="margin-left:auto">${repo.issues} issues · ${repo.files} files</span>` : `<span style="color:var(--red);font-size:11px;margin-left:auto">${esc(repo.error)}</span>`}
+      </div>`;
+      if (repo.success && repo.results) {
+        STATE.scanResults = repo.results;
+        STATE.repoOwner   = repo.repoOwner;
+        STATE.repoName    = repo.repoName;
+        STATE.repoUrl     = repo.repoUrl;
+      }
+    }
+    html += `<div style="margin-top:12px;padding:10px;background:var(--bg1);border:1px solid var(--amber);border-radius:var(--radius);font-size:11px;color:var(--amber);font-family:var(--font-mono)">
+      Last repo loaded into Fix Mode. Switch to Fix tab to apply fixes and create PRs.
+    </div>`;
+    $('god-results').innerHTML = html;
+    log('GOD','tag-ok',`Multi-repo sweep complete — ${data.totalIssues} issues across ${data.totalRepos} repos`);
+  } catch(e) {
+    $('god-results').innerHTML = `<div class="empty-state"><div>${esc(e.message)}</div></div>`;
+    log('GOD','tag-err',e.message); toast(e.message);
+  }
+}
+
+async function godAutoMerge() {
+  const prNum = $('god-merge-pr').value.trim();
+  if (!prNum) { toast('Enter a PR number'); return; }
+  if (!STATE.repoOwner) { toast('Select a repo in Fix mode first'); return; }
+  if (!STATE.token) { toast('Login required'); return; }
+
+  log('GOD','tag-agent',`Auto-merging PR #${prNum} on ${STATE.repoOwner}/${STATE.repoName}…`);
+  try {
+    const res  = await apiFetch('/api/godmode/auto-merge', {
+      method: 'POST',
+      body: JSON.stringify({ repoOwner:STATE.repoOwner, repoName:STATE.repoName, prNumber:parseInt(prNum), token:STATE.token }),
+    });
+    const data = await res.json();
+    if (data.merged) {
+      log('GOD','tag-ok',`PR #${prNum} merged! SHA: ${data.sha}`);
+      toast(`PR #${prNum} auto-merged successfully`);
+      $('god-results').innerHTML = `<div class="pr-result" style="border-color:var(--amber)">
+        Merged PR #${prNum} · SHA: <span class="mono text-xs">${data.sha?.slice(0,8)}</span>
+      </div>`;
+    } else {
+      log('GOD','tag-warn', data.reason);
+      toast('Not merged: ' + data.reason);
+    }
+  } catch(e) { log('GOD','tag-err',e.message); toast(e.message); }
+}
+
+/* ══════════════════════════════════════════════════════
+   VOICE ACTIVATION
+══════════════════════════════════════════════════════ */
+let voiceActive = false;
+let recognition  = null;
+
+function toggleVoice() {
+  if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
+    toast('Voice not supported in this browser. Try Chrome.');
+    return;
+  }
+  if (voiceActive) {
+    recognition?.stop();
+    voiceActive = false;
+    $('voice-btn').textContent = 'Start listening';
+    $('voice-btn').style.color = 'var(--purple)';
+    $('voice-status').textContent = 'Stopped.';
+    return;
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition  = new SR();
+  recognition.continuous    = true;
+  recognition.interimResults = true;
+  recognition.lang          = 'en-US';
+
+  recognition.onstart = () => {
+    voiceActive = true;
+    $('voice-btn').textContent = 'Listening… (click to stop)';
+    $('voice-btn').style.color = 'var(--emerald)';
+    $('voice-status').textContent = 'Say a command — e.g. "scan my repo" or "fix all issues"';
+    log('VOICE','tag-agent','Voice activation listening…');
+  };
+
+  recognition.onresult = (e) => {
+    const transcript = Array.from(e.results)
+      .map(r => r[0].transcript).join(' ').toLowerCase().trim();
+    $('voice-status').textContent = `Heard: "${transcript}"`;
+
+    if (e.results[e.results.length - 1].isFinal) {
+      processVoiceCommand(transcript);
+    }
+  };
+
+  recognition.onerror = (e) => {
+    $('voice-status').textContent = 'Error: ' + e.error;
+    voiceActive = false;
+  };
+
+  recognition.onend = () => {
+    if (voiceActive) recognition.start(); // keep listening
+  };
+
+  recognition.start();
+}
+
+function processVoiceCommand(text) {
+  log('VOICE','tag-agent',`Command: "${text}"`);
+
+  if (/scan.*(repo|code|project)/i.test(text)) {
+    if (STATE.repoUrl) { scanLoggedIn(); toast('Voice: scanning repo…'); }
+    else toast('Select a repo first');
+  } else if (/fix.*(all|issue|bug)/i.test(text)) {
+    generateFixes(); toast('Voice: generating fixes…');
+  } else if (/create.*(pr|pull request)/i.test(text)) {
+    createPR(); toast('Voice: creating PR…');
+  } else if (/switch.*(fix|code)/i.test(text)) {
+    switchMode('fix'); toast('Voice: switched to Fix mode');
+  } else if (/switch.*(feature)/i.test(text)) {
+    switchMode('feature'); toast('Voice: switched to Feature mode');
+  } else if (/switch.*(agent)/i.test(text)) {
+    switchMode('agent'); toast('Voice: switched to Agent mode');
+  } else if (/god.*(mode|scan)/i.test(text)) {
+    switchMode('god'); showPanel('godmode'); toast('Voice: God Mode activated');
+  } else if (/start.*(agent|mission)/i.test(text)) {
+    startAgent(); toast('Voice: starting agent…');
+  } else if (/stop.*(agent)/i.test(text)) {
+    stopAgent(); toast('Voice: agent stopped');
+  } else if (/show.*(history)/i.test(text)) {
+    showPanel('history'); toast('Voice: showing history');
+  } else if (/explain.*(code|file)/i.test(text)) {
+    if (STATE.currentFile !== null) godExplainFile();
+    else toast('Select a file in the editor first');
+  } else {
+    // Pass unknown commands directly as agent tasks
+    if (STATE.agentJobId) {
+      toast(`Voice: queuing task — "${text}"`);
+    } else {
+      $('agent-tasks').value += (($('agent-tasks').value ? '
+' : '') + text);
+      switchMode('agent');
+      toast(`Voice: task added — "${text}"`);
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   AI CODE EXPLAINER
+══════════════════════════════════════════════════════ */
+async function godExplainFile() {
+  if (STATE.currentFile === null) { toast('Select a file in the editor first'); return; }
+  const results = STATE.fixes || STATE.scanResults;
+  if (!results) { toast('Scan a repo first'); return; }
+  const item = results[STATE.currentFile];
+  if (!item) return;
+
+  log('GOD','tag-agent',`Explaining ${item.file}…`);
+  showPanel('godmode');
+  $('god-results').innerHTML = `<div class="empty-state"><div class="e-icon" style="color:var(--amber)">⟳</div><div>AI is reading ${esc(item.file)}…</div></div>`;
+
+  try {
+    const res  = await apiFetch('/api/godmode/explain', {
+      method: 'POST',
+      body: JSON.stringify({ code: item.code || item.newCode, filename: item.file }),
+    });
+    const data = await res.json();
+    $('god-results').innerHTML = `
+      <div class="file-heading"><span style="opacity:0.5">⬡</span>${esc(item.file)}</div>
+      <div style="background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;line-height:1.8;white-space:pre-wrap">${esc(data.explanation)}</div>`;
+    log('GOD','tag-ok',`Explanation ready for ${item.file}`);
+  } catch(e) { log('GOD','tag-err',e.message); toast(e.message); }
+}
+
+/* ══════════════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════════════ */
+async function installPWA() {
+  if (!window._pwaPrompt) { toast('Install not available — open in Chrome on mobile'); return; }
+  window._pwaPrompt.prompt();
+  const result = await window._pwaPrompt.userChoice;
+  if (result.outcome === 'accepted') {
+    toast('VisCarMa installed as app!');
+    $('pwa-install-btn').style.display = 'none';
+    log('PWA','tag-ok','App installed to home screen');
+  }
+  window._pwaPrompt = null;
+}
+
 (function init() {
   setTimeout(checkAuth, 150);
+
+  // PWA install prompt
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    window._pwaPrompt = e;
+    $('pwa-install-btn').style.display = 'inline-flex';
+  });
+
+  // Handle ?mode= shortcut from PWA shortcuts
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get('mode');
+  if (mode && ['fix','feature','agent','god'].includes(mode)) {
+    setTimeout(() => switchMode(mode), 300);
+  }
 
   // Handle Stripe redirect back after payment
   const params = new URLSearchParams(window.location.search);
