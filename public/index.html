@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VisCarMa · devAIne Agent</title>
+  <title>VisCarMa · Hybrid Scanner</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -24,7 +24,6 @@
   <div class="box">
     <div class="flex" style="justify-content:space-between;">
       <div class="flex" style="flex:1;">
-        <!-- Manual input -->
         <input type="text" id="repo-url-input" placeholder="https://github.com/owner/repo" style="flex:2;min-width:200px;" />
         <button class="btn" onclick="scanManual()">🔍 Scan Public Repo</button>
       </div>
@@ -88,14 +87,14 @@
       repoUrl: null,
       repoOwner: null,
       repoName: null,
-      scanResults: null,
-      fixes: null,
+      repoBranch: 'main',
+      scanResults: null, // [{ file, code, issues }]
+      fixes: null, // [{ file, newCode, applied }]
     };
 
     /* ─── DOM HELPERS ──────────────────────────────────────────── */
     const $ = id => document.getElementById(id);
     const logBox = $('log-box');
-    const statusBadge = $('status-badge');
 
     function ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
 
@@ -129,7 +128,6 @@
         $('user-info').textContent = `👤 ${data.user.login}`;
         $('login-btn').textContent = 'Logout';
         $('login-btn').onclick = () => window.location.href = '/auth/logout';
-        // Show repo selector
         $('repo-select').style.display = 'inline-block';
         $('scan-logged-btn').style.display = 'inline-flex';
         await loadRepos();
@@ -163,9 +161,10 @@
       const val = $('repo-select').value;
       if (val) {
         const [owner, name] = val.split('/');
-        STATE.repoUrl = `https://github.com/${val}.git`;
         STATE.repoOwner = owner;
         STATE.repoName = name;
+        STATE.repoUrl = `https://github.com/${val}.git`;
+        STATE.repoBranch = 'main';
         $('repo-url-input').value = STATE.repoUrl;
       }
     }
@@ -174,12 +173,12 @@
     async function scanManual() {
       const url = $('repo-url-input').value.trim();
       if (!url) { toast('⚠ Enter a repo URL'); return; }
-      // Parse owner/name
       const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)(?:\.git)?/);
       if (!match) { toast('⚠ Invalid GitHub URL'); return; }
       STATE.repoOwner = match[1];
       STATE.repoName = match[2];
       STATE.repoUrl = url;
+      STATE.repoBranch = 'main';
       await doScan(null);
     }
 
@@ -213,12 +212,14 @@
         progressFill.style.width = '80%';
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
+        // Store results with file contents
         STATE.scanResults = data.results;
         progressFill.style.width = '100%';
         setTimeout(() => { progressBar.style.display = 'none'; }, 600);
         renderReport(data.results);
         $('report-area').style.display = 'block';
         $('fix-btn').style.display = 'inline-flex';
+        $('pr-btn').style.display = 'none'; // hidden until fixes are applied
         log('SCAN', 'tag-ok', `Scan complete: ${data.results.length} files analyzed`);
         toast('✅ Scan complete');
       } catch (e) {
@@ -264,18 +265,116 @@
 
     /* ─── FIXES & PR ───────────────────────────────────────────── */
     async function generateFixes() {
-      if (!STATE.scanResults) return;
-      const files = STATE.scanResults
-        .filter(f => f.issues.length > 0)
-        .map(f => ({ file: f.file, code: f.code || '', issues: f.issues }));
-      // We need file contents; we didn't store them. We'll re-fetch or use the clone result.
-      // For simplicity, we'll prompt user to scan again? Actually we can store code during scan.
-      // We'll update the scan to return code as well. For now, let's ask user to re-scan with code.
-      toast('⚠ Please re-scan the repo first (we need file content)');
+      if (!STATE.scanResults) {
+        toast('⚠ No scan results. Please scan a repo first.');
+        return;
+      }
+
+      // Build list of files with issues
+      const filesToFix = STATE.scanResults
+        .filter(f => f.issues && f.issues.length > 0)
+        .map(f => ({ file: f.file, code: f.code, issues: f.issues }));
+
+      if (!filesToFix.length) {
+        toast('⚠ No issues found to fix.');
+        return;
+      }
+
+      log('FIX', 'tag-info', `Generating fixes for ${filesToFix.length} files...`);
+      $('fix-btn').disabled = true;
+      $('fix-btn').textContent = '⏳ Generating...';
+
+      try {
+        const res = await fetch('/api/generate-fixes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: filesToFix }),
+        });
+        const data = await res.json();
+        if (!data.fixes) throw new Error('No fixes returned');
+        STATE.fixes = data.fixes;
+        $('pr-btn').style.display = 'inline-flex';
+        log('FIX', 'tag-ok', `Generated fixes for ${data.fixes.length} files`);
+        toast('✅ Fixes generated. Review and click "Create PR".');
+        // Show a preview of fixes
+        showFixPreview(data.fixes);
+      } catch (e) {
+        log('FIX', 'tag-err', e.message);
+        toast('❌ ' + e.message);
+      } finally {
+        $('fix-btn').disabled = false;
+        $('fix-btn').textContent = '🔧 Apply Fixes';
+      }
     }
 
-    // We'll extend the scan to store code per file in STATE.scanFiles.
-    // For now, we'll keep it simple.
+    function showFixPreview(fixes) {
+      const container = $('report-content');
+      let html = container.innerHTML;
+      html += `<div style="margin-top:16px;border-top:1px solid #1e2d3d;padding-top:12px;"><div style="font-weight:700;color:#00ffa3;">🔧 Fixes Generated</div>`;
+      for (const fix of fixes) {
+        html += `<div style="margin-top:6px;font-size:11px;color:#4a5568;">📄 ${fix.file} – applied: ${fix.applied.join(', ') || 'none'}</div>`;
+        if (fix.newCode) {
+          html += `<details style="margin-left:12px;"><summary>Show diff</summary><pre style="background:#07090c;padding:6px;border-radius:4px;font-size:10px;color:#c8d8e8;white-space:pre-wrap;max-height:200px;overflow:auto;">${escHtml(fix.newCode.slice(0, 800))}${fix.newCode.length > 800 ? '\n…truncated' : ''}</pre></details>`;
+        }
+      }
+      html += `</div>`;
+      container.innerHTML = html;
+    }
+
+    async function createPR() {
+      if (!STATE.fixes || !STATE.fixes.length) {
+        toast('⚠ Generate fixes first.');
+        return;
+      }
+      if (!STATE.repoOwner || !STATE.repoName) {
+        toast('⚠ Repo owner/name not set.');
+        return;
+      }
+      if (!STATE.token) {
+        toast('⚠ You must be logged in to create a PR.');
+        return;
+      }
+
+      log('PR', 'tag-info', 'Creating pull request...');
+      $('pr-btn').disabled = true;
+      $('pr-btn').textContent = '⏳ Creating...';
+
+      try {
+        const res = await fetch('/api/create-pr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repoOwner: STATE.repoOwner,
+            repoName: STATE.repoName,
+            branch: STATE.repoBranch || 'main',
+            fixes: STATE.fixes,
+            token: STATE.token,
+          }),
+        });
+        const data = await res.json();
+        if (data.url) {
+          log('PR', 'tag-ok', `PR created: ${data.url}`);
+          toast(`✅ PR #${data.number} opened!`);
+          // Add a link to the PR
+          const container = $('report-content');
+          container.innerHTML += `<div style="margin-top:12px;border-top:1px solid #00ffa3;padding-top:8px;">🔀 <a href="${data.url}" target="_blank" style="color:#00ffa3;">View PR #${data.number}</a></div>`;
+        } else {
+          throw new Error(data.error || 'PR creation failed');
+        }
+      } catch (e) {
+        log('PR', 'tag-err', e.message);
+        toast('❌ ' + e.message);
+      } finally {
+        $('pr-btn').disabled = false;
+        $('pr-btn').textContent = '🔀 Create PR';
+      }
+    }
+
+    /* ─── INIT ────────────────────────────────────────────────── */
+    (function init() {
+      checkAuth();
+      log('SYS', 'tag-sys', 'VisCarMa Hybrid Scanner ready.');
+    })();
   </script>
 
 </body>
