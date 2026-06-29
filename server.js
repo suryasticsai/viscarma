@@ -1,4 +1,4 @@
-// server.js — VisCarma Backend (Hybrid: OAuth + Manual + Scan + Fix + PR)
+// server.js — VisCarma Backend (Hybrid: OAuth + Manual + Scan + Fix + PR + Feature Dev)
 import express from 'express';
 import cors from 'cors';
 import cookieSession from 'cookie-session';
@@ -12,17 +12,14 @@ import { promises as fs } from 'fs';
 import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename);
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// FIX: Render terminates SSL at their load balancer and forwards HTTP
-// internally. Without trust proxy, req.secure is always false, secure
-// cookies never get set, and the session is lost on every redirect.
+// Trust Render's reverse proxy so secure cookies work correctly
 app.set('trust proxy', 1);
 
-// Environment variables
 const {
   GITHUB_CLIENT_ID,
   GITHUB_CLIENT_SECRET,
@@ -32,30 +29,22 @@ const {
   FRONTEND_URL   = 'https://viscarma.onrender.com',
 } = process.env;
 
-// Cookie-based session — stateless, no disk needed, survives Render restarts.
-// Stores session encrypted inside the cookie itself.
 app.use(cookieSession({
-  name:    'viscarma_sess',
-  keys:    [SESSION_SECRET],
-  maxAge:  7 * 24 * 60 * 60 * 1000, // 7 days
-  secure:  process.env.NODE_ENV === 'production', // works correctly now thanks to trust proxy
+  name:     'viscarma_sess',
+  keys:     [SESSION_SECRET],
+  maxAge:   7 * 24 * 60 * 60 * 1000,
+  secure:   process.env.NODE_ENV === 'production',
   sameSite: 'lax',
   httpOnly: true,
 }));
 
-// Cookie parser for signed OAuth state cookie
 app.use(cookieParser(SESSION_SECRET));
 
-// CORS — must be explicit origin (not '*') when credentials:true
-app.use(cors({
-  origin:      FRONTEND_URL,
-  credentials: true,
-}));
-
+app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ESLint instance (singleton)
+// ─── ESLint ──────────────────────────────────────────────────────
 let eslintInstance = null;
 async function getESLint() {
   if (!eslintInstance) {
@@ -65,19 +54,12 @@ async function getESLint() {
         env: { browser: true, node: true, es2021: true },
         parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
         rules: {
-          'no-undef':               'error',
-          'eqeqeq':                 'error',
-          'no-eval':                'error',
-          'no-unused-vars':         'warn',
-          'no-extra-semi':          'warn',
-          'no-await-in-loop':       'warn',
-          'require-await':          'warn',
-          'no-promise-executor-return': 'error',
-          'no-console':             'warn',
-          'no-alert':               'warn',
-          'no-debugger':            'warn',
-          'no-var':                 'warn',
-          'prefer-const':           'warn',
+          'no-undef': 'error', 'eqeqeq': 'error', 'no-eval': 'error',
+          'no-unused-vars': 'warn', 'no-extra-semi': 'warn',
+          'no-await-in-loop': 'warn', 'require-await': 'warn',
+          'no-promise-executor-return': 'error', 'no-console': 'warn',
+          'no-alert': 'warn', 'no-debugger': 'warn',
+          'no-var': 'warn', 'prefer-const': 'warn',
         },
       },
     });
@@ -85,8 +67,8 @@ async function getESLint() {
   return eslintInstance;
 }
 
-// AI call (Ollama or OpenRouter fallback)
-async function callAI(code, filename) {
+// ─── AI call ─────────────────────────────────────────────────────
+async function callAI(prompt, filename) {
   const useOllama = OLLAMA_API_KEY && OLLAMA_API_KEY.length > 0;
   let endpoint, headers, body;
 
@@ -94,35 +76,26 @@ async function callAI(code, filename) {
     endpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/generate';
     headers  = { 'Content-Type': 'application/json' };
     if (OLLAMA_API_KEY) headers['Authorization'] = `Bearer ${OLLAMA_API_KEY}`;
-    body = {
-      model:  process.env.OLLAMA_MODEL || 'llama3.2',
-      prompt: `Analyse this code for bugs, security, and bad practices. File: ${filename}\n\n${code.slice(0, 3000)}\n\nReturn a JSON array: [{"severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`,
-      stream: false,
-    };
+    body = { model: process.env.OLLAMA_MODEL || 'llama3.2', prompt, stream: false };
   } else {
     endpoint = 'https://openrouter.ai/api/v1/chat/completions';
     headers  = { 'Content-Type': 'application/json' };
     body = {
       model: 'google/gemma-2-9b-it:free',
       messages: [
-        { role: 'system', content: 'You are a code reviewer. Return a JSON array of issues with severity, description, and fix suggestion. Only respond with the JSON array.' },
-        { role: 'user',   content: `Analyse this file for bugs, security, performance, and bad practices.\nFile: ${filename}\n\n${code.slice(0, 3000)}` },
+        { role: 'system', content: 'You are a senior code reviewer and engineer. Follow instructions exactly.' },
+        { role: 'user',   content: prompt },
       ],
       temperature: 0.3,
-      max_tokens:  800,
+      max_tokens:  1200,
     };
   }
 
   try {
-    const response = await fetch(endpoint, {
-      method:  'POST',
-      headers,
-      body:    JSON.stringify(body),
-    });
+    const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
     if (!response.ok) return null;
     const data = await response.json();
-    if (useOllama) return data.response || null;
-    return data.choices?.[0]?.message?.content || null;
+    return useOllama ? (data.response || null) : (data.choices?.[0]?.message?.content || null);
   } catch (e) {
     console.error('AI error:', e.message);
     return null;
@@ -133,38 +106,29 @@ function parseAIResponse(text) {
   if (!text) return [];
   const match = text.match(/\[[\s\S]*\]/);
   if (!match) return [];
-  try {
-    const parsed = JSON.parse(match[0]);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  try { const p = JSON.parse(match[0]); return Array.isArray(p) ? p : []; }
+  catch { return []; }
 }
 
-// HTML-specific static checks
+// ─── HTML checks ─────────────────────────────────────────────────
 function checkHTML(code) {
   const issues = [];
-  if (!code.includes('<html lang=') && !code.includes('<html lang="')) {
+  if (!code.includes('<html lang='))
     issues.push({ severity: 'MED', description: 'Missing lang attribute on <html>.', fix: 'Add <html lang="en">.' });
-  }
-  if (!code.includes('<title>') || code.match(/<title>\s*<\/title>/)) {
+  if (!code.includes('<title>') || code.match(/<title>\s*<\/title>/))
     issues.push({ severity: 'HIGH', description: 'Missing or empty <title>.', fix: 'Add <title>My Page</title>.' });
-  }
-  if (code.includes('<img') && !code.includes('alt=')) {
-    issues.push({ severity: 'MED', description: 'Images missing alt attributes.', fix: 'Add alt="description" to all <img> tags.' });
-  }
-  if (!code.includes('viewport')) {
+  if (code.includes('<img') && !code.includes('alt='))
+    issues.push({ severity: 'MED', description: 'Images missing alt attributes.', fix: 'Add alt="..." to all <img> tags.' });
+  if (!code.includes('viewport'))
     issues.push({ severity: 'MED', description: 'Missing viewport meta tag.', fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1.0">.' });
-  }
-  if (!code.includes('<meta name="description"')) {
+  if (!code.includes('<meta name="description"'))
     issues.push({ severity: 'LOW', description: 'Missing meta description.', fix: 'Add <meta name="description" content="...">.' });
-  }
   return issues;
 }
 
-// Analyze a single file
+// ─── Analyze file ────────────────────────────────────────────────
 async function analyzeFile(code, filename) {
-  const ext    = filename.split('.').pop().toLowerCase();
+  const ext = filename.split('.').pop().toLowerCase();
   const issues = [];
 
   if (['js', 'ts', 'jsx', 'tsx'].includes(ext)) {
@@ -184,30 +148,29 @@ async function analyzeFile(code, filename) {
   if (ext === 'html') issues.push(...checkHTML(code));
 
   if (issues.length < 10) {
-    const aiRaw    = await callAI(code, filename);
+    const aiRaw    = await callAI(
+      `Analyse this code for bugs, security, and bad practices. File: ${filename}\n\n${code.slice(0, 3000)}\n\nReturn a JSON array ONLY: [{"severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`,
+      filename
+    );
     const aiIssues = parseAIResponse(aiRaw);
     const existing = new Set(issues.map(i => i.description));
     for (const ai of aiIssues) {
-      if (!existing.has(ai.description)) {
-        issues.push(ai);
-        existing.add(ai.description);
-      }
+      if (!existing.has(ai.description)) { issues.push(ai); existing.add(ai.description); }
     }
   }
 
   if (!['js', 'ts', 'jsx', 'tsx', 'html'].includes(ext) && issues.length === 0) {
-    if (code.includes('TODO') || code.includes('FIXME')) {
+    if (code.includes('TODO') || code.includes('FIXME'))
       issues.push({ severity: 'LOW', description: 'Found TODO/FIXME comments.', fix: 'Address before release.' });
-    }
   }
 
   return issues;
 }
 
-// Generate fixes for a single file
+// ─── Generate fixes ──────────────────────────────────────────────
 async function generateFixesForFile(code, filename, issues) {
-  let newCode = code;
-  const ext   = filename.split('.').pop().toLowerCase();
+  let newCode   = code;
+  const ext     = filename.split('.').pop().toLowerCase();
   const applied = [];
 
   if (['js', 'ts', 'jsx', 'tsx'].includes(ext)) {
@@ -221,9 +184,7 @@ async function generateFixesForFile(code, filename, issues) {
   if (ext === 'html') {
     const dom = new JSDOM(newCode);
     const doc = dom.window.document;
-    if (!doc.documentElement.hasAttribute('lang')) {
-      doc.documentElement.setAttribute('lang', 'en'); applied.push('Added lang="en"');
-    }
+    if (!doc.documentElement.hasAttribute('lang')) { doc.documentElement.setAttribute('lang', 'en'); applied.push('Added lang="en"'); }
     if (!doc.querySelector('meta[name="viewport"]')) {
       const m = doc.createElement('meta'); m.name = 'viewport'; m.content = 'width=device-width, initial-scale=1.0';
       doc.head.appendChild(m); applied.push('Added viewport meta');
@@ -242,8 +203,10 @@ async function generateFixesForFile(code, filename, issues) {
 
   const aiIssues = issues.filter(i => i.fix && !i.fix.startsWith('Apply:') && !i.fix.startsWith('Line'));
   if (aiIssues.length > 0 && !applied.length) {
-    const prompt     = `Fix the following issues and return ONLY the full corrected code.\nIssues:\n${aiIssues.map(i => `- ${i.description}`).join('\n')}\n\nFile: ${filename}\n\n${newCode}`;
-    const aiResponse = await callAI(prompt, filename + '.fix');
+    const aiResponse = await callAI(
+      `Fix the following issues and return ONLY the full corrected code, no explanation.\nIssues:\n${aiIssues.map(i => `- ${i.description}`).join('\n')}\n\nFile: ${filename}\n\n${newCode}`,
+      filename + '.fix'
+    );
     if (aiResponse) {
       const block = aiResponse.match(/```(?:\w+)?\s*([\s\S]*?)```/);
       newCode = block ? block[1] : aiResponse;
@@ -254,64 +217,187 @@ async function generateFixesForFile(code, filename, issues) {
   return { newCode, applied };
 }
 
-// OAuth routes
+// ─── Feature development via AI ──────────────────────────────────
+// NEW: takes a feature description and a file, asks AI to implement it
+async function generateFeatureForFile(code, filename, featureDescription) {
+  const prompt = `You are a senior engineer. Add the following feature to this file.
+Feature request: ${featureDescription}
+File: ${filename}
+
+Rules:
+- Return ONLY the complete updated file contents, no explanation, no markdown fences.
+- Preserve all existing functionality.
+- Follow the existing code style.
+- Add a comment near the new code: // Added by VisCarMa: ${featureDescription.slice(0, 60)}
+
+File contents:
+${code.slice(0, 4000)}`;
+
+  const aiResponse = await callAI(prompt, filename);
+  if (!aiResponse) return { newCode: code, success: false };
+  const block = aiResponse.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+  return { newCode: block ? block[1] : aiResponse, success: true };
+}
+
+// ─── PR body builder ─────────────────────────────────────────────
+function buildPRBody({ fixes, featureDescription, repoOwner, repoName, prType }) {
+  const now       = new Date().toUTCString();
+  const repoLink  = `https://github.com/${repoOwner}/${repoName}`;
+  const authorLink = `[@suryasticsai](https://github.com/suryasticsai)`;
+  const badge      = `[![VisCarMa](https://img.shields.io/badge/auto--fixed%20by-VisCarMa-3b82f6?style=flat-square&logo=github)](https://viscarma.onrender.com)`;
+
+  if (prType === 'feature') {
+    return `${badge}
+
+## ✨ Feature Added by VisCarMa
+
+**Feature:** ${featureDescription}
+
+### Files modified
+${fixes.map(f => `- \`${f.file}\``).join('\n')}
+
+### What changed
+${fixes.map(f => `**\`${f.file}\`** — AI implemented: _${featureDescription}_`).join('\n\n')}
+
+---
+🤖 This PR was automatically generated by **[VisCarMa](https://viscarma.onrender.com)** — the divine code architect.
+👤 Requested by ${authorLink}
+🕐 Generated at: ${now}
+🔗 Repository: ${repoLink}`;
+  }
+
+  // Fix PR body
+  const fileDetails = fixes.map(f => {
+    const appliedList = f.applied.length
+      ? f.applied.map(a => `  - ${a}`).join('\n')
+      : '  - No auto-fixes applied';
+    return `**\`${f.file}\`**\n${appliedList}`;
+  }).join('\n\n');
+
+  const issuesSummary = fixes.map(f =>
+    f.issues && f.issues.length
+      ? f.issues.map(i => `  - [${i.severity || 'MED'}] ${i.description}`).join('\n')
+      : '  - No issues'
+  ).join('\n');
+
+  return `${badge}
+
+## 🔧 Auto-fix PR by VisCarMa
+
+### What was fixed
+${fileDetails}
+
+### Issues addressed
+${issuesSummary}
+
+### Files changed
+${fixes.map(f => `- \`${f.file}\``).join('\n')}
+
+---
+🤖 This PR was automatically generated by **[VisCarMa](https://viscarma.onrender.com)** — the divine code architect.
+👤 Fixes applied by ${authorLink}
+🕐 Generated at: ${now}
+🔗 Repository: ${repoLink}`;
+}
+
+// ─── README updater ──────────────────────────────────────────────
+async function updateReadme({ repoOwner, repoName, branch, fixes, featureDescription, prUrl, prNumber, ghToken, prType }) {
+  const baseUrl  = `https://api.github.com/repos/${repoOwner}/${repoName}`;
+  const now      = new Date().toUTCString();
+  const prType_  = prType === 'feature' ? '✨ Feature' : '🔧 Fix';
+  const summary  = prType === 'feature'
+    ? featureDescription
+    : fixes.map(f => f.applied.join(', ') || 'reviewed').join('; ');
+
+  const newEntry = `| ${prType_} | ${fixes.map(f => `\`${f.file}\``).join(', ')} | ${summary} | [PR #${prNumber}](${prUrl}) | ${now} | [@suryasticsai](https://github.com/suryasticsai) |`;
+
+  try {
+    const readmeRes  = await fetch(`${baseUrl}/contents/README.md?ref=${branch}`, {
+      headers: { Authorization: `token ${ghToken}` },
+    });
+
+    let currentContent = '';
+    let sha            = null;
+
+    if (readmeRes.ok) {
+      const readmeData = await readmeRes.json();
+      currentContent   = Buffer.from(readmeData.content, 'base64').toString('utf-8');
+      sha              = readmeData.sha;
+    }
+
+    const viscarmaHeader = `\n\n<!-- VISCARMA:START -->\n## 🤖 VisCarMa Change Log\n> Auto-maintained by [VisCarMa](https://viscarma.onrender.com) · Author: [@suryasticsai](https://github.com/suryasticsai)\n\n| Type | Files | Summary | PR | Date | Author |\n|------|-------|---------|-----|------|--------|\n`;
+    const viscarmaFooter = `<!-- VISCARMA:END -->`;
+
+    let updatedContent;
+
+    if (currentContent.includes('<!-- VISCARMA:START -->')) {
+      // Inject new row right after the table header
+      updatedContent = currentContent.replace(
+        /(\| Type \| Files \| Summary \| PR \| Date \| Author \|\n\|[-|]+\|\n)/,
+        `$1${newEntry}\n`
+      );
+    } else {
+      // First time — append the whole section
+      updatedContent = currentContent + viscarmaHeader + newEntry + '\n' + viscarmaFooter;
+    }
+
+    await fetch(`${baseUrl}/contents/README.md`, {
+      method:  'PUT',
+      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        message: `docs: VisCarMa update README for PR #${prNumber}`,
+        content: Buffer.from(updatedContent).toString('base64'),
+        sha,
+        branch,
+      }),
+    });
+
+    console.log('[README] Updated successfully');
+  } catch (e) {
+    console.error('[README] Update failed:', e.message);
+    // Non-fatal — PR still succeeds even if README update fails
+  }
+}
+
+// ─── OAuth ───────────────────────────────────────────────────────
 const GITHUB_AUTH_URL  = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 
 app.get('/auth/github', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
   res.cookie('oauthState', state, {
-    signed:   true,
-    maxAge:   10 * 60 * 1000,
-    httpOnly: true,
-    sameSite: 'lax',
-    secure:   process.env.NODE_ENV === 'production',
+    signed: true, maxAge: 10 * 60 * 1000,
+    httpOnly: true, sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
   });
-  // NOTE: no encodeURIComponent — GitHub matches redirect_uri verbatim
-  const url = `${GITHUB_AUTH_URL}?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=repo&state=${state}`;
+  res.redirect(`${GITHUB_AUTH_URL}?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=repo&state=${state}`);
   console.log('[AUTH] Redirecting to GitHub OAuth, state:', state);
-  res.redirect(url);
 });
 
 app.get('/auth/callback', async (req, res) => {
   const { code, state } = req.query;
   const cookieState     = req.signedCookies.oauthState;
   console.log('[AUTH] Callback — code:', !!code, 'state match:', state === cookieState);
-
-  if (!code)                        return res.status(400).send('Missing code');
-  if (!state || state !== cookieState) {
-    console.error('[AUTH] State mismatch');
-    return res.status(400).send('Invalid state — please try logging in again');
-  }
+  if (!code) return res.status(400).send('Missing code');
+  if (!state || state !== cookieState) return res.status(400).send('Invalid state — please try again');
   res.clearCookie('oauthState');
 
   try {
     const tokenRes  = await fetch(GITHUB_TOKEN_URL, {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        client_id:     GITHUB_CLIENT_ID,
-        client_secret: GITHUB_CLIENT_SECRET,
-        code,
-        redirect_uri:  REDIRECT_URI,
-      }),
+      body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, client_secret: GITHUB_CLIENT_SECRET, code, redirect_uri: REDIRECT_URI }),
     });
     const tokenData = await tokenRes.json();
-
-    if (!tokenData.access_token) {
-      console.error('[AUTH] Token exchange failed:', tokenData);
-      return res.status(400).send('Failed to get access token');
-    }
+    if (!tokenData.access_token) return res.status(400).send('Failed to get access token');
 
     const userRes = await fetch('https://api.github.com/user', {
       headers: { Authorization: `token ${tokenData.access_token}` },
     });
     const user = await userRes.json();
 
-    // cookie-session: just assign — no .save() needed
     req.session.githubToken = tokenData.access_token;
     req.session.githubUser  = { id: user.id, login: user.login, avatar: user.avatar_url };
-
     console.log('[AUTH] Session set for user:', user.login, '— redirecting to /');
     res.redirect('/');
   } catch (e) {
@@ -321,40 +407,34 @@ app.get('/auth/callback', async (req, res) => {
 });
 
 app.get('/auth/logout', (req, res) => {
-  req.session = null; // cookie-session way to destroy
+  req.session = null;
   res.clearCookie('oauthState');
   res.redirect('/');
 });
 
-// API: current user
 app.get('/api/user', (req, res) => {
-  if (req.session?.githubUser) {
-    res.json({ user: req.session.githubUser, token: req.session.githubToken });
-  } else {
-    res.json({ user: null });
-  }
+  res.json(req.session?.githubUser
+    ? { user: req.session.githubUser, token: req.session.githubToken }
+    : { user: null });
 });
 
-// API: list repos
 app.get('/api/repos', async (req, res) => {
   if (!req.session?.githubToken) return res.status(401).json({ error: 'Not logged in' });
   try {
-    const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+    const r = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
       headers: { Authorization: `token ${req.session.githubToken}` },
     });
-    res.json(await response.json());
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to fetch repos' });
-  }
+    res.json(await r.json());
+  } catch { res.status(500).json({ error: 'Failed to fetch repos' }); }
 });
 
-// Clone and scan a repo
+// ─── Scan repo ───────────────────────────────────────────────────
 const TEMP_DIR = path.join(process.cwd(), 'tmp');
 
 app.post('/api/scan-repo', async (req, res) => {
-  const { repoUrl, repoOwner, repoName, token } = req.body;
-  const useToken  = token || req.session?.githubToken;
-  let   cloneUrl  = repoUrl;
+  const { repoUrl, token } = req.body;
+  const useToken = token || req.session?.githubToken;
+  let cloneUrl   = repoUrl;
   if (useToken) cloneUrl = repoUrl.replace('https://', `https://x-access-token:${useToken}@`);
 
   const folderId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -387,32 +467,43 @@ async function walkDir(dir) {
   for (const entry of entries) {
     if (exclude.includes(entry.name)) continue;
     const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...(await walkDir(fullPath)));
-    } else {
+    if (entry.isDirectory()) files.push(...(await walkDir(fullPath)));
+    else {
       const ext = entry.name.split('.').pop().toLowerCase();
-      if (['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h'].includes(ext)) {
+      if (['js','ts','jsx','tsx','html','css','py','java','go','rs','c','cpp','h'].includes(ext))
         files.push(fullPath);
-      }
     }
   }
   return files;
 }
 
-// Generate fixes
+// ─── Generate fixes ──────────────────────────────────────────────
 app.post('/api/generate-fixes', async (req, res) => {
   const { files } = req.body;
   const fixes = [];
   for (const item of files) {
     const { newCode, applied } = await generateFixesForFile(item.code, item.file, item.issues);
-    fixes.push({ file: item.file, newCode, applied });
+    fixes.push({ file: item.file, newCode, applied, issues: item.issues });
   }
   res.json({ fixes });
 });
 
-// Create PR
+// ─── NEW: Generate feature ───────────────────────────────────────
+app.post('/api/generate-feature', async (req, res) => {
+  const { files, featureDescription } = req.body;
+  if (!featureDescription) return res.status(400).json({ error: 'featureDescription is required' });
+
+  const results = [];
+  for (const item of files) {
+    const { newCode, success } = await generateFeatureForFile(item.code, item.file, featureDescription);
+    results.push({ file: item.file, newCode, applied: success ? [`Feature: ${featureDescription}`] : [], success });
+  }
+  res.json({ fixes: results, featureDescription });
+});
+
+// ─── Create PR (fix or feature) ──────────────────────────────────
 app.post('/api/create-pr', async (req, res) => {
-  const { repoOwner, repoName, branch, fixes, token } = req.body;
+  const { repoOwner, repoName, branch, fixes, token, featureDescription, prType = 'fix' } = req.body;
   const ghToken = token || req.session?.githubToken;
   if (!ghToken) return res.status(401).json({ error: 'Not authenticated' });
 
@@ -423,47 +514,68 @@ app.post('/api/create-pr', async (req, res) => {
     });
     const baseData = await baseRef.json();
     if (!baseData.object?.sha) throw new Error(`Branch "${branch}" not found`);
-    const baseSha   = baseData.object.sha;
-    const newBranch = `viscarma-fix-${Date.now()}`;
+
+    const newBranch = prType === 'feature'
+      ? `viscarma-feature-${Date.now()}`
+      : `viscarma-fix-${Date.now()}`;
 
     await fetch(`${baseUrl}/git/refs`, {
       method:  'POST',
       headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: baseSha }),
+      body:    JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: baseData.object.sha }),
     });
 
+    // Push each changed file
     for (const fix of fixes) {
+      if (!fix.newCode) continue;
       const fileRes  = await fetch(`${baseUrl}/contents/${fix.file}?ref=${newBranch}`, {
         headers: { Authorization: `token ${ghToken}` },
       });
       const fileData = await fileRes.json();
-      if (!fileData.content) continue;
-      const oldContent = Buffer.from(fileData.content, 'base64').toString('utf-8');
+      const oldContent = fileData.content
+        ? Buffer.from(fileData.content, 'base64').toString('utf-8')
+        : null;
+
       if (oldContent === fix.newCode) continue;
+
+      const commitMsg = prType === 'feature'
+        ? `feat: VisCarMa adds "${featureDescription?.slice(0, 60)}" to ${fix.file}`
+        : `fix: VisCarMa auto-fix in ${fix.file} (${fix.applied?.join(', ')})`;
+
       await fetch(`${baseUrl}/contents/${fix.file}`, {
-        method:  'PUT',
+        method:  fileData.sha ? 'PUT' : 'POST',
         headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          message: `fix: VisCarMa auto-fix (${fix.applied.join(', ')})`,
+          message: commitMsg,
           content: Buffer.from(fix.newCode).toString('base64'),
-          sha:     fileData.sha,
+          ...(fileData.sha ? { sha: fileData.sha } : {}),
           branch:  newBranch,
         }),
       });
     }
 
+    // Build rich PR body with watermark
+    const prBody = buildPRBody({ fixes, featureDescription, repoOwner, repoName, prType });
+
+    const prTitle = prType === 'feature'
+      ? `feat: VisCarMa — ${featureDescription?.slice(0, 72)}`
+      : `fix: auto-generated fixes by VisCarMa`;
+
     const pr     = await fetch(`${baseUrl}/pulls`, {
       method:  'POST',
       headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        title: 'fix: auto-generated fixes by VisCarMa',
-        head:  newBranch,
-        base:  branch,
-        body:  `This PR applies fixes suggested by VisCarMa.\n\n${fixes.map(f => `- \`${f.file}\``).join('\n')}`,
-      }),
+      body:    JSON.stringify({ title: prTitle, head: newBranch, base: branch, body: prBody }),
     });
     const prData = await pr.json();
     if (!prData.html_url) throw new Error(prData.message || 'PR creation failed');
+
+    // Update README with VisCarMa change log entry (non-fatal)
+    await updateReadme({
+      repoOwner, repoName, branch: newBranch,
+      fixes, featureDescription, prType,
+      prUrl: prData.html_url, prNumber: prData.number, ghToken,
+    });
+
     res.json({ url: prData.html_url, number: prData.number });
   } catch (e) {
     console.error('[PR]', e);
@@ -471,10 +583,8 @@ app.post('/api/create-pr', async (req, res) => {
   }
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// ─── Health ──────────────────────────────────────────────────────
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 app.listen(PORT, () => {
   console.log(`🕵️  VisCarma backend running on port ${PORT}`);
