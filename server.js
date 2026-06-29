@@ -1,189 +1,203 @@
-const express = require('express');
-const { spawn } = require('child_process');
-const path = require('path');
+// server.js — VisCarma Backend (Clean Version)
+import express from 'express';
+import cors from 'cors';
+import { ESLint } from 'eslint';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 9000;
+const PORT = process.env.PORT || 3000;
 
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── Helper: detect agent from a line of output ────────
-function detectAgentFromLine(line) {
-  if (line.includes('Agent Parsh')) return 'Parsh';
-  if (line.includes('Agent Krish')) return 'Krish';
-  if (line.includes('Agent Parth')) return 'Parth';
-  if (line.includes('Aider') || line.includes('aider') || line.includes('Model:')) return 'Parth';
-  if (line.includes('✅ PR created') || line.includes('Mission complete') || line.includes('📸 After screenshot')) return 'VisCarma';
-  if (line.includes('📁 Using repo path') || line.includes('👤 Username') || line.includes('🎯 Target')) return 'VisCarma';
-  if (line.includes('ESLint') || line.includes('No duplicate') || line.includes('Running ESLint') ||
-      line.includes('Changed files') || line.includes('Total duration') || line.includes('Process exited') ||
-      line.includes('📁') || line.includes('⏱️') || line.includes('⌛')) return 'Parth';
-  return 'System';
+// ─── ESLint instance ──────────────────────────────────────────────
+let eslintInstance = null;
+
+async function getESLint() {
+  if (!eslintInstance) {
+    eslintInstance = new ESLint({
+      useEslintrc: false,
+      overrideConfig: {
+        env: {
+          browser: true,
+          node: true,
+          es2021: true,
+        },
+        parserOptions: {
+          ecmaVersion: 'latest',
+          sourceType: 'module',
+        },
+        rules: {
+          'no-undef': 'error',
+          'eqeqeq': 'error',
+          'no-eval': 'error',
+          'no-unused-vars': 'warn',
+          'no-extra-semi': 'warn',
+          'no-await-in-loop': 'warn',
+          'require-await': 'warn',
+          'no-promise-executor-return': 'error',
+          'no-console': 'warn',
+          'no-alert': 'warn',
+          'no-debugger': 'warn',
+          'no-var': 'warn',
+          'prefer-const': 'warn',
+        },
+      },
+    });
+  }
+  return eslintInstance;
 }
 
-// ─── Streaming endpoint ──────────────────────────────────
-app.get('/stream', async (req, res) => {
-  const { repo, owner, branch, prompt, username } = req.query;
+// ─── AI call (optional, replace with your chosen service) ──────
+async function callAI(code, filename) {
+  // Example using OpenRouter (free tier)
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Add your API key if needed:
+        // 'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'google/gemma-2-9b-it:free',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a code reviewer. Return a JSON array of issues with severity (HIGH/MED/LOW), description, and a fix suggestion. Only respond with the JSON array.'
+          },
+          {
+            role: 'user',
+            content: `Analyse this file for bugs, security, performance, and bad practices.\nFile: ${filename}\n\n${code.slice(0, 3000)}`
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 800,
+      }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch (e) {
+    console.error('AI error:', e.message);
+    return null;
+  }
+}
 
-  if (!prompt || !repo || !owner) {
-    res.status(400).json({ error: 'Missing repo, owner, or prompt' });
-    return;
+function parseAIResponse(text) {
+  if (!text) return [];
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[0]);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+// ─── HTML specific checks ────────────────────────────────────────
+function checkHTML(code) {
+  const issues = [];
+  if (!code.includes('<html lang=') && !code.includes('<html lang="')) {
+    issues.push({
+      severity: 'MED',
+      description: 'Missing lang attribute on <html> – accessibility issue.',
+      fix: 'Add <html lang="en"> to the page.'
+    });
+  }
+  if (!code.includes('<title>') || code.match(/<title>\s*<\/title>/)) {
+    issues.push({
+      severity: 'HIGH',
+      description: 'Missing or empty <title> – SEO and usability issue.',
+      fix: 'Add a descriptive title: <title>My Page</title>.'
+    });
+  }
+  if (code.includes('<img') && !code.includes('alt=')) {
+    issues.push({
+      severity: 'MED',
+      description: 'Images missing alt attributes – accessibility issue.',
+      fix: 'Add alt="description" to all <img> tags.'
+    });
+  }
+  if (!code.includes('viewport')) {
+    issues.push({
+      severity: 'MED',
+      description: 'Missing viewport meta tag – mobile responsiveness issue.',
+      fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1.0">'
+    });
+  }
+  return issues;
+}
+
+// ─── Main analysis endpoint ──────────────────────────────────────
+app.post('/api/analyze', async (req, res) => {
+  const { code, filename, extension } = req.body;
+  if (!code) return res.status(400).json({ error: 'Missing code' });
+
+  const ext = extension || filename?.split('.').pop() || '';
+  const issues = [];
+
+  // 1. ESLint for JS/TS
+  if (['js', 'ts', 'jsx', 'tsx'].includes(ext)) {
+    try {
+      const eslint = await getESLint();
+      const results = await eslint.lintText(code, { filePath: filename || 'file.js' });
+      const messages = results[0]?.messages || [];
+      for (const msg of messages) {
+        issues.push({
+          severity: msg.severity === 2 ? 'HIGH' : 'MED',
+          description: msg.message,
+          fix: msg.fix?.text ? `Apply: ${msg.fix.text}` : `Line ${msg.line || '?'}: Review manually.`,
+        });
+      }
+    } catch (e) {
+      console.error('ESLint error:', e);
+    }
   }
 
-  const repoPath = path.join(__dirname, '..', repo);
-  const userToken = process.env.GITHUB_TOKEN;
-  if (!userToken) {
-    res.status(401).json({ error: 'No GitHub token available' });
-    return;
+  // 2. HTML checks
+  if (ext === 'html') {
+    issues.push(...checkHTML(code));
   }
 
-  const env = {
-    ...process.env,
-    GITHUB_TOKEN: userToken,
-    TERM: 'dumb',
-    PYTHONUNBUFFERED: '1',
-  };
-
-  const args = [
-    'agent.js',
-    '--repo', repo,
-    '--owner', owner,
-    '--base', branch || 'main',
-    '--repo-path', repoPath,
-    '--username', username || 'unknown',
-    prompt
-  ];
-
-  console.log('🚀 Launching agent with args:', args);
-
-  const child = spawn('node', args, {
-    cwd: __dirname,
-    env,
-  });
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
-
-  let buffer = '';
-  let inCodeBlock = false;
-  let codeBlockContent = '';
-  let messageQueue = [];
-  let flushTimer = null;
-  const GROUP_WINDOW = 45000; // 45 seconds
-
-  const flushMessages = () => {
-    if (messageQueue.length === 0) return;
-    const grouped = messageQueue.reduce((acc, msg) => {
-      if (!acc[msg.agent]) acc[msg.agent] = [];
-      acc[msg.agent].push(msg.line);
-      return acc;
-    }, {});
-    for (const [agent, lines] of Object.entries(grouped)) {
-      const text = lines.join('\n');
-      res.write(`data: ${JSON.stringify({ type: 'output', content: text, agent })}\n\n`);
-    }
-    messageQueue = [];
-    clearTimeout(flushTimer);
-    flushTimer = null;
-  };
-
-  const sendMessage = (agent, content) => {
-    if (messageQueue.length > 0 && messageQueue[messageQueue.length - 1].agent !== agent) {
-      flushMessages();
-    }
-    messageQueue.push({ agent, line: content });
-    if (!flushTimer) {
-      flushTimer = setTimeout(flushMessages, GROUP_WINDOW);
-    }
-  };
-
-  const processLine = (line) => {
-    const trimmed = line.trim();
-    if (trimmed === '') return;
-
-    // Suppress ESLint warnings
-    if (trimmed.includes('ESLint') && (trimmed.includes('not find') || trimmed.includes('Oops!') ||
-        trimmed.includes('ESLint: 10.5.0') || trimmed.includes('ESLint couldn\'t find') ||
-        trimmed.includes('From ESLint v9.0.0') || trimmed.includes('If you are using a .eslintrc.*') ||
-        trimmed.includes('https://eslint.org/'))) {
-      if (!global._eslintWarned) {
-        global._eslintWarned = true;
-        sendMessage('Parth', 'ℹ️ ESLint config not found – skipping linting.');
-      }
-      return;
-    }
-
-    // Suppress Aider prompt-toolkit warnings
-    if (trimmed.includes('Can\'t initialize prompt toolkit') || trimmed.includes('Terminal does not support pretty output')) {
-      return;
-    }
-
-    // Suppress "Detected dumb terminal"
-    if (trimmed.includes('Detected dumb terminal')) {
-      return;
-    }
-
-    // Detect code blocks
-    if (trimmed.startsWith('```')) {
-      if (!inCodeBlock) {
-        inCodeBlock = true;
-        codeBlockContent = trimmed + '\n';
-        return;
-      } else {
-        codeBlockContent += trimmed;
-        const agent = detectAgentFromLine(line);
-        sendMessage(agent, codeBlockContent);
-        inCodeBlock = false;
-        codeBlockContent = '';
-        return;
+  // 3. AI analysis (if not too many issues already)
+  if (issues.length < 10) {
+    const aiRaw = await callAI(code, filename || 'file');
+    const aiIssues = parseAIResponse(aiRaw);
+    const existing = new Set(issues.map(i => i.description));
+    for (const ai of aiIssues) {
+      if (!existing.has(ai.description)) {
+        issues.push(ai);
+        existing.add(ai.description);
       }
     }
+  }
 
-    if (inCodeBlock) {
-      codeBlockContent += line + '\n';
-      return;
+  // 4. Simple fallback for other languages
+  if (!['js', 'ts', 'jsx', 'tsx', 'html'].includes(ext) && issues.length === 0) {
+    if (code.includes('TODO') || code.includes('FIXME')) {
+      issues.push({
+        severity: 'LOW',
+        description: 'Found TODO/FIXME comments – incomplete code.',
+        fix: 'Address the TODO/FIXME before release.'
+      });
     }
+  }
 
-    const agent = detectAgentFromLine(line);
-    sendMessage(agent, line);
-  };
-
-  child.stdout.on('data', (data) => {
-    buffer += data.toString();
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      processLine(line);
-    }
-  });
-
-  child.stderr.on('data', (data) => {
-    const chunk = data.toString();
-    const lines = chunk.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.includes('Can\'t initialize prompt toolkit') && !trimmed.includes('Terminal does not support')) {
-        sendMessage('System', '❌ ' + trimmed);
-      }
-    }
-  });
-
-  child.on('close', (code) => {
-    if (buffer) processLine(buffer);
-    flushMessages();
-    res.write(`data: ${JSON.stringify({ type: 'done', content: `Process exited with code ${code}` })}\n\n`);
-    res.end();
-  });
+  res.json({ issues });
 });
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// ─── Health check ────────────────────────────────────────────────
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 app.listen(PORT, () => {
-  console.log(`🕵️ VisCarma running at http://localhost:${PORT}`);
-  console.log(`🔐 OAuth mode: OFFLINE`);
+  console.log(`🕵️ VisCarma backend running on port ${PORT}`);
 });
