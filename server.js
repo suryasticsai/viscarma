@@ -5,10 +5,9 @@ import session from 'express-session';
 import { ESLint } from 'eslint';
 import { JSDOM } from 'jsdom';
 import simpleGit from 'simple-git';
-import rimraf from 'rimraf';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs/promises';
+import { promises as fs } from 'fs';  // ✅ use built-in fs.promises
 import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -89,7 +88,6 @@ async function callAI(code, filename) {
     endpoint = 'https://openrouter.ai/api/v1/chat/completions';
     headers = {
       'Content-Type': 'application/json',
-      // Add your OpenRouter key if you have one
       // 'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
     };
     body = {
@@ -245,12 +243,10 @@ async function generateFixesForFile(code, filename, issues) {
     const dom = new JSDOM(newCode);
     const doc = dom.window.document;
 
-    // Add lang if missing
     if (!doc.documentElement.hasAttribute('lang')) {
       doc.documentElement.setAttribute('lang', 'en');
       applied.push('Added lang="en"');
     }
-    // Add viewport if missing
     if (!doc.querySelector('meta[name="viewport"]')) {
       const meta = doc.createElement('meta');
       meta.name = 'viewport';
@@ -258,14 +254,12 @@ async function generateFixesForFile(code, filename, issues) {
       doc.head.appendChild(meta);
       applied.push('Added viewport meta');
     }
-    // Add title if missing
     if (!doc.querySelector('title')) {
       const title = doc.createElement('title');
       title.textContent = 'My Page';
       doc.head.appendChild(title);
       applied.push('Added title');
     }
-    // Add alt to images that are missing it
     doc.querySelectorAll('img:not([alt])').forEach(img => {
       img.setAttribute('alt', 'image');
       applied.push('Added alt to image');
@@ -274,20 +268,17 @@ async function generateFixesForFile(code, filename, issues) {
     newCode = dom.serialize();
   }
 
-  // 3. AI‑based fixes (try to apply by asking AI for full corrected code)
-  // For simplicity, we only do this if there are AI issues and none of the above applied
+  // 3. AI-based fixes (if no other fixes applied)
   const aiIssues = issues.filter(i => i.severity && i.fix && !i.fix.startsWith('Apply:') && !i.fix.startsWith('Line'));
   if (aiIssues.length > 0 && !applied.length) {
     const prompt = `Fix the following issues in this code and return the full corrected code (only the code, no explanation).\nIssues:\n${aiIssues.map(i => `- ${i.description}`).join('\n')}\n\nFile: ${filename}\n\n${newCode}`;
     const aiResponse = await callAI(prompt, filename + '.fix');
     if (aiResponse) {
-      // Try to extract code block
       const codeBlock = aiResponse.match(/```(?:\w+)?\s*([\s\S]*?)```/);
       if (codeBlock && codeBlock[1]) {
         newCode = codeBlock[1];
         applied.push('AI-generated fixes');
       } else {
-        // fallback: use whole response
         newCode = aiResponse;
         applied.push('AI-generated fixes (full response)');
       }
@@ -330,7 +321,6 @@ app.get('/auth/callback', async (req, res) => {
     const data = await response.json();
     if (data.access_token) {
       req.session.githubToken = data.access_token;
-      // Also fetch user info
       const userRes = await fetch('https://api.github.com/user', {
         headers: { Authorization: `token ${data.access_token}` },
       });
@@ -359,7 +349,6 @@ app.get('/api/user', (req, res) => {
   }
 });
 
-// ─── Repo listing ──────────────────────────────────────────────────
 app.get('/api/repos', async (req, res) => {
   if (!req.session.githubToken) return res.status(401).json({ error: 'Not logged in' });
   try {
@@ -374,25 +363,20 @@ app.get('/api/repos', async (req, res) => {
 });
 
 // ─── Clone and Scan a Repo ──────────────────────────────────────
-// Temporary directory for cloning
 const TEMP_DIR = path.join(process.cwd(), 'tmp');
 
 app.post('/api/scan-repo', async (req, res) => {
   const { repoUrl, repoOwner, repoName, token } = req.body;
-  // Determine URL: if token provided, use authenticated clone
   const useToken = token || req.session.githubToken;
   let cloneUrl = repoUrl;
   if (useToken) {
-    // Use token to clone private repos
     cloneUrl = repoUrl.replace('https://', `https://x-access-token:${useToken}@`);
   }
-  // Create unique temp folder
   const folderId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const repoPath = path.join(TEMP_DIR, folderId);
   await fs.mkdir(repoPath, { recursive: true });
 
   try {
-    // Clone
     const git = simpleGit();
     await git.clone(cloneUrl, repoPath, ['--depth', '1']);
     const files = await walkDir(repoPath);
@@ -401,14 +385,15 @@ app.post('/api/scan-repo', async (req, res) => {
       const relativePath = path.relative(repoPath, filePath);
       const code = await fs.readFile(filePath, 'utf-8');
       const issues = await analyzeFile(code, relativePath);
-      results.push({ file: relativePath, issues });
+      // Store code for later fix generation
+      results.push({ file: relativePath, code, issues });
     }
     // Clean up
-    await rimraf(repoPath);
+    await fs.rm(repoPath, { recursive: true, force: true });
     res.json({ success: true, results });
   } catch (e) {
     console.error(e);
-    await rimraf(repoPath);
+    await fs.rm(repoPath, { recursive: true, force: true }).catch(() => {});
     res.status(500).json({ error: 'Scan failed: ' + e.message });
   }
 });
@@ -434,9 +419,9 @@ async function walkDir(dir) {
 
 // ─── Generate Fixes ──────────────────────────────────────────────
 app.post('/api/generate-fixes', async (req, res) => {
-  const { files: fileIssues } = req.body; // [{ file: 'index.js', code: '...', issues: [...] }]
+  const { files } = req.body; // [{ file: 'index.js', code: '...', issues: [...] }]
   const fixes = [];
-  for (const item of fileIssues) {
+  for (const item of files) {
     const { newCode, applied } = await generateFixesForFile(item.code, item.file, item.issues);
     fixes.push({ file: item.file, newCode, applied });
   }
@@ -450,7 +435,6 @@ app.post('/api/create-pr', async (req, res) => {
   if (!ghToken) return res.status(401).json({ error: 'Not authenticated' });
 
   try {
-    // Create new branch
     const baseUrl = `https://api.github.com/repos/${repoOwner}/${repoName}`;
     const baseRef = await fetch(`${baseUrl}/git/refs/heads/${branch}`, {
       headers: { Authorization: `token ${ghToken}` },
@@ -463,9 +447,7 @@ app.post('/api/create-pr', async (req, res) => {
       body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: baseSha }),
     });
 
-    // Commit each fix
     for (const fix of fixes) {
-      // Get current file content
       const fileRes = await fetch(`${baseUrl}/contents/${fix.file}?ref=${newBranch}`, {
         headers: { Authorization: `token ${ghToken}` },
       });
@@ -486,7 +468,6 @@ app.post('/api/create-pr', async (req, res) => {
       });
     }
 
-    // Open PR
     const pr = await fetch(`${baseUrl}/pulls`, {
       method: 'POST',
       headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
