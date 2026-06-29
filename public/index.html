@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VisCarMa · DevAIne Agent </title>
+  <title>VisCarMa · Hybrid Scanner</title>
   <link rel="icon" type="image/png" href="/viscarma_logo.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -112,11 +112,10 @@
       repoOwner: null,
       repoName: null,
       repoBranch: 'main',
-      scanResults: null, // [{ file, code, issues }]
-      fixes: null, // [{ file, newCode, applied }]
+      scanResults: null,
+      fixes: null,
     };
 
-    /* ─── DOM HELPERS ──────────────────────────────────────────── */
     const $ = id => document.getElementById(id);
     const logBox = $('log-box');
 
@@ -146,19 +145,21 @@
     async function checkAuth() {
       try {
         const res = await fetch('/api/user');
+        if (!res.ok) {
+          // Retry once if server error (might be session not ready)
+          console.warn('Auth check failed, retrying...');
+          setTimeout(checkAuth, 1000);
+          return;
+        }
         const data = await res.json();
         if (data.user) {
           STATE.user = data.user;
           STATE.token = data.token;
           // Update UI
-          const userInfo = $('user-info');
-          userInfo.textContent = `Logged in as ${data.user.login}`;
-          const statusDot = $('status-dot');
-          statusDot.className = 'status-dot online';
-          const loginBtn = $('login-btn');
-          loginBtn.textContent = 'Logout';
-          loginBtn.onclick = () => window.location.href = '/auth/logout';
-          // Show repo selector
+          $('user-info').textContent = `Logged in as ${data.user.login}`;
+          $('status-dot').className = 'status-dot online';
+          $('login-btn').textContent = 'Logout';
+          $('login-btn').onclick = () => window.location.href = '/auth/logout';
           $('repo-select').style.display = 'inline-block';
           $('scan-logged-btn').style.display = 'inline-flex';
           await loadRepos();
@@ -173,11 +174,8 @@
         }
       } catch (e) {
         console.error('Auth check failed:', e);
-        // Fallback: show as not logged in
-        $('user-info').textContent = 'Auth error';
-        $('status-dot').className = 'status-dot offline';
-        $('login-btn').textContent = 'Login with GitHub';
-        $('login-btn').onclick = login;
+        // Retry once after 1s
+        setTimeout(checkAuth, 1000);
       }
     }
 
