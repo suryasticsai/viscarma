@@ -27,6 +27,47 @@
 [🚀 Live Demo](https://viscarma.onrender.com) · [📖 How to Use](#how-to-use) · [⚡ Features](#features) · [🛠️ Self-Host](#self-hosting) · [👤 Author](#author)
 
 </div>
+---
+## ⚡ How VisCarMa Compares
+
+| Feature | VisCarMa | CodeRabbit | SonarQube | Copilot | Devin |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **ANALYSIS** |||||
+| ESLint + static analysis | ✅ | ✅ | ✅ | — | — |
+| AI code review on PRs | ✅ | ✅ | — | ✅ | ✅ |
+| Security scanner (OWASP + secrets) | ✅ | — | ✅ | — | — |
+| Multi-language (Python, Go, Java, Rust) | ✅ | — | ✅ | — | — |
+| Live URL scan (no browser needed) | ✅ | — | — | — | — |
+| Dependency vulnerability scan | ✅ | — | ✅ | — | — |
+| **AUTO-FIX** |||||
+| Auto-fix issues + open PR | ✅ | — | — | — | ✅ |
+| Feature generation + PR | ✅ | — | — | — | ✅ |
+| Test generation + PR | ✅ | — | — | — | — |
+| Self-verification loop | ✅ | — | — | — | — |
+| Auto-merge after verification | ✅ | — | — | — | — |
+| **AGENTIC** |||||
+| Server-side agent (survives tab close) | ✅ | — | — | — | ✅ |
+| Jira integration (tickets as tasks) | ✅ | — | — | — | — |
+| Scheduled auto-fix (cron) | ✅ | — | — | — | — |
+| Multi-repo sweep | ✅ | — | — | — | — |
+| Voice activation | ✅ | — | — | — | — |
+| Browser push notifications | ✅ | — | — | — | — |
+| **DEVELOPER EXPERIENCE** |||||
+| Monaco IDE + GitHub-style diff view | ✅ | — | — | — | — |
+| AI code explainer | ✅ | — | — | ✅ | — |
+| Custom rule builder + marketplace | ✅ | — | — | — | — |
+| GitHub Action generator | ✅ | — | — | — | — |
+| PWA — installable as mobile app | ✅ | — | — | — | — |
+| **GROWTH & MONETISATION** |||||
+| Public scan badge (SVG) | ✅ | — | — | — | — |
+| Freemium + Stripe Pro payments | ✅ | ✅ | ✅ | — | ✅ |
+| README auto-update + PR watermark | ✅ | — | — | — | — |
+| **PLATFORM** |||||
+| Free tier available | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Self-hostable | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Total unique features** | **28** | 5 | 6 | 4 | 5 |
+
+> Built by [@suryasticsai](https://github.com/suryasticsai) · [viscarma.onrender.com](https://viscarma.onrender.com)
 
 ---
 
