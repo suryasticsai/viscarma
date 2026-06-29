@@ -168,6 +168,10 @@
       <button class="panel-tab"        onclick="showPanel('editor')">Editor / Diff</button>
       <button class="panel-tab"        onclick="showPanel('history')">History</button>
       <button class="panel-tab"        onclick="showPanel('agentlog')">Agent log</button>
+      <button class="panel-tab"        onclick="showPanel('rules')">Rules</button>
+      <button class="panel-tab"        onclick="showPanel('schedules')">Schedules</button>
+      <button class="panel-tab"        onclick="showPanel('tests')">Tests</button>
+      <button class="panel-tab"        onclick="showPanel('marketplace')">Marketplace</button>
     </nav>
 
     <!-- REPORT panel -->
@@ -228,6 +232,106 @@
           <div class="agent-section-title">Activity</div>
           <div id="agent-activity" class="log-box" style="max-height:200px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:8px"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- RULES panel -->
+    <div class="panel-content" id="panel-rules">
+      <div class="report-scroll">
+        <div class="row-between" style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600">Custom Rules</div>
+          <button class="btn btn-primary btn-sm" onclick="showRuleForm()">+ New rule</button>
+        </div>
+        <div id="rule-form" style="display:none;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+          <div class="field-label" style="margin-bottom:6px">Rule name</div>
+          <input type="text" id="rule-name" placeholder="No console.log in production" style="margin-bottom:8px"/>
+          <div class="field-label" style="margin-bottom:6px">Regex pattern</div>
+          <input type="text" id="rule-pattern" placeholder="console\.log\(" style="margin-bottom:8px;font-family:var(--font-mono)"/>
+          <div class="field-label" style="margin-bottom:6px">Description</div>
+          <input type="text" id="rule-description" placeholder="console.log found in code" style="margin-bottom:8px"/>
+          <div class="field-label" style="margin-bottom:6px">Fix suggestion</div>
+          <input type="text" id="rule-fix" placeholder="Remove or replace with logger" style="margin-bottom:8px"/>
+          <div class="row" style="margin-bottom:8px;gap:12px">
+            <div style="flex:1">
+              <div class="field-label" style="margin-bottom:4px">Severity</div>
+              <select id="rule-severity"><option value="HIGH">HIGH</option><option value="MED" selected>MED</option><option value="LOW">LOW</option></select>
+            </div>
+            <div style="flex:1">
+              <div class="field-label" style="margin-bottom:4px">File types (comma sep)</div>
+              <input type="text" id="rule-filetypes" placeholder="js,ts,jsx (blank=all)"/>
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn btn-primary" onclick="saveRule()">Save rule</button>
+            <button class="btn btn-ghost" onclick="$('rule-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
+        <div id="rules-list"><div class="empty-state"><div class="e-icon">◈</div><div>No custom rules yet.</div></div></div>
+        <div style="margin-top:16px;padding:12px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius)">
+          <div class="field-label" style="margin-bottom:6px">Usage limit</div>
+          <div id="usage-display" class="mono text-xs text-muted">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULES panel -->
+    <div class="panel-content" id="panel-schedules">
+      <div class="report-scroll">
+        <div class="row-between" style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600">Scheduled Auto-Fix</div>
+          <button class="btn btn-primary btn-sm" onclick="showScheduleForm()">+ New schedule</button>
+        </div>
+        <div id="schedule-form" style="display:none;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+          <div class="field-label" style="margin-bottom:6px">Schedule name</div>
+          <input type="text" id="sched-name" placeholder="Nightly fix" style="margin-bottom:8px"/>
+          <div class="field-label" style="margin-bottom:6px">Repository URL</div>
+          <input type="text" id="sched-repo-url" placeholder="https://github.com/owner/repo" style="margin-bottom:8px"/>
+          <div class="field-label" style="margin-bottom:6px">GitHub token (needs repo scope)</div>
+          <input type="text" id="sched-token" placeholder="ghp_..." style="margin-bottom:8px;font-family:var(--font-mono)"/>
+          <div class="field-label" style="margin-bottom:6px">Cron expression (UTC)</div>
+          <input type="text" id="sched-cron" placeholder="0 2 * * *  (daily at 2am)" style="margin-bottom:4px;font-family:var(--font-mono)"/>
+          <div class="text-muted text-xs mono" style="margin-bottom:8px">Examples: 0 2 * * * (daily 2am) · 0 9 * * 1 (Mon 9am) · 0 */6 * * * (every 6h)</div>
+          <div class="row">
+            <button class="btn btn-primary" onclick="saveSchedule()">Save schedule</button>
+            <button class="btn btn-ghost" onclick="$('schedule-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
+        <div id="schedules-list"><div class="empty-state"><div class="e-icon">⏰</div><div>No schedules yet.</div></div></div>
+      </div>
+    </div>
+
+    <!-- TESTS panel -->
+    <div class="panel-content" id="panel-tests">
+      <div class="report-scroll">
+        <div style="font-size:13px;font-weight:600;margin-bottom:16px">Test Generator</div>
+        <div style="background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+          <div class="text-muted text-xs" style="margin-bottom:12px">Generate unit tests for your scanned files. Tests are committed to the repo as a PR.</div>
+          <div class="field-label" style="margin-bottom:6px">Select files to test</div>
+          <div id="test-file-checkboxes" style="margin-bottom:12px"><div class="text-muted text-xs">Scan a repo first to load files.</div></div>
+          <button class="btn btn-primary" onclick="generateTests()">Generate tests + PR</button>
+        </div>
+        <div id="test-results"></div>
+      </div>
+    </div>
+
+    <!-- MARKETPLACE panel -->
+    <div class="panel-content" id="panel-marketplace">
+      <div class="report-scroll">
+        <div class="row-between" style="margin-bottom:12px">
+          <div style="font-size:13px;font-weight:600">Rule Marketplace</div>
+          <button class="btn btn-sm" onclick="publishRulePack()">Publish my rules</button>
+        </div>
+        <div class="row" style="margin-bottom:16px;gap:8px">
+          <input type="text" id="market-search" placeholder="Search packs…" style="flex:1" oninput="loadMarketplace()"/>
+          <select id="market-category" onchange="loadMarketplace()" style="width:140px">
+            <option value="">All categories</option>
+            <option value="security">Security</option>
+            <option value="performance">Performance</option>
+            <option value="style">Style</option>
+            <option value="general">General</option>
+          </select>
+        </div>
+        <div id="marketplace-list"><div class="empty-state"><div class="e-icon">◈</div><div>Loading marketplace…</div></div></div>
       </div>
     </div>
 
@@ -377,7 +481,7 @@ function syncRepoSelects() {
 ══════════════════════════════════════════════════════ */
 function showPanel(name) {
   document.querySelectorAll('.panel-tab').forEach((t,i) => {
-    const names = ['report','editor','history','agentlog'];
+    const names = ['report','editor','history','agentlog','rules','schedules','tests','marketplace'];
     t.classList.toggle('active', names[i] === name);
   });
   document.querySelectorAll('.panel-content').forEach(p => p.classList.remove('active'));
@@ -386,7 +490,11 @@ function showPanel(name) {
     monacoEditor.layout();
     diffEditor.layout();
   }
-  if (name === 'history') renderHistory();
+  if (name === 'history')     renderHistory();
+  if (name === 'rules')       { loadRules(); loadUsage(); }
+  if (name === 'schedules')   loadSchedules();
+  if (name === 'marketplace') loadMarketplace();
+  if (name === 'tests')       loadTestFiles();
 }
 
 /* ══════════════════════════════════════════════════════
@@ -1110,6 +1218,283 @@ async function generateGitHubAction() {
   } catch(e) {
     log('ACTION','tag-err', e.message); toast('Action generation failed: '+e.message);
   }
+}
+
+/* ══════════════════════════════════════════════════════
+   TIER 3: CUSTOM RULES
+══════════════════════════════════════════════════════ */
+function showRuleForm() { $('rule-form').style.display = 'block'; }
+
+async function loadRules() {
+  try {
+    const res  = await apiFetch('/api/rules');
+    const data = await res.json();
+    const list = $('rules-list');
+    if (!data.rules?.length) {
+      list.innerHTML = '<div class="empty-state"><div class="e-icon">◈</div><div>No custom rules yet. Create one above.</div></div>';
+      return;
+    }
+    list.innerHTML = data.rules.map(r => `
+      <div class="issue-card" style="border-left:3px solid var(--${r.severity==='HIGH'?'red':r.severity==='MED'?'amber':'blue'})">
+        <div class="issue-meta">
+          <span class="sev sev-${r.severity.toLowerCase()}">${r.severity}</span>
+          <span style="font-weight:600;font-size:12px">${esc(r.name)}</span>
+          ${r.disabled ? '<span class="badge" style="opacity:0.5">disabled</span>' : ''}
+          ${r.marketplace ? '<span class="badge" style="background:var(--purple-dim);color:var(--purple);border-color:var(--purple)">marketplace</span>' : ''}
+          <span style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="toggleRule('${r.id}','${r.disabled}')">${r.disabled ? 'Enable' : 'Disable'}</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteRule('${r.id}')">Delete</button>
+          </span>
+        </div>
+        <div class="issue-desc">${esc(r.description)}</div>
+        <div class="issue-fix mono" style="margin-top:4px">${esc(r.pattern)} ${r.fileTypes?.length ? '· '+r.fileTypes.join(',') : '· all files'}</div>
+        ${r.fix ? `<div class="issue-fix" style="margin-top:4px">💡 ${esc(r.fix)}</div>` : ''}
+      </div>`).join('');
+  } catch(e) { log('RULES','tag-err',e.message); }
+}
+
+async function saveRule() {
+  const name    = $('rule-name').value.trim();
+  const pattern = $('rule-pattern').value.trim();
+  if (!name || !pattern) { toast('Name and pattern required'); return; }
+  try {
+    const res  = await apiFetch('/api/rules', {
+      method: 'POST',
+      body: JSON.stringify({
+        name, pattern,
+        description: $('rule-description').value.trim(),
+        fix:         $('rule-fix').value.trim(),
+        severity:    $('rule-severity').value,
+        fileTypes:   $('rule-filetypes').value.split(',').map(s=>s.trim()).filter(Boolean),
+      }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    toast('Rule saved');
+    $('rule-form').style.display = 'none';
+    ['rule-name','rule-pattern','rule-description','rule-fix','rule-filetypes'].forEach(id => $(id).value = '');
+    loadRules();
+  } catch(e) { toast('Error: '+e.message); }
+}
+
+async function deleteRule(id) {
+  await apiFetch(`/api/rules/${id}`, { method: 'DELETE' });
+  loadRules();
+}
+
+async function toggleRule(id, currentlyDisabled) {
+  await apiFetch(`/api/rules/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ disabled: currentlyDisabled === 'true' ? false : true }),
+  });
+  loadRules();
+}
+
+async function loadUsage() {
+  try {
+    const res  = await apiFetch('/api/usage');
+    const data = await res.json();
+    $('usage-display').innerHTML =
+      `Plan: <span style="color:var(--blue)">${data.plan}</span> &nbsp;·&nbsp; ` +
+      `Scans this month: <span style="color:var(--${data.remaining===0?'red':'emerald'})">${data.count}/${data.limit===Infinity?'∞':data.limit}</span> &nbsp;·&nbsp; ` +
+      `Remaining: <span style="color:var(--emerald)">${data.remaining===Infinity?'∞':data.remaining}</span>`;
+  } catch(e) { $('usage-display').textContent = 'Could not load usage.'; }
+}
+
+/* ══════════════════════════════════════════════════════
+   TIER 3: SCHEDULES
+══════════════════════════════════════════════════════ */
+function showScheduleForm() { $('schedule-form').style.display = 'block'; }
+
+async function loadSchedules() {
+  try {
+    const res  = await apiFetch('/api/schedules');
+    const data = await res.json();
+    const list = $('schedules-list');
+    if (!data.schedules?.length) {
+      list.innerHTML = '<div class="empty-state"><div class="e-icon">⏰</div><div>No schedules yet.</div></div>';
+      return;
+    }
+    list.innerHTML = data.schedules.map(s => `
+      <div class="issue-card" style="border-left:3px solid var(--${s.disabled?'border-hi':'blue'})" >
+        <div class="issue-meta">
+          <span class="mono text-xs" style="color:var(--blue)">${esc(s.cron)}</span>
+          <span style="font-weight:600;font-size:12px;margin-left:8px">${esc(s.name)}</span>
+          ${s.disabled ? '<span class="badge" style="opacity:0.5">paused</span>' : '<span class="badge" style="background:var(--emerald-dim);color:var(--emerald);border-color:var(--emerald)">active</span>'}
+          <span style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="toggleSchedule('${s.id}')">${s.disabled ? 'Resume' : 'Pause'}</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteSchedule('${s.id}')">Delete</button>
+          </span>
+        </div>
+        <div class="issue-desc mono" style="color:var(--text-2)">${esc(s.repoOwner)}/${esc(s.repoName)} · branch: ${esc(s.branch)}</div>
+        <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--text-3)">
+          <span>Runs: ${s.runCount||0}</span>
+          ${s.lastRunAt ? `<span>Last: ${new Date(s.lastRunAt).toLocaleString()}</span>` : ''}
+          ${s.lastRunStatus ? `<span style="color:var(--${s.lastRunStatus==='success'?'emerald':s.lastRunStatus==='error'?'red':'text-3'})">${esc(s.lastRunStatus)}${s.lastPrUrl ? ` — <a href="${s.lastPrUrl}" target="_blank" style="color:var(--emerald)">PR</a>` : ''}</span>` : ''}
+        </div>
+      </div>`).join('');
+  } catch(e) { log('SCHED','tag-err',e.message); }
+}
+
+async function saveSchedule() {
+  const name  = $('sched-name').value.trim();
+  const cron  = $('sched-cron').value.trim();
+  const url   = $('sched-repo-url').value.trim();
+  const token = $('sched-token').value.trim();
+  if (!name||!cron||!url||!token) { toast('All fields required'); return; }
+  const m = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
+  if (!m) { toast('Invalid GitHub URL'); return; }
+  try {
+    const res = await apiFetch('/api/schedules', {
+      method: 'POST',
+      body: JSON.stringify({ name, cron, repoUrl: url, repoOwner: m[1], repoName: m[2], branch:'main', token }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    toast('Schedule saved — runs automatically');
+    $('schedule-form').style.display = 'none';
+    ['sched-name','sched-cron','sched-repo-url','sched-token'].forEach(id => $(id).value='');
+    loadSchedules();
+  } catch(e) { toast('Error: '+e.message); }
+}
+
+async function deleteSchedule(id) {
+  await apiFetch(`/api/schedules/${id}`, { method: 'DELETE' });
+  loadSchedules();
+}
+
+async function toggleSchedule(id) {
+  await apiFetch(`/api/schedules/${id}/toggle`, { method: 'POST' });
+  loadSchedules();
+}
+
+/* ══════════════════════════════════════════════════════
+   TIER 3: TEST GENERATOR
+══════════════════════════════════════════════════════ */
+function loadTestFiles() {
+  const container = $('test-file-checkboxes');
+  const results   = STATE.scanResults;
+  if (!results?.length) {
+    container.innerHTML = '<div class="text-muted text-xs">Scan a repo first to load files.</div>';
+    return;
+  }
+  container.innerHTML = results.map((r,i) => `
+    <label class="feature-file-check">
+      <input type="checkbox" value="${i}" checked/>
+      ${esc(r.file)}
+    </label>`).join('');
+}
+
+async function generateTests() {
+  if (!STATE.scanResults?.length) { toast('Scan a repo first'); return; }
+  if (!STATE.token) { toast('Login required'); return; }
+
+  const selected = [...document.querySelectorAll('#test-file-checkboxes input:checked')]
+    .map(cb => STATE.scanResults[parseInt(cb.value)])
+    .filter(Boolean)
+    .map(r => ({ file: r.file, code: r.code }));
+
+  if (!selected.length) { toast('Select at least one file'); return; }
+
+  log('TEST','tag-info',`Generating tests for ${selected.length} file(s)…`);
+  $('test-results').innerHTML = '<div class="empty-state"><div class="e-icon">⟳</div><div>Generating tests…</div></div>';
+
+  try {
+    const res  = await apiFetch('/api/generate-tests', {
+      method: 'POST',
+      body: JSON.stringify({
+        files: selected,
+        repoOwner: STATE.repoOwner, repoName: STATE.repoName,
+        branch: STATE.repoBranch||'main', token: STATE.token,
+      }),
+    });
+    const data = await res.json();
+    if (!data.results?.length) throw new Error('No tests generated');
+
+    log('TEST','tag-ok',`Generated ${data.results.length} test file(s)`);
+    let html = '';
+    if (data.prUrl) {
+      html += `<div class="pr-result" style="margin-bottom:12px">🧪 <a href="${data.prUrl}" target="_blank" rel="noopener">View test PR #${data.prNumber}</a></div>`;
+    }
+    html += data.results.map(r => `
+      <div class="issue-card" style="border-left:3px solid var(--blue)">
+        <div class="issue-meta">
+          <span class="badge" style="background:var(--blue-dim);color:var(--blue);border-color:var(--blue)">${esc(r.framework)}</span>
+          <span class="mono text-xs">${esc(r.testFile)}</span>
+        </div>
+        <details style="margin-top:8px">
+          <summary class="text-xs text-muted" style="cursor:pointer">Preview test code</summary>
+          <pre style="background:var(--bg0);padding:8px;border-radius:4px;font-size:10px;color:var(--text-1);white-space:pre-wrap;max-height:200px;overflow:auto;margin-top:6px">${esc(r.testCode.slice(0,600))}${r.testCode.length>600?'\n…truncated':''}</pre>
+        </details>
+      </div>`).join('');
+    $('test-results').innerHTML = html;
+    toast(`${data.results.length} test file(s) generated!`);
+  } catch(e) {
+    $('test-results').innerHTML = `<div class="empty-state"><div>Failed: ${esc(e.message)}</div></div>`;
+    log('TEST','tag-err',e.message);
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   TIER 4: MARKETPLACE
+══════════════════════════════════════════════════════ */
+async function loadMarketplace() {
+  const search   = $('market-search')?.value || '';
+  const category = $('market-category')?.value || '';
+  const list     = $('marketplace-list');
+  list.innerHTML = '<div class="empty-state"><div class="e-icon">⟳</div><div>Loading…</div></div>';
+  try {
+    const url = `/api/marketplace?search=${encodeURIComponent(search)}&category=${encodeURIComponent(category)}`;
+    const res  = await apiFetch(url);
+    const data = await res.json();
+    if (!data.packs?.length) {
+      list.innerHTML = '<div class="empty-state"><div class="e-icon">◈</div><div>No packs found. Be the first to publish!</div></div>';
+      return;
+    }
+    list.innerHTML = data.packs.map(p => `
+      <div class="issue-card" style="border-left:3px solid var(--purple)">
+        <div class="issue-meta">
+          <span class="badge" style="background:var(--purple-dim);color:var(--purple);border-color:var(--purple)">${esc(p.category)}</span>
+          <span style="font-weight:600;font-size:12px">${esc(p.name)}</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
+            <span class="text-xs text-muted">${p.rules?.length||0} rules · ${p.installs||0} installs · ⭐ ${(p.rating||0).toFixed(1)}</span>
+            <button class="btn btn-sm btn-primary" onclick="installPack('${p.id}')">Install</button>
+          </span>
+        </div>
+        <div class="issue-desc">${esc(p.description||'')}</div>
+        <div class="text-xs text-muted" style="margin-top:4px">by @${esc(p.author)} · ${new Date(p.publishedAt).toLocaleDateString()}</div>
+      </div>`).join('');
+  } catch(e) { list.innerHTML = `<div class="empty-state"><div>Failed: ${esc(e.message)}</div></div>`; }
+}
+
+async function installPack(id) {
+  try {
+    const res  = await apiFetch(`/api/marketplace/${id}/install`, { method: 'POST' });
+    const data = await res.json();
+    toast(`Installed ${data.installed} rule(s) from pack`);
+    loadMarketplace();
+  } catch(e) { toast('Install failed: '+e.message); }
+}
+
+async function publishRulePack() {
+  if (!STATE.token) { toast('Login required to publish'); return; }
+  try {
+    const rulesRes = await apiFetch('/api/rules');
+    const { rules } = await rulesRes.json();
+    if (!rules?.length) { toast('Create some custom rules first'); return; }
+    const name = prompt('Pack name:');
+    if (!name) return;
+    const description = prompt('Pack description:') || '';
+    const category    = prompt('Category (security/performance/style/general):') || 'general';
+    const res  = await apiFetch('/api/marketplace/publish', {
+      method: 'POST',
+      body: JSON.stringify({ name, description, category, rules }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    toast('Pack published to marketplace!');
+    loadMarketplace();
+  } catch(e) { toast('Publish failed: '+e.message); }
 }
 
 /* ══════════════════════════════════════════════════════
