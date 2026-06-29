@@ -1,729 +1,824 @@
-/* VisCarMa — IDE-native design system */
-/* Palette: charcoal base, electric blue accent, amber for warnings, emerald for success */
+// server.js — VisCarMa Backend v2.0
+// New in this version:
+//   - Security scanner (OWASP top 10, secrets, SQL injection)
+//   - Multi-language analysis (Python, Go, Java, Rust via pattern rules)
+//   - GitHub PR reviewer (post AI review comments on existing open PRs)
+//   - Jira integration (/api/jira-tasks)
+//   - Server-side scan history (/api/history)
+//   - All Tier 1 + Tier 2 features
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+import express      from 'express';
+import cors         from 'cors';
+import cookieSession from 'cookie-session';
+import cookieParser from 'cookie-parser';
+import { ESLint }   from 'eslint';
+import { JSDOM }    from 'jsdom';
+import simpleGit    from 'simple-git';
+import path         from 'path';
+import { fileURLToPath } from 'url';
+import { promises as fs } from 'fs';
+import crypto       from 'crypto';
 
-:root {
-  --bg0:        #0d1117;
-  --bg1:        #161b22;
-  --bg2:        #1c2128;
-  --bg3:        #21262d;
-  --bg4:        #2d333b;
-  --border:     #30363d;
-  --border-hi:  #484f58;
-  --text-1:     #e6edf3;
-  --text-2:     #8b949e;
-  --text-3:     #6e7681;
-  --blue:       #388bfd;
-  --blue-dim:   #1f3a5f;
-  --blue-glow:  rgba(56,139,253,0.15);
-  --emerald:    #3fb950;
-  --emerald-dim:#1a3a22;
-  --amber:      #d29922;
-  --amber-dim:  #3a2f00;
-  --red:        #f85149;
-  --red-dim:    #3a1212;
-  --purple:     #a5a0f8;
-  --purple-dim: #2a2650;
-  --font-ui:    'Inter', 'Segoe UI', system-ui, sans-serif;
-  --font-mono:  'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  --radius-sm:  4px;
-  --radius:     8px;
-  --radius-lg:  12px;
-  --transition: 0.15s ease;
-}
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
-html, body {
-  background: var(--bg0);
-  color: var(--text-1);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 1.5;
-  min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-}
+const app  = express();
+const PORT = process.env.PORT || 3000;
 
-/* ── Scrollbars ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+// Render terminates SSL at load balancer — trust proxy so secure cookies work
+app.set('trust proxy', 1);
 
-/* ── Layout ── */
-.app-shell {
-  display: grid;
-  grid-template-rows: 52px 1fr;
-  grid-template-columns: 260px 1fr;
-  height: 100vh;
-  overflow: hidden;
-}
+const {
+  GITHUB_CLIENT_ID,
+  GITHUB_CLIENT_SECRET,
+  OLLAMA_API_KEY,
+  SESSION_SECRET = 'dev-secret-change-me-in-production',
+  REDIRECT_URI   = 'https://viscarma.onrender.com/auth/callback',
+  FRONTEND_URL   = 'https://viscarma.onrender.com',
+} = process.env;
 
-/* ── Header ── */
-.header {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 20px;
-  background: var(--bg1);
-  border-bottom: 1px solid var(--border);
-  z-index: 100;
+app.use(cookieSession({
+  name: 'viscarma_sess', keys: [SESSION_SECRET],
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax', httpOnly: true,
+}));
+app.use(cookieParser(SESSION_SECRET));
+app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ─── History store (in-memory + file) ────────────────────────────
+const HISTORY_FILE = path.join(process.cwd(), 'data', 'history.json');
+let scanHistory = [];
+
+async function loadHistory() {
+  try {
+    await fs.mkdir(path.dirname(HISTORY_FILE), { recursive: true });
+    const raw = await fs.readFile(HISTORY_FILE, 'utf-8');
+    scanHistory = JSON.parse(raw);
+  } catch { scanHistory = []; }
 }
 
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-1);
-  letter-spacing: -0.3px;
-  text-decoration: none;
+async function saveHistoryEntry(entry) {
+  scanHistory.unshift(entry);
+  if (scanHistory.length > 200) scanHistory.pop();
+  try { await fs.writeFile(HISTORY_FILE, JSON.stringify(scanHistory, null, 2)); }
+  catch (e) { console.error('[HISTORY] Save failed:', e.message); }
 }
 
-.logo img { width: 22px; height: 22px; border-radius: 4px; }
-.logo .accent { color: var(--blue); }
+loadHistory();
 
-.badge {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  padding: 2px 7px;
-  background: var(--blue-dim);
-  color: var(--blue);
-  border: 1px solid var(--blue);
-  border-radius: 20px;
-  letter-spacing: 0.5px;
-}
-
-.header-right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* ── Avatar ── */
-.avatar-wrap { display: none; align-items: center; gap: 8px; }
-.avatar-wrap.visible { display: flex; }
-.gh-avatar {
-  width: 26px; height: 26px;
-  border-radius: 50%;
-  border: 2px solid var(--blue);
-  object-fit: cover;
-}
-.gh-username { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); }
-
-.status-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--border-hi);
-  display: inline-block;
-  transition: background var(--transition);
-}
-.status-dot.online  { background: var(--emerald); box-shadow: 0 0 6px var(--emerald); }
-.status-dot.offline { background: var(--red); }
-
-/* ── Sidebar ── */
-.sidebar {
-  background: var(--bg1);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.sidebar-section {
-  padding: 12px 16px 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.sidebar-label {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  letter-spacing: 1px;
-  color: var(--text-3);
-  text-transform: uppercase;
-  margin-bottom: 10px;
-}
-
-/* ── Mode tabs ── */
-.mode-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-}
-
-.mode-tab {
-  flex: 1;
-  padding: 6px 0;
-  text-align: center;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  transition: all var(--transition);
-}
-
-.mode-tab:hover { border-color: var(--border-hi); color: var(--text-1); }
-.mode-tab.active {
-  background: var(--blue-dim);
-  border-color: var(--blue);
-  color: var(--blue);
-}
-
-/* ── Inputs ── */
-input[type="text"],
-input[type="number"],
-select,
-textarea {
-  width: 100%;
-  padding: 7px 10px;
-  background: var(--bg0);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-1);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  transition: border-color var(--transition);
-  outline: none;
-}
-
-input[type="text"]:focus,
-input[type="number"]:focus,
-select:focus,
-textarea:focus {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px var(--blue-glow);
-}
-
-select option { background: var(--bg2); }
-textarea { resize: vertical; min-height: 60px; font-family: var(--font-mono); font-size: 11px; }
-
-/* ── Buttons ── */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg3);
-  color: var(--text-1);
-  font-size: 12px;
-  font-family: var(--font-ui);
-  cursor: pointer;
-  transition: all var(--transition);
-  white-space: nowrap;
-  text-decoration: none;
-}
-.btn:hover { background: var(--bg4); border-color: var(--border-hi); }
-.btn:active { transform: scale(0.97); }
-
-.btn-primary {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: #fff;
-  font-weight: 600;
-}
-.btn-primary:hover { background: #4d9bf8; border-color: #4d9bf8; }
-
-.btn-ghost {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-2);
-}
-.btn-ghost:hover { background: var(--bg3); color: var(--text-1); }
-
-.btn-danger { border-color: var(--red); color: var(--red); }
-.btn-danger:hover { background: var(--red-dim); }
-
-.btn-emerald { border-color: var(--emerald); color: var(--emerald); }
-.btn-emerald:hover { background: var(--emerald-dim); }
-
-.btn-sm { padding: 4px 8px; font-size: 11px; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
-
-/* ── Progress bar ── */
-.progress-bar {
-  height: 2px;
-  background: var(--border);
-  border-radius: 1px;
-  overflow: hidden;
-  display: none;
-  margin-top: 8px;
-}
-.progress-fill {
-  height: 100%;
-  background: var(--blue);
-  border-radius: 1px;
-  transition: width 0.4s ease;
-  box-shadow: 0 0 8px var(--blue);
-}
-
-/* ── Stats bar ── */
-.stats-bar {
-  display: flex;
-  gap: 1px;
-  background: var(--border);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-}
-.stat-chip {
-  flex: 1;
-  padding: 8px 12px;
-  background: var(--bg1);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.stat-chip .label { font-size: 10px; color: var(--text-3); font-family: var(--font-mono); letter-spacing: 0.5px; text-transform: uppercase; }
-.stat-chip .value { font-size: 16px; font-weight: 700; font-family: var(--font-mono); color: var(--text-1); }
-.stat-chip .value.red { color: var(--red); }
-.stat-chip .value.green { color: var(--emerald); }
-.stat-chip .value.amber { color: var(--amber); }
-
-/* ── Log ── */
-.log-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 0 0 8px;
-}
-.log-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px 6px;
-}
-.log-header span { font-size: 10px; font-family: var(--font-mono); color: var(--text-3); letter-spacing: 1px; text-transform: uppercase; }
-.log-box {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 8px;
-}
-.log-line {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 2px 4px;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.6;
-}
-.log-line:hover { background: var(--bg3); }
-.log-ts { color: var(--text-3); min-width: 56px; }
-.log-tag {
-  font-size: 9px;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 3px;
-  letter-spacing: 0.5px;
-  min-width: 32px;
-  text-align: center;
-}
-.tag-sys  { background: var(--bg4); color: var(--text-2); }
-.tag-info { background: var(--blue-dim); color: var(--blue); }
-.tag-ok   { background: var(--emerald-dim); color: var(--emerald); }
-.tag-err  { background: var(--red-dim); color: var(--red); }
-.tag-warn { background: var(--amber-dim); color: var(--amber); }
-.tag-agent { background: var(--purple-dim); color: var(--purple); }
-
-/* ── Main panel ── */
-.main-panel {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--bg0);
-}
-
-/* ── Panel tabs ── */
-.panel-tabs {
-  display: flex;
-  gap: 0;
-  background: var(--bg1);
-  border-bottom: 1px solid var(--border);
-  padding: 0 16px;
-  overflow-x: auto;
-}
-.panel-tab {
-  padding: 10px 16px;
-  font-size: 12px;
-  font-family: var(--font-mono);
-  color: var(--text-2);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  white-space: nowrap;
-  transition: all var(--transition);
-  background: transparent;
-  border-top: none;
-  border-left: none;
-  border-right: none;
-}
-.panel-tab:hover { color: var(--text-1); }
-.panel-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
-
-/* ── Panel content ── */
-.panel-content {
-  flex: 1;
-  overflow: hidden;
-  display: none;
-}
-.panel-content.active { display: flex; flex-direction: column; }
-
-/* ── Report view ── */
-.report-scroll { flex: 1; overflow-y: auto; padding: 16px; }
-
-/* ── Severity badges ── */
-.sev { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; font-family: var(--font-mono); letter-spacing: 0.5px; }
-.sev-high { background: var(--red-dim); color: var(--red); border: 1px solid var(--red); }
-.sev-med  { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber); }
-.sev-low  { background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue); }
-
-/* ── Issue card ── */
-.issue-card {
-  background: var(--bg1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  margin-bottom: 8px;
-  transition: border-color var(--transition);
-}
-.issue-card:hover { border-color: var(--border-hi); }
-.issue-card.high { border-left: 3px solid var(--red); }
-.issue-card.med  { border-left: 3px solid var(--amber); }
-.issue-card.low  { border-left: 3px solid var(--blue); }
-.issue-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.issue-desc { color: var(--text-1); font-size: 12px; margin-bottom: 6px; }
-.issue-fix  { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); background: var(--bg0); padding: 6px 10px; border-radius: var(--radius-sm); border-left: 2px solid var(--blue); }
-.file-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--blue);
-  margin: 16px 0 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-}
-
-/* ── Summary row ── */
-.summary-row {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-.summary-card {
-  flex: 1;
-  min-width: 100px;
-  background: var(--bg1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 16px;
-}
-.summary-card .s-label { font-size: 10px; color: var(--text-3); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-.summary-card .s-val { font-size: 22px; font-weight: 700; font-family: var(--font-mono); }
-
-/* ── Editor panel ── */
-.editor-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--bg1);
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-}
-.editor-filename {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-2);
-  margin-right: auto;
-}
-.editor-filename span { color: var(--text-1); }
-
-.file-list {
-  width: 100%;
-  overflow-y: auto;
-  background: var(--bg1);
-  border-right: 1px solid var(--border);
-  min-width: 0;
-}
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-2);
-  cursor: pointer;
-  border-bottom: 1px solid var(--border);
-  transition: all var(--transition);
-}
-.file-item:hover { background: var(--bg3); color: var(--text-1); }
-.file-item.active { background: var(--blue-dim); color: var(--blue); border-left: 2px solid var(--blue); }
-.file-item .fi-badge { margin-left: auto; }
-
-/* ── Editor layout ── */
-.editor-layout {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  flex: 1;
-  overflow: hidden;
-  min-height: 0;
-}
-.editor-main {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
-}
-#monaco-container,
-#diff-container {
-  flex: 1;
-  min-height: 0;
-}
-
-/* ── Severity chart ── */
-.sev-chart-wrap {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  padding: 16px;
-  background: var(--bg1);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  margin-bottom: 16px;
-}
-.sev-bar-group { flex: 1; }
-.sev-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-family: var(--font-mono); font-size: 11px; }
-.sev-bar-label { width: 36px; color: var(--text-2); }
-.sev-bar-track { flex: 1; height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
-.sev-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
-.sev-bar-count { width: 28px; text-align: right; color: var(--text-1); font-weight: 700; }
-
-/* ── Scan history ── */
-.history-list { padding: 16px; }
-.history-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: var(--bg1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin-bottom: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  transition: border-color var(--transition);
-}
-.history-item:hover { border-color: var(--border-hi); }
-.history-date { color: var(--text-3); min-width: 140px; }
-.history-repo { color: var(--blue); flex: 1; }
-.history-stats { display: flex; gap: 10px; }
-
-/* ── Agentic idle panel ── */
-.agent-panel {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  overflow-y: auto;
-  flex: 1;
-}
-.agent-status-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--bg1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-.agent-status-dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--border-hi);
-  flex-shrink: 0;
-}
-.agent-status-dot.running { background: var(--emerald); animation: pulse 1.5s infinite; }
-.agent-status-dot.idle    { background: var(--amber); }
-
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(63,185,80,0.5); }
-  50%       { box-shadow: 0 0 0 6px rgba(63,185,80,0); }
-}
-
-.agent-section-title {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 6px;
-}
-
-.queue-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  background: var(--bg0);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  margin-bottom: 4px;
-}
-.queue-item .q-status { font-size: 14px; flex-shrink: 0; }
-.queue-item .q-text { flex: 1; color: var(--text-2); }
-.queue-item.done .q-text { color: var(--emerald); text-decoration: line-through; }
-.queue-item.running .q-text { color: var(--blue); }
-
-.timer-display {
-  font-family: var(--font-mono);
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--text-1);
-  letter-spacing: 2px;
-  text-align: center;
-  padding: 12px;
-  background: var(--bg0);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-}
-.timer-display.running { color: var(--emerald); border-color: var(--emerald); }
-.timer-display.expired { color: var(--red); border-color: var(--red); }
-
-/* ── Toast ── */
-#toast {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  background: var(--bg2);
-  border: 1px solid var(--border-hi);
-  border-radius: var(--radius);
-  padding: 10px 16px;
-  font-size: 12px;
-  font-family: var(--font-mono);
-  color: var(--text-1);
-  opacity: 0;
-  transition: opacity 0.2s;
-  z-index: 999;
-  max-width: 320px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-}
-
-/* ── PR result link ── */
-.pr-result {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: var(--emerald-dim);
-  border: 1px solid var(--emerald);
-  border-radius: var(--radius);
-  margin-top: 12px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-.pr-result a { color: var(--emerald); text-decoration: none; font-weight: 700; }
-.pr-result a:hover { text-decoration: underline; }
-
-/* ── Feature checkboxes ── */
-.feature-file-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-2);
-  transition: background var(--transition);
-}
-.feature-file-check:hover { background: var(--bg3); color: var(--text-1); }
-.feature-file-check input[type="checkbox"] { accent-color: var(--blue); }
-
-/* ── Row / flex utils ── */
-.row { display: flex; align-items: center; gap: 8px; }
-.row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.col { display: flex; flex-direction: column; gap: 8px; }
-.flex-1 { flex: 1; min-width: 0; }
-.mt-8 { margin-top: 8px; }
-.mt-12 { margin-top: 12px; }
-.mono { font-family: var(--font-mono); }
-.text-muted { color: var(--text-2); }
-.text-xs { font-size: 11px; }
-
-/* ── No-content empty state ── */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  gap: 12px;
-  color: var(--text-3);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 40px;
-  text-align: center;
-}
-.empty-state .e-icon { font-size: 32px; opacity: 0.4; }
-
-/* ── Responsive ── */
-@media (max-width: 768px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: 52px auto 1fr;
+// ─── ESLint ──────────────────────────────────────────────────────
+let eslintInstance = null;
+async function getESLint() {
+  if (!eslintInstance) {
+    eslintInstance = new ESLint({
+      useEslintrc: false,
+      overrideConfig: {
+        env: { browser: true, node: true, es2021: true },
+        parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+        rules: {
+          'no-undef': 'error', 'eqeqeq': 'error', 'no-eval': 'error',
+          'no-unused-vars': 'warn', 'no-extra-semi': 'warn',
+          'no-await-in-loop': 'warn', 'require-await': 'warn',
+          'no-promise-executor-return': 'error', 'no-console': 'warn',
+          'no-alert': 'warn', 'no-debugger': 'warn',
+          'no-var': 'warn', 'prefer-const': 'warn',
+        },
+      },
+    });
   }
-  .sidebar {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    max-height: 260px;
+  return eslintInstance;
+}
+
+// ─── AI call ─────────────────────────────────────────────────────
+async function callAI(prompt) {
+  const useOllama = OLLAMA_API_KEY && OLLAMA_API_KEY.length > 0;
+  let endpoint, headers, body;
+
+  if (useOllama) {
+    endpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/generate';
+    headers  = { 'Content-Type': 'application/json' };
+    if (OLLAMA_API_KEY) headers['Authorization'] = `Bearer ${OLLAMA_API_KEY}`;
+    body = { model: process.env.OLLAMA_MODEL || 'llama3.2', prompt, stream: false };
+  } else {
+    endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+    headers  = { 'Content-Type': 'application/json' };
+    body = {
+      model: 'google/gemma-2-9b-it:free',
+      messages: [
+        { role: 'system', content: 'You are a senior code reviewer and engineer. Follow instructions exactly.' },
+        { role: 'user',   content: prompt },
+      ],
+      temperature: 0.3, max_tokens: 1200,
+    };
   }
-  .editor-layout { grid-template-columns: 1fr; }
-  .file-list { display: none; }
+
+  try {
+    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return useOllama ? (data.response || null) : (data.choices?.[0]?.message?.content || null);
+  } catch (e) { console.error('AI error:', e.message); return null; }
 }
 
-/* ── Jira source toggle ── */
-.source-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-.source-tab {
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-2);
-  font-size: 11px;
-  font-family: var(--font-mono);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-.source-tab.active { background: var(--purple-dim); border-color: var(--purple); color: var(--purple); }
-
-/* ── Input label ── */
-.field-label {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin-bottom: 4px;
+function parseAIResponse(text) {
+  if (!text) return [];
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+  try { const p = JSON.parse(match[0]); return Array.isArray(p) ? p : []; }
+  catch { return []; }
 }
 
-/* ── Divider ── */
-.divider { height: 1px; background: var(--border); margin: 8px 0; }
+// ─── SECURITY SCANNER (Tier 2) ───────────────────────────────────
+// Detects: hardcoded secrets, OWASP top 10 patterns, SQL injection,
+// XSS vectors, insecure crypto, dangerous functions
+function runSecurityScan(code, filename) {
+  const issues = [];
+  const ext    = filename.split('.').pop().toLowerCase();
+  const lines  = code.split('\n');
 
-/* ── Scrollable sidebar content ── */
-.sidebar-scroll { overflow-y: auto; flex: 1; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+  const secretPatterns = [
+    { re: /(?:api[_-]?key|apikey)\s*[:=]\s*['"][a-zA-Z0-9_\-]{16,}['"]/gi,      desc: 'Hardcoded API key detected.',              fix: 'Move to environment variable.' },
+    { re: /(?:password|passwd|pwd)\s*[:=]\s*['"][^'"]{4,}['"]/gi,                 desc: 'Hardcoded password detected.',             fix: 'Use environment variable or secrets manager.' },
+    { re: /(?:secret|token)\s*[:=]\s*['"][a-zA-Z0-9_\-]{16,}['"]/gi,             desc: 'Hardcoded secret/token detected.',          fix: 'Move to environment variable.' },
+    { re: /AKIA[0-9A-Z]{16}/g,                                                    desc: 'Possible AWS access key detected.',         fix: 'Revoke and move to IAM roles or env vars.' },
+    { re: /-----BEGIN (RSA |EC )?PRIVATE KEY-----/g,                               desc: 'Private key embedded in source code.',     fix: 'Remove immediately — store in secrets manager.' },
+    { re: /ghp_[a-zA-Z0-9]{36}/g,                                                 desc: 'GitHub personal access token in code.',    fix: 'Revoke token and use GitHub secrets.' },
+  ];
+
+  const owaspPatterns = [
+    { re: /eval\s*\(/g,                                                            desc: 'eval() usage — remote code execution risk.', fix: 'Avoid eval(); use JSON.parse() or Function constructors carefully.', sev: 'HIGH' },
+    { re: /innerHTML\s*=/g,                                                        desc: 'innerHTML assignment — XSS risk.',          fix: 'Use textContent or sanitize input with DOMPurify.', sev: 'HIGH' },
+    { re: /document\.write\s*\(/g,                                                 desc: 'document.write() — XSS risk.',             fix: 'Use DOM manipulation methods instead.', sev: 'HIGH' },
+    { re: /exec\s*\(\s*`[^`]*\$\{/g,                                              desc: 'Command injection via template literal.',   fix: 'Sanitize inputs; use parameterized exec calls.', sev: 'HIGH' },
+    { re: /Math\.random\(\)/g,                                                     desc: 'Math.random() used for security context.',  fix: 'Use crypto.randomBytes() for security-sensitive randomness.', sev: 'MED' },
+    { re: /md5|sha1(?!\d)/gi,                                                      desc: 'Weak hash algorithm (MD5/SHA1) detected.',  fix: 'Use SHA-256 or bcrypt for passwords.', sev: 'MED' },
+    { re: /http:\/\//g,                                                            desc: 'Insecure HTTP URL — use HTTPS.',            fix: 'Replace http:// with https://.', sev: 'LOW' },
+  ];
+
+  // SQL injection patterns
+  const sqlPatterns = [
+    { re: /query\s*\(\s*['"`][^'"`]*\$\{/g,                                      desc: 'Possible SQL injection via string interpolation.', fix: 'Use parameterized queries or prepared statements.', sev: 'HIGH' },
+    { re: /\.query\([`'"]\s*SELECT.*\+\s*(?:req|request|params|body)/gi,          desc: 'SQL query built from user input.',          fix: 'Use parameterized queries.', sev: 'HIGH' },
+  ];
+
+  const allPatterns = [
+    ...secretPatterns.map(p => ({ ...p, sev: 'HIGH' })),
+    ...owaspPatterns,
+    ...sqlPatterns,
+  ];
+
+  for (const { re, desc, fix, sev } of allPatterns) {
+    re.lastIndex = 0;
+    if (re.test(code)) {
+      // Find which line
+      re.lastIndex = 0;
+      let lineNum = '?';
+      for (let i = 0; i < lines.length; i++) {
+        re.lastIndex = 0;
+        if (re.test(lines[i])) { lineNum = i + 1; break; }
+      }
+      issues.push({ severity: sev, description: `[SECURITY] Line ~${lineNum}: ${desc}`, fix });
+    }
+  }
+
+  return issues;
+}
+
+// ─── MULTI-LANGUAGE ANALYSIS (Tier 2) ────────────────────────────
+// Pattern-based analysis for Python, Go, Java, Rust
+function analyzeMultiLang(code, filename) {
+  const issues = [];
+  const ext    = filename.split('.').pop().toLowerCase();
+
+  if (ext === 'py') {
+    const pyPatterns = [
+      { re: /print\s*\(/g,          sev:'LOW',  desc:'print() in production code.', fix:'Use logging module instead.' },
+      { re: /except:\s*$/gm,        sev:'MED',  desc:'Bare except clause catches all exceptions.', fix:'Catch specific exceptions: except ValueError:' },
+      { re: /pickle\.loads?\(/g,    sev:'HIGH', desc:'pickle.load() can execute arbitrary code.', fix:'Use json or safer serialization formats.' },
+      { re: /exec\s*\(/g,           sev:'HIGH', desc:'exec() call — code injection risk.', fix:'Avoid exec(); use safer alternatives.' },
+      { re: /input\s*\(/g,          sev:'LOW',  desc:'input() used — validate user input.', fix:'Validate and sanitize all user input.' },
+      { re: /TODO|FIXME/g,          sev:'LOW',  desc:'TODO/FIXME comment found.', fix:'Address before release.' },
+      { re: /import \*/g,           sev:'LOW',  desc:'Wildcard import — pollutes namespace.', fix:'Import specific names instead.' },
+    ];
+    for (const { re, sev, desc, fix } of pyPatterns) {
+      re.lastIndex = 0;
+      if (re.test(code)) issues.push({ severity: sev, description: desc, fix });
+    }
+  }
+
+  if (ext === 'go') {
+    const goPatterns = [
+      { re: /panic\s*\(/g,              sev:'MED',  desc:'panic() call — prefer error returns.', fix:'Return errors instead of panicking.' },
+      { re: /fmt\.Println/g,            sev:'LOW',  desc:'fmt.Println in production code.', fix:'Use structured logging (zap, logrus).' },
+      { re: /err\s*!=\s*nil\s*\{\s*\}/, sev:'HIGH', desc:'Empty error handling block.', fix:'Handle or propagate the error.' },
+      { re: /\/\/ TODO|\/\/ FIXME/g,    sev:'LOW',  desc:'TODO/FIXME comment found.', fix:'Address before release.' },
+      { re: /time\.Sleep/g,             sev:'MED',  desc:'time.Sleep in non-test code.', fix:'Use channels or timers for synchronization.' },
+    ];
+    for (const { re, sev, desc, fix } of goPatterns) {
+      re.lastIndex = 0;
+      if (re.test(code)) issues.push({ severity: sev, description: desc, fix });
+    }
+  }
+
+  if (ext === 'java') {
+    const javaPatterns = [
+      { re: /System\.out\.print/g,      sev:'LOW',  desc:'System.out.print in production code.', fix:'Use a logging framework (SLF4J, Log4j).' },
+      { re: /e\.printStackTrace\(\)/g,  sev:'MED',  desc:'printStackTrace() — exposes stack trace.', fix:'Log the exception using a logging framework.' },
+      { re: /catch\s*\(\s*Exception\s+/g, sev:'MED', desc:'Catching generic Exception.', fix:'Catch specific exception types.' },
+      { re: /new\s+Random\s*\(\)/g,     sev:'MED',  desc:'java.util.Random is not cryptographically secure.', fix:'Use SecureRandom for security contexts.' },
+      { re: /TODO|FIXME/g,              sev:'LOW',  desc:'TODO/FIXME comment found.', fix:'Address before release.' },
+      { re: /==\s*null|null\s*==/g,     sev:'LOW',  desc:'Null comparison with ==.', fix:'Use Objects.isNull() or Optional.' },
+    ];
+    for (const { re, sev, desc, fix } of javaPatterns) {
+      re.lastIndex = 0;
+      if (re.test(code)) issues.push({ severity: sev, description: desc, fix });
+    }
+  }
+
+  if (ext === 'rs') {
+    const rustPatterns = [
+      { re: /\.unwrap\(\)/g,            sev:'MED',  desc:'.unwrap() will panic on None/Err.', fix:'Use match, if let, or ? operator for error handling.' },
+      { re: /\.expect\(/g,              sev:'LOW',  desc:'.expect() will panic with a message.', fix:'Use proper error propagation with ?.' },
+      { re: /unsafe\s*\{/g,             sev:'HIGH', desc:'unsafe block detected.', fix:'Document invariants and minimize unsafe surface area.' },
+      { re: /todo!\(\)|unimplemented!\(\)/g, sev:'MED', desc:'todo!()/unimplemented!() will panic at runtime.', fix:'Implement or remove before release.' },
+      { re: /println!/g,                sev:'LOW',  desc:'println! in production code.', fix:'Use a logging crate (tracing, log).' },
+    ];
+    for (const { re, sev, desc, fix } of rustPatterns) {
+      re.lastIndex = 0;
+      if (re.test(code)) issues.push({ severity: sev, description: desc, fix });
+    }
+  }
+
+  if (ext === 'css') {
+    const cssPatterns = [
+      { re: /!important/g,              sev:'LOW',  desc:'!important overrides — specificity smell.', fix:'Refactor CSS specificity instead.' },
+      { re: /\*\s*\{/g,                 sev:'LOW',  desc:'Universal selector (*) — performance impact.', fix:'Target specific elements.' },
+    ];
+    for (const { re, sev, desc, fix } of cssPatterns) {
+      re.lastIndex = 0;
+      if (re.test(code)) issues.push({ severity: sev, description: desc, fix });
+    }
+  }
+
+  return issues;
+}
+
+// ─── HTML checks ─────────────────────────────────────────────────
+function checkHTML(code) {
+  const issues = [];
+  if (!code.includes('<html lang='))
+    issues.push({ severity: 'MED', description: 'Missing lang attribute on <html>.', fix: 'Add <html lang="en">.' });
+  if (!code.includes('<title>') || code.match(/<title>\s*<\/title>/))
+    issues.push({ severity: 'HIGH', description: 'Missing or empty <title>.', fix: 'Add <title>My Page</title>.' });
+  if (code.includes('<img') && !code.includes('alt='))
+    issues.push({ severity: 'MED', description: 'Images missing alt attributes.', fix: 'Add alt="..." to all <img> tags.' });
+  if (!code.includes('viewport'))
+    issues.push({ severity: 'MED', description: 'Missing viewport meta tag.', fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1.0">.' });
+  if (!code.includes('<meta name="description"'))
+    issues.push({ severity: 'LOW', description: 'Missing meta description.', fix: 'Add <meta name="description" content="...">.' });
+  return issues;
+}
+
+// ─── Analyze file (all engines combined) ─────────────────────────
+async function analyzeFile(code, filename) {
+  const ext    = filename.split('.').pop().toLowerCase();
+  const issues = [];
+
+  // 1. ESLint for JS/TS
+  if (['js', 'ts', 'jsx', 'tsx'].includes(ext)) {
+    try {
+      const eslint  = await getESLint();
+      const results = await eslint.lintText(code, { filePath: filename });
+      for (const msg of (results[0]?.messages || [])) {
+        issues.push({
+          severity:    msg.severity === 2 ? 'HIGH' : 'MED',
+          description: msg.message,
+          fix:         msg.fix?.text ? `Apply: ${msg.fix.text}` : `Line ${msg.line || '?'}: Review manually.`,
+        });
+      }
+    } catch (e) { console.error('ESLint error:', e); }
+  }
+
+  // 2. HTML checks
+  if (ext === 'html') issues.push(...checkHTML(code));
+
+  // 3. Security scan (all languages)
+  issues.push(...runSecurityScan(code, filename));
+
+  // 4. Multi-language pattern analysis
+  issues.push(...analyzeMultiLang(code, filename));
+
+  // 5. AI analysis (if not already saturated)
+  if (issues.length < 12) {
+    const aiRaw    = await callAI(
+      `Analyse this code for bugs, security issues, and bad practices. File: ${filename}\n\n${code.slice(0, 3000)}\n\nReturn a JSON array ONLY (no other text): [{"severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`
+    );
+    const aiIssues = parseAIResponse(aiRaw);
+    const existing = new Set(issues.map(i => i.description));
+    for (const ai of aiIssues) {
+      if (!existing.has(ai.description)) { issues.push(ai); existing.add(ai.description); }
+    }
+  }
+
+  // 6. Fallback: TODO/FIXME for unrecognized types
+  if (issues.length === 0 && (code.includes('TODO') || code.includes('FIXME')))
+    issues.push({ severity: 'LOW', description: 'Found TODO/FIXME comments.', fix: 'Address before release.' });
+
+  return issues;
+}
+
+// ─── Fix generation ──────────────────────────────────────────────
+async function generateFixesForFile(code, filename, issues) {
+  let newCode   = code;
+  const ext     = filename.split('.').pop().toLowerCase();
+  const applied = [];
+
+  // ESLint auto-fix for JS/TS
+  if (['js', 'ts', 'jsx', 'tsx'].includes(ext)) {
+    try {
+      const eslint  = await getESLint();
+      const results = await eslint.lintText(newCode, { filePath: filename, fix: true });
+      if (results[0]?.output) { newCode = results[0].output; applied.push('ESLint auto-fix'); }
+    } catch (e) { console.error('ESLint fix error:', e); }
+  }
+
+  // HTML DOM fixes
+  if (ext === 'html') {
+    const dom = new JSDOM(newCode);
+    const doc = dom.window.document;
+    if (!doc.documentElement.hasAttribute('lang')) {
+      doc.documentElement.setAttribute('lang', 'en'); applied.push('Added lang="en"');
+    }
+    if (!doc.querySelector('meta[name="viewport"]')) {
+      const m = doc.createElement('meta'); m.name = 'viewport'; m.content = 'width=device-width, initial-scale=1.0';
+      doc.head.appendChild(m); applied.push('Added viewport meta');
+    }
+    if (!doc.querySelector('title')) {
+      const t = doc.createElement('title'); t.textContent = 'My Page';
+      doc.head.appendChild(t); applied.push('Added title');
+    }
+    if (!doc.querySelector('meta[name="description"]')) {
+      const m = doc.createElement('meta'); m.name = 'description'; m.content = 'Page description';
+      doc.head.appendChild(m); applied.push('Added meta description');
+    }
+    doc.querySelectorAll('img:not([alt])').forEach(img => {
+      img.setAttribute('alt', 'image'); applied.push('Added alt to image');
+    });
+    newCode = dom.serialize();
+  }
+
+  // AI fixes for remaining issues
+  const aiIssues = issues.filter(i => i.fix && !i.fix.startsWith('Apply:') && !i.fix.startsWith('Line'));
+  if (aiIssues.length > 0 && !applied.length) {
+    const aiResponse = await callAI(
+      `Fix the following issues and return ONLY the full corrected code, no explanation, no markdown fences.\nIssues:\n${aiIssues.map(i => `- ${i.description}`).join('\n')}\n\nFile: ${filename}\n\n${newCode}`
+    );
+    if (aiResponse) {
+      const block = aiResponse.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+      newCode = block ? block[1] : aiResponse;
+      applied.push('AI-generated fixes');
+    }
+  }
+
+  return { newCode, applied };
+}
+
+// ─── Feature generation ───────────────────────────────────────────
+async function generateFeatureForFile(code, filename, featureDescription) {
+  const prompt = `You are a senior engineer. Add the following feature to this file.
+Feature request: ${featureDescription}
+File: ${filename}
+
+Rules:
+- Return ONLY the complete updated file contents, no explanation, no markdown fences.
+- Preserve all existing functionality.
+- Follow the existing code style.
+- Add a comment near the new code: // Added by VisCarMa: ${featureDescription.slice(0, 60)}
+
+File contents:
+${code.slice(0, 4000)}`;
+
+  const aiResponse = await callAI(prompt);
+  if (!aiResponse) return { newCode: code, success: false };
+  const block = aiResponse.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+  return { newCode: block ? block[1] : aiResponse, success: true };
+}
+
+// ─── PR body builder ─────────────────────────────────────────────
+function buildPRBody({ fixes, featureDescription, repoOwner, repoName, prType }) {
+  const now        = new Date().toUTCString();
+  const repoLink   = `https://github.com/${repoOwner}/${repoName}`;
+  const authorLink = `[@suryasticsai](https://github.com/suryasticsai)`;
+  const badge      = `[![VisCarMa](https://img.shields.io/badge/auto--fixed%20by-VisCarMa-388bfd?style=flat-square&logo=github)](https://viscarma.onrender.com)`;
+
+  if (prType === 'feature') {
+    return `${badge}
+
+## ✨ Feature Added by VisCarMa
+
+**Feature:** ${featureDescription}
+
+### Files modified
+${fixes.map(f => `- \`${f.file}\``).join('\n')}
+
+### What changed
+${fixes.map(f => `**\`${f.file}\`** — AI implemented: _${featureDescription}_`).join('\n\n')}
+
+---
+🤖 Auto-generated by **[VisCarMa](https://viscarma.onrender.com)**
+👤 Requested by ${authorLink} · 🕐 ${now} · 🔗 ${repoLink}`;
+  }
+
+  const fileDetails = fixes.map(f => {
+    const appliedList = f.applied?.length
+      ? f.applied.map(a => `  - ${a}`).join('\n')
+      : '  - No auto-fixes applied';
+    return `**\`${f.file}\`**\n${appliedList}`;
+  }).join('\n\n');
+
+  const securityIssues = fixes.flatMap(f =>
+    (f.issues || []).filter(i => i.description?.includes('[SECURITY]'))
+  );
+
+  return `${badge}
+
+## 🔧 Auto-fix PR by VisCarMa
+
+### What was fixed
+${fileDetails}
+
+${securityIssues.length ? `### 🔒 Security issues addressed\n${securityIssues.map(i=>`- ${i.description}`).join('\n')}\n` : ''}
+### Files changed
+${fixes.map(f => `- \`${f.file}\``).join('\n')}
+
+---
+🤖 Auto-generated by **[VisCarMa](https://viscarma.onrender.com)**
+👤 Fixed by ${authorLink} · 🕐 ${now} · 🔗 ${repoLink}`;
+}
+
+// ─── README updater ──────────────────────────────────────────────
+async function updateReadme({ repoOwner, repoName, branch, fixes, featureDescription, prUrl, prNumber, ghToken, prType }) {
+  const baseUrl  = `https://api.github.com/repos/${repoOwner}/${repoName}`;
+  const now      = new Date().toUTCString();
+  const typeLabel = prType === 'feature' ? '✨ Feature' : '🔧 Fix';
+  const summary   = prType === 'feature'
+    ? featureDescription
+    : fixes.map(f => f.applied?.join(', ') || 'reviewed').join('; ');
+
+  const newEntry = `| ${typeLabel} | ${fixes.map(f=>`\`${f.file}\``).join(', ')} | ${summary} | [PR #${prNumber}](${prUrl}) | ${now} | [@suryasticsai](https://github.com/suryasticsai) |`;
+
+  try {
+    const readmeRes  = await fetch(`${baseUrl}/contents/README.md?ref=${branch}`, {
+      headers: { Authorization: `token ${ghToken}` },
+    });
+    let currentContent = '', sha = null;
+    if (readmeRes.ok) {
+      const readmeData = await readmeRes.json();
+      currentContent   = Buffer.from(readmeData.content, 'base64').toString('utf-8');
+      sha              = readmeData.sha;
+    }
+
+    const header = `\n\n<!-- VISCARMA:START -->\n## 🤖 VisCarMa Change Log\n> Auto-maintained by [VisCarMa](https://viscarma.onrender.com) · Author: [@suryasticsai](https://github.com/suryasticsai)\n\n| Type | Files | Summary | PR | Date | Author |\n|------|-------|---------|-----|------|--------|\n`;
+    const footer = `<!-- VISCARMA:END -->`;
+
+    let updatedContent;
+    if (currentContent.includes('<!-- VISCARMA:START -->')) {
+      updatedContent = currentContent.replace(
+        /(\| Type \| Files \| Summary \| PR \| Date \| Author \|\n\|[-|]+\|\n)/,
+        `$1${newEntry}\n`
+      );
+    } else {
+      updatedContent = currentContent + header + newEntry + '\n' + footer;
+    }
+
+    await fetch(`${baseUrl}/contents/README.md`, {
+      method: 'PUT',
+      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: `docs: VisCarMa update README for PR #${prNumber}`,
+        content: Buffer.from(updatedContent).toString('base64'),
+        sha, branch,
+      }),
+    });
+    console.log('[README] Updated for PR #' + prNumber);
+  } catch (e) { console.error('[README] Update failed:', e.message); }
+}
+
+// ─── OAuth ───────────────────────────────────────────────────────
+const GITHUB_AUTH_URL  = 'https://github.com/login/oauth/authorize';
+const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
+
+app.get('/auth/github', (req, res) => {
+  const state = crypto.randomBytes(16).toString('hex');
+  res.cookie('oauthState', state, {
+    signed: true, maxAge: 10 * 60 * 1000,
+    httpOnly: true, sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
+  console.log('[AUTH] Redirecting to GitHub OAuth, state:', state);
+  res.redirect(`${GITHUB_AUTH_URL}?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=repo&state=${state}`);
+});
+
+app.get('/auth/callback', async (req, res) => {
+  const { code, state } = req.query;
+  const cookieState     = req.signedCookies.oauthState;
+  console.log('[AUTH] Callback — code:', !!code, 'state match:', state === cookieState);
+  if (!code) return res.status(400).send('Missing code');
+  if (!state || state !== cookieState) return res.status(400).send('Invalid state — try again');
+  res.clearCookie('oauthState');
+  try {
+    const tokenRes  = await fetch(GITHUB_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, client_secret: GITHUB_CLIENT_SECRET, code, redirect_uri: REDIRECT_URI }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) return res.status(400).send('Token exchange failed');
+    const userRes = await fetch('https://api.github.com/user', { headers: { Authorization: `token ${tokenData.access_token}` } });
+    const user    = await userRes.json();
+    req.session.githubToken = tokenData.access_token;
+    req.session.githubUser  = { id: user.id, login: user.login, avatar: user.avatar_url };
+    console.log('[AUTH] Session set for user:', user.login, '— redirecting to /');
+    res.redirect('/');
+  } catch (e) { console.error('[AUTH] Callback error:', e); res.status(500).send('OAuth error: ' + e.message); }
+});
+
+app.get('/auth/logout', (req, res) => {
+  req.session = null;
+  res.clearCookie('oauthState');
+  res.redirect('/');
+});
+
+app.get('/api/user', (req, res) => {
+  res.json(req.session?.githubUser
+    ? { user: req.session.githubUser, token: req.session.githubToken }
+    : { user: null });
+});
+
+app.get('/api/repos', async (req, res) => {
+  if (!req.session?.githubToken) return res.status(401).json({ error: 'Not logged in' });
+  try {
+    const r = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+      headers: { Authorization: `token ${req.session.githubToken}` },
+    });
+    res.json(await r.json());
+  } catch { res.status(500).json({ error: 'Failed to fetch repos' }); }
+});
+
+// ─── Scan history API ─────────────────────────────────────────────
+app.get('/api/history', (req, res) => {
+  res.json({ history: scanHistory });
+});
+
+// ─── Scan repo ───────────────────────────────────────────────────
+const TEMP_DIR = path.join(process.cwd(), 'tmp');
+
+app.post('/api/scan-repo', async (req, res) => {
+  const { repoUrl, repoOwner, repoName, token } = req.body;
+  const useToken = token || req.session?.githubToken;
+  let cloneUrl   = repoUrl;
+  if (useToken) cloneUrl = repoUrl.replace('https://', `https://x-access-token:${useToken}@`);
+
+  const folderId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const repoPath = path.join(TEMP_DIR, folderId);
+  await fs.mkdir(repoPath, { recursive: true });
+
+  try {
+    await simpleGit().clone(cloneUrl, repoPath, ['--depth', '1']);
+    const files   = await walkDir(repoPath);
+    const results = [];
+    for (const filePath of files) {
+      const relativePath = path.relative(repoPath, filePath);
+      const code         = await fs.readFile(filePath, 'utf-8');
+      const issues       = await analyzeFile(code, relativePath);
+      results.push({ file: relativePath, code, issues });
+    }
+    await fs.rm(repoPath, { recursive: true, force: true });
+
+    // Save to history
+    const high   = results.reduce((s,f) => s + f.issues.filter(i=>i.severity==='HIGH').length, 0);
+    const med    = results.reduce((s,f) => s + f.issues.filter(i=>i.severity==='MED').length, 0);
+    const low    = results.reduce((s,f) => s + f.issues.filter(i=>i.severity==='LOW').length, 0);
+    const security = results.reduce((s,f) => s + f.issues.filter(i=>i.description?.includes('[SECURITY]')).length, 0);
+    await saveHistoryEntry({
+      date: new Date().toISOString(),
+      repo: `${repoOwner || ''}/${repoName || ''}`.replace(/^\//, ''),
+      files: results.length,
+      issues: results.reduce((s,f)=>s+f.issues.length,0),
+      high, med, low, security,
+    });
+
+    res.json({ success: true, results });
+  } catch (e) {
+    console.error('[SCAN]', e);
+    await fs.rm(repoPath, { recursive: true, force: true }).catch(() => {});
+    res.status(500).json({ error: 'Scan failed: ' + e.message });
+  }
+});
+
+async function walkDir(dir) {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const files   = [];
+  const exclude = ['node_modules', '.git', 'dist', 'build', 'coverage', '.next', '__pycache__', 'vendor'];
+  for (const entry of entries) {
+    if (exclude.includes(entry.name)) continue;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...(await walkDir(fullPath)));
+    else {
+      const ext = entry.name.split('.').pop().toLowerCase();
+      if (['js','ts','jsx','tsx','html','css','py','java','go','rs','c','cpp','h','rb','php'].includes(ext))
+        files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+// ─── Generate fixes ──────────────────────────────────────────────
+app.post('/api/generate-fixes', async (req, res) => {
+  const { files } = req.body;
+  const fixes = [];
+  for (const item of files) {
+    const { newCode, applied } = await generateFixesForFile(item.code, item.file, item.issues);
+    fixes.push({ file: item.file, newCode, applied, issues: item.issues });
+  }
+  res.json({ fixes });
+});
+
+// ─── Generate feature ─────────────────────────────────────────────
+app.post('/api/generate-feature', async (req, res) => {
+  const { files, featureDescription } = req.body;
+  if (!featureDescription) return res.status(400).json({ error: 'featureDescription required' });
+  const results = [];
+  for (const item of files) {
+    const { newCode, success } = await generateFeatureForFile(item.code, item.file, featureDescription);
+    results.push({ file: item.file, newCode, applied: success ? [`Feature: ${featureDescription}`] : [], success });
+  }
+  res.json({ fixes: results, featureDescription });
+});
+
+// ─── Create PR ───────────────────────────────────────────────────
+app.post('/api/create-pr', async (req, res) => {
+  const { repoOwner, repoName, branch, fixes, token, featureDescription, prType = 'fix' } = req.body;
+  const ghToken = token || req.session?.githubToken;
+  if (!ghToken) return res.status(401).json({ error: 'Not authenticated' });
+
+  try {
+    const baseUrl  = `https://api.github.com/repos/${repoOwner}/${repoName}`;
+    const baseRef  = await fetch(`${baseUrl}/git/refs/heads/${branch}`, {
+      headers: { Authorization: `token ${ghToken}` },
+    });
+    const baseData = await baseRef.json();
+    if (!baseData.object?.sha) throw new Error(`Branch "${branch}" not found`);
+
+    const newBranch = prType === 'feature'
+      ? `viscarma-feature-${Date.now()}`
+      : `viscarma-fix-${Date.now()}`;
+
+    await fetch(`${baseUrl}/git/refs`, {
+      method: 'POST',
+      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: baseData.object.sha }),
+    });
+
+    for (const fix of fixes) {
+      if (!fix.newCode) continue;
+      const fileRes  = await fetch(`${baseUrl}/contents/${fix.file}?ref=${newBranch}`, {
+        headers: { Authorization: `token ${ghToken}` },
+      });
+      const fileData = await fileRes.json();
+      const oldContent = fileData.content ? Buffer.from(fileData.content, 'base64').toString('utf-8') : null;
+      if (oldContent === fix.newCode) continue;
+
+      await fetch(`${baseUrl}/contents/${fix.file}`, {
+        method:  fileData.sha ? 'PUT' : 'POST',
+        headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: prType === 'feature'
+            ? `feat: VisCarMa adds "${featureDescription?.slice(0, 60)}" to ${fix.file}`
+            : `fix: VisCarMa auto-fix in ${fix.file} (${fix.applied?.join(', ')})`,
+          content: Buffer.from(fix.newCode).toString('base64'),
+          ...(fileData.sha ? { sha: fileData.sha } : {}),
+          branch: newBranch,
+        }),
+      });
+    }
+
+    const prBody  = buildPRBody({ fixes, featureDescription, repoOwner, repoName, prType });
+    const prTitle = prType === 'feature'
+      ? `feat: VisCarMa — ${featureDescription?.slice(0, 72)}`
+      : `fix: auto-generated fixes by VisCarMa`;
+
+    const pr     = await fetch(`${baseUrl}/pulls`, {
+      method: 'POST',
+      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: prTitle, head: newBranch, base: branch, body: prBody }),
+    });
+    const prData = await pr.json();
+    if (!prData.html_url) throw new Error(prData.message || 'PR creation failed');
+
+    await updateReadme({
+      repoOwner, repoName, branch: newBranch, fixes, featureDescription, prType,
+      prUrl: prData.html_url, prNumber: prData.number, ghToken,
+    });
+
+    res.json({ url: prData.html_url, number: prData.number });
+  } catch (e) {
+    console.error('[PR]', e);
+    res.status(500).json({ error: 'PR creation failed: ' + e.message });
+  }
+});
+
+// ─── TIER 2: GitHub PR Reviewer ──────────────────────────────────
+// Posts AI review comments on an EXISTING open PR (not one we created)
+app.post('/api/review-pr', async (req, res) => {
+  const { repoOwner, repoName, prNumber, token } = req.body;
+  const ghToken = token || req.session?.githubToken;
+  if (!ghToken) return res.status(401).json({ error: 'Not authenticated' });
+  if (!prNumber) return res.status(400).json({ error: 'prNumber required' });
+
+  try {
+    const baseUrl = `https://api.github.com/repos/${repoOwner}/${repoName}`;
+
+    // Fetch the PR diff
+    const diffRes = await fetch(`${baseUrl}/pulls/${prNumber}/files`, {
+      headers: { Authorization: `token ${ghToken}`, Accept: 'application/vnd.github.v3+json' },
+    });
+    const changedFiles = await diffRes.json();
+    if (!Array.isArray(changedFiles)) throw new Error('Failed to fetch PR files');
+
+    // AI-review each changed file's patch
+    const comments = [];
+    const reviewNotes = [];
+
+    for (const file of changedFiles.slice(0, 10)) { // cap at 10 files
+      if (!file.patch) continue;
+      const aiRaw = await callAI(
+        `Review this code diff and identify bugs, security issues, or bad practices.\nFile: ${file.filename}\n\nDiff:\n${file.patch.slice(0, 2000)}\n\nReturn a JSON array ONLY: [{"line_note":"...","severity":"HIGH|MED|LOW","suggestion":"..."}]`
+      );
+      const aiIssues = parseAIResponse(aiRaw);
+      for (const issue of aiIssues) {
+        reviewNotes.push(`**\`${file.filename}\`** [${issue.severity}] ${issue.line_note} — ${issue.suggestion}`);
+      }
+    }
+
+    // Post a single review comment on the PR
+    const reviewBody = reviewNotes.length
+      ? `## 🔍 VisCarMa AI Code Review\n\n${reviewNotes.join('\n\n')}\n\n---\n🤖 Review by **[VisCarMa](https://viscarma.onrender.com)** · [@suryasticsai](https://github.com/suryasticsai)`
+      : `## ✅ VisCarMa AI Code Review\n\nNo significant issues found in this PR.\n\n---\n🤖 Review by **[VisCarMa](https://viscarma.onrender.com)**`;
+
+    const reviewRes = await fetch(`${baseUrl}/pulls/${prNumber}/reviews`, {
+      method: 'POST',
+      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: reviewBody, event: 'COMMENT' }),
+    });
+    const reviewData = await reviewRes.json();
+    if (!reviewData.id) throw new Error(reviewData.message || 'Review post failed');
+
+    res.json({ reviewId: reviewData.id, url: reviewData.html_url, issueCount: reviewNotes.length });
+  } catch (e) {
+    console.error('[REVIEW-PR]', e);
+    res.status(500).json({ error: 'PR review failed: ' + e.message });
+  }
+});
+
+// ─── Jira integration ─────────────────────────────────────────────
+app.post('/api/jira-tasks', async (req, res) => {
+  const { url, token, email, project } = req.body;
+  if (!url || !token || !email || !project)
+    return res.status(400).json({ error: 'url, token, email, project required' });
+
+  try {
+    const auth    = Buffer.from(`${email}:${token}`).toString('base64');
+    const jiraRes = await fetch(
+      `${url.replace(/\/$/, '')}/rest/api/3/search?jql=project=${project}+AND+statusCategory!=Done&maxResults=20&fields=summary,description,priority,status`,
+      { headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' } }
+    );
+    if (!jiraRes.ok) throw new Error(`Jira returned ${jiraRes.status}`);
+    const data  = await jiraRes.json();
+    const tasks = (data.issues || []).map(issue => ({
+      key:         issue.key,
+      summary:     issue.fields.summary,
+      priority:    issue.fields.priority?.name || 'Medium',
+      status:      issue.fields.status?.name || 'Open',
+      description: issue.fields.description?.content?.[0]?.content?.[0]?.text || '',
+    }));
+    res.json({ tasks });
+  } catch (e) {
+    console.error('[JIRA]', e);
+    res.status(500).json({ error: 'Jira fetch failed: ' + e.message });
+  }
+});
+
+// ─── Health ──────────────────────────────────────────────────────
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
+app.listen(PORT, () => {
+  console.log(`🕵️  VisCarMa backend v2.0 running on port ${PORT}`);
+  console.log(`🔐 OLLAMA_API_KEY ${OLLAMA_API_KEY ? '✓ set' : '✗ not set (using OpenRouter fallback)'}`);
+  console.log(`🌐 FRONTEND_URL: ${FRONTEND_URL}`);
+  console.log(`🔁 REDIRECT_URI: ${REDIRECT_URI}`);
+  console.log(`✅ VisCarMa server listening on port ${PORT}`);
+});
