@@ -3,43 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="VisCarMa — Hybrid code scanner with ESLint, AI analysis, and GitHub PR integration." />
+  <meta name="description" content="VisCarMa — Hybrid code scanner with ESLint, AI analysis, GitHub PR integration, and feature development." />
   <title>VisCarMa · Hybrid Scanner</title>
   <link rel="icon" type="image/png" href="/viscarma_logo.png" />
   <link rel="stylesheet" href="style.css" />
   <style>
-    /* ── Avatar styles (added) ───────────────────────────── */
-    .avatar-wrap {
-      display: none;
-      align-items: center;
-      gap: 8px;
+    .avatar-wrap { display:none; align-items:center; gap:8px; }
+    .avatar-wrap.visible { display:flex; }
+    .gh-avatar { width:28px; height:28px; border-radius:50%; border:2px solid #3b82f6; object-fit:cover; }
+    .gh-username { font-size:12px; color:#8aa9c9; font-weight:600; }
+    .status-dot { width:8px; height:8px; border-radius:50%; background:#4b5563; display:inline-block; margin-right:4px; transition:background 0.3s; }
+    .status-dot.online  { background:#10b981; }
+    .status-dot.offline { background:#ef4444; }
+
+    /* Mode tabs */
+    .mode-tabs { display:flex; gap:8px; margin-bottom:12px; }
+    .mode-tab {
+      flex:1; padding:8px 0; text-align:center; border-radius:8px;
+      border:1px solid #2a3a4e; background:#0f172a; color:#8aa9c9;
+      cursor:pointer; font-size:13px; font-weight:600; transition:all 0.2s;
     }
-    .avatar-wrap.visible {
-      display: flex;
+    .mode-tab.active { background:#1e3a5f; border-color:#3b82f6; color:#60a5fa; }
+
+    /* Feature panel */
+    .feature-panel { display:none; }
+    .feature-panel.visible { display:block; }
+    .feature-input {
+      width:100%; padding:10px 12px; background:#0f172a; border:1px solid #2a3a4e;
+      border-radius:8px; color:#e0e8f0; font-size:13px; resize:vertical;
+      min-height:72px; box-sizing:border-box; margin-bottom:8px;
     }
-    .gh-avatar {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: 2px solid #3b82f6;
-      object-fit: cover;
-    }
-    .gh-username {
-      font-size: 12px;
-      color: #8aa9c9;
-      font-weight: 600;
-    }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #4b5563;
-      display: inline-block;
-      margin-right: 4px;
-      transition: background 0.3s;
-    }
-    .status-dot.online  { background: #10b981; }
-    .status-dot.offline { background: #ef4444; }
+    .feature-input:focus { outline:none; border-color:#3b82f6; }
+    .feature-file-list { margin:8px 0; font-size:11px; color:#8aa9c9; }
+    .feature-file-check { display:flex; align-items:center; gap:6px; margin:4px 0; cursor:pointer; }
+    .feature-file-check input { accent-color:#3b82f6; }
   </style>
 </head>
 <body>
@@ -54,35 +51,62 @@
     <div class="flex auth-section">
       <span id="auth-status" class="auth-status">
         <span class="status-dot" id="status-dot"></span>
-        <!-- Avatar + username shown after login -->
         <span class="avatar-wrap" id="avatar-wrap">
           <img id="gh-avatar" class="gh-avatar" src="" alt="GitHub avatar" />
           <span id="gh-username" class="gh-username"></span>
         </span>
-        <!-- Fallback text when not logged in / checking -->
         <span id="user-info" style="font-size:12px;color:#8aa9c9;">Checking…</span>
       </span>
       <button class="btn btn-ghost" id="login-btn" onclick="login()">Login with GitHub</button>
     </div>
   </div>
 
-  <!-- Main Controls -->
+  <!-- Mode tabs -->
   <div class="box">
-    <div class="flex" style="justify-content:space-between;">
-      <div class="flex" style="flex:1;">
-        <input type="text" id="repo-url-input" placeholder="https://github.com/owner/repo" style="flex:2;min-width:200px;" />
-        <button class="btn" onclick="scanManual()">🔍 Scan Public Repo</button>
+    <div class="mode-tabs">
+      <div class="mode-tab active" id="tab-fix" onclick="switchMode('fix')">🔧 Fix Mode</div>
+      <div class="mode-tab" id="tab-feature" onclick="switchMode('feature')">✨ Feature Mode</div>
+    </div>
+
+    <!-- Fix mode controls -->
+    <div id="fix-panel">
+      <div class="flex" style="justify-content:space-between;">
+        <div class="flex" style="flex:1;">
+          <input type="text" id="repo-url-input" placeholder="https://github.com/owner/repo" style="flex:2;min-width:200px;" />
+          <button class="btn" onclick="scanManual()">🔍 Scan Public Repo</button>
+        </div>
+        <div class="flex" style="flex:1;justify-content:flex-end;">
+          <select id="repo-select" style="flex:1;min-width:150px;display:none;" onchange="selectRepo()">
+            <option value="">Select repo</option>
+          </select>
+          <button class="btn btn-primary" id="scan-logged-btn" onclick="scanLoggedIn()" style="display:none;">🚀 Scan Selected</button>
+        </div>
       </div>
-      <div class="flex" style="flex:1;justify-content:flex-end;">
-        <select id="repo-select" style="flex:1;min-width:150px;display:none;" onchange="selectRepo()">
-          <option value="">Select repo</option>
+      <div style="font-size:10px;color:#8aa9c9;margin-top:6px;">
+        ℹ️ Log in to scan private repos and create PRs. Paste a public repo URL for quick scans.
+      </div>
+    </div>
+
+    <!-- Feature mode controls -->
+    <div id="feature-panel" class="feature-panel">
+      <div class="flex" style="margin-bottom:8px;">
+        <select id="feature-repo-select" style="flex:1;min-width:150px;" onchange="selectFeatureRepo()">
+          <option value="">Select repo (login required)</option>
         </select>
-        <button class="btn btn-primary" id="scan-logged-btn" onclick="scanLoggedIn()" style="display:none;">🚀 Scan Selected</button>
+        <button class="btn" onclick="loadFeatureFiles()">📂 Load Files</button>
+      </div>
+      <textarea class="feature-input" id="feature-description"
+        placeholder="Describe the feature you want to add…&#10;e.g. Add a dark mode toggle button to the header"></textarea>
+      <div id="feature-file-list" class="feature-file-list" style="display:none;">
+        <div style="font-weight:700;color:#60a5fa;margin-bottom:4px;">Select files to modify:</div>
+        <div id="feature-file-checkboxes"></div>
+      </div>
+      <button class="btn btn-primary" onclick="generateFeature()" style="margin-top:8px;">✨ Generate Feature</button>
+      <div style="font-size:10px;color:#8aa9c9;margin-top:6px;">
+        ℹ️ VisCarMa will implement the feature and open a PR with a detailed description.
       </div>
     </div>
-    <div style="font-size:10px;color:#8aa9c9;margin-top:6px;">
-      ℹ️ Log in to scan private repos and create PRs. Paste a public repo URL for quick scans.
-    </div>
+
     <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
   </div>
 
@@ -103,7 +127,7 @@
       <div class="log-line">
         <span class="log-ts">--:--:--</span>
         <span class="log-tag tag-sys">SYS</span>
-        <span>Ready. Enter a repo URL or login to select one.</span>
+        <span>Ready. Choose Fix Mode or Feature Mode above.</span>
       </div>
     </div>
   </div>
@@ -112,7 +136,7 @@
   <div id="report-area" style="display:none;margin-top:14px;">
     <div class="box report-panel">
       <div class="panel-title">
-        <span>📊 Scan Report</span>
+        <span id="report-title">📊 Scan Report</span>
         <div class="flex">
           <button class="btn btn-ghost" id="fix-btn" onclick="generateFixes()" style="display:none;">🔧 Apply Fixes</button>
           <button class="btn btn-primary" id="pr-btn" onclick="createPR()" style="display:none;">🔀 Create PR</button>
@@ -141,28 +165,23 @@
     </div>
   </footer>
 
-  <!-- Toast -->
   <div id="toast"></div>
 
   <script>
     /* ─── STATE ─────────────────────────────────────────────────── */
     const STATE = {
-      user:        null,
-      token:       null,
-      repoUrl:     null,
-      repoOwner:   null,
-      repoName:    null,
-      repoBranch:  'main',
-      scanResults: null,
-      fixes:       null,
+      user: null, token: null,
+      repoUrl: null, repoOwner: null, repoName: null, repoBranch: 'main',
+      scanResults: null, fixes: null,
+      mode: 'fix',                    // 'fix' | 'feature'
+      featureFiles: [],               // [{file, code}] loaded for feature mode
+      featureFixes: null,             // generated feature code
     };
 
-    const $   = id => document.getElementById(id);
+    const $ = id => document.getElementById(id);
     const logBox = $('log-box');
 
-    function ts() {
-      return new Date().toLocaleTimeString('en-GB', { hour12: false });
-    }
+    function ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
 
     function log(tag, cls, msg) {
       const line = document.createElement('div');
@@ -174,29 +193,26 @@
       logBox.scrollTop = logBox.scrollHeight;
     }
 
-    function clearLog() {
-      logBox.innerHTML = '';
-      log('SYS', 'tag-sys', 'Log cleared.');
-    }
+    function clearLog() { logBox.innerHTML = ''; log('SYS','tag-sys','Log cleared.'); }
 
     function escHtml(s) {
-      return String(s || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+      return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
     function toast(msg) {
       const el = $('toast');
-      el.textContent = msg;
-      el.style.opacity = '1';
-      clearTimeout(window._toastTimer);
-      window._toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+      el.textContent = msg; el.style.opacity = '1';
+      clearTimeout(window._tt);
+      window._tt = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+    }
+
+    function setProgress(pct, visible=true) {
+      $('progress-bar').style.display = visible ? 'block' : 'none';
+      $('progress-fill').style.width  = pct + '%';
+      if (pct >= 100) setTimeout(() => setProgress(0, false), 600);
     }
 
     /* ─── FETCH WRAPPER ─────────────────────────────────────────── */
-    // KEY FIX: credentials:'include' sends the session cookie on every request.
-    // Without this the server never sees the cookie and thinks you're logged out.
     async function apiFetch(url, options = {}) {
       const { headers = {}, ...rest } = options;
       return fetch(url, {
@@ -206,70 +222,62 @@
       });
     }
 
+    /* ─── MODE SWITCH ───────────────────────────────────────────── */
+    function switchMode(mode) {
+      STATE.mode = mode;
+      $('tab-fix').classList.toggle('active', mode === 'fix');
+      $('tab-feature').classList.toggle('active', mode === 'feature');
+      $('fix-panel').style.display     = mode === 'fix'     ? 'block' : 'none';
+      $('feature-panel').classList.toggle('visible', mode === 'feature');
+      $('report-area').style.display   = 'none';
+      $('fix-btn').style.display       = 'none';
+      $('pr-btn').style.display        = 'none';
+
+      // Populate feature repo select if logged in
+      if (mode === 'feature' && STATE.user) syncFeatureRepoSelect();
+    }
+
     /* ─── AUTH ──────────────────────────────────────────────────── */
     async function checkAuth() {
       try {
         const res = await apiFetch('/api/user');
-        if (!res.ok) {
-          console.warn('[AUTH] /api/user returned', res.status, '— retrying…');
-          setTimeout(checkAuth, 1500);
-          return;
-        }
+        if (!res.ok) { setTimeout(checkAuth, 1500); return; }
         const data = await res.json();
         applyAuthState(data.user, data.token);
-      } catch (e) {
-        console.error('[AUTH] checkAuth error:', e);
-        setTimeout(checkAuth, 1500);
-      }
+      } catch { setTimeout(checkAuth, 1500); }
     }
 
     function applyAuthState(user, token) {
-      const avatarWrap = $('avatar-wrap');
-      const userInfo   = $('user-info');
-      const dot        = $('status-dot');
-      const loginBtn   = $('login-btn');
-
       if (user) {
         STATE.user  = user;
         STATE.token = token;
-
-        // ── Show avatar + username ──────────────────────────────
-        $('gh-avatar').src = user.avatar || '';
-        $('gh-avatar').alt = user.login + ' avatar';
+        $('gh-avatar').src           = user.avatar || '';
+        $('gh-avatar').alt           = user.login + ' avatar';
         $('gh-username').textContent = user.login;
-        avatarWrap.classList.add('visible');
-        userInfo.style.display = 'none';
-
-        dot.className       = 'status-dot online';
-        loginBtn.textContent = 'Logout';
-        loginBtn.onclick     = logout;
-
-        $('repo-select').style.display    = 'inline-block';
+        $('avatar-wrap').classList.add('visible');
+        $('user-info').style.display  = 'none';
+        $('status-dot').className     = 'status-dot online';
+        $('login-btn').textContent    = 'Logout';
+        $('login-btn').onclick        = logout;
+        $('repo-select').style.display     = 'inline-block';
         $('scan-logged-btn').style.display = 'inline-flex';
-
         loadRepos();
-        log('AUTH', 'tag-ok', `Authenticated as ${user.login}`);
+        log('AUTH','tag-ok', `Authenticated as ${user.login}`);
       } else {
-        STATE.user  = null;
-        STATE.token = null;
-
-        // ── Hide avatar, show plain text ────────────────────────
-        avatarWrap.classList.remove('visible');
-        userInfo.style.display  = '';
-        userInfo.textContent    = 'Not logged in';
-
-        dot.className        = 'status-dot offline';
-        loginBtn.textContent  = 'Login with GitHub';
-        loginBtn.onclick      = login;
-
-        $('repo-select').style.display    = 'none';
+        STATE.user = null; STATE.token = null;
+        $('avatar-wrap').classList.remove('visible');
+        $('user-info').style.display  = '';
+        $('user-info').textContent    = 'Not logged in';
+        $('status-dot').className     = 'status-dot offline';
+        $('login-btn').textContent    = 'Login with GitHub';
+        $('login-btn').onclick        = login;
+        $('repo-select').style.display     = 'none';
         $('scan-logged-btn').style.display = 'none';
-
-        log('AUTH', 'tag-sys', 'Not authenticated.');
+        log('AUTH','tag-sys','Not authenticated.');
       }
     }
 
-    function login()  { window.location.href = '/auth/github';  }
+    function login()  { window.location.href = '/auth/github'; }
     function logout() { window.location.href = '/auth/logout'; }
 
     async function loadRepos() {
@@ -279,38 +287,50 @@
         const repos = await res.json();
         const select = $('repo-select');
         select.innerHTML = '<option value="">Select repo</option>';
-        for (const repo of repos) {
-          const opt     = document.createElement('option');
-          opt.value     = repo.full_name;
-          opt.textContent = repo.full_name;
+        repos.forEach(repo => {
+          const opt = document.createElement('option');
+          opt.value = repo.full_name; opt.textContent = repo.full_name;
           select.appendChild(opt);
-        }
-        log('AUTH', 'tag-ok', `Loaded ${repos.length} repos`);
-      } catch (e) {
-        log('AUTH', 'tag-err', 'Failed to load repos: ' + e.message);
-      }
+        });
+        log('AUTH','tag-ok',`Loaded ${repos.length} repos`);
+        syncFeatureRepoSelect(repos);
+      } catch (e) { log('AUTH','tag-err','Failed to load repos: ' + e.message); }
+    }
+
+    function syncFeatureRepoSelect(repos) {
+      // Mirror fix repo-select into feature-repo-select
+      const src  = $('repo-select');
+      const dest = $('feature-repo-select');
+      dest.innerHTML = src.innerHTML;
     }
 
     function selectRepo() {
       const val = $('repo-select').value;
       if (!val) return;
       const [owner, name] = val.split('/');
-      STATE.repoOwner  = owner;
-      STATE.repoName   = name;
-      STATE.repoUrl    = `https://github.com/${val}.git`;
+      STATE.repoOwner = owner; STATE.repoName = name;
+      STATE.repoUrl   = `https://github.com/${val}.git`;
       STATE.repoBranch = 'main';
       $('repo-url-input').value = `https://github.com/${val}`;
     }
 
-    /* ─── SCANNING ──────────────────────────────────────────────── */
+    function selectFeatureRepo() {
+      const val = $('feature-repo-select').value;
+      if (!val) return;
+      const [owner, name] = val.split('/');
+      STATE.repoOwner = owner; STATE.repoName = name;
+      STATE.repoUrl   = `https://github.com/${val}.git`;
+      STATE.repoBranch = 'main';
+    }
+
+    /* ─── FIX MODE: SCAN ────────────────────────────────────────── */
     async function scanManual() {
       const url   = $('repo-url-input').value.trim();
       if (!url) { toast('⚠ Enter a repo URL'); return; }
       const match = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
       if (!match) { toast('⚠ Invalid GitHub URL'); return; }
-      STATE.repoOwner  = match[1];
-      STATE.repoName   = match[2];
-      STATE.repoUrl    = `https://github.com/${match[1]}/${match[2]}.git`;
+      STATE.repoOwner = match[1]; STATE.repoName = match[2];
+      STATE.repoUrl   = `https://github.com/${match[1]}/${match[2]}.git`;
       STATE.repoBranch = 'main';
       await doScan(null);
     }
@@ -321,45 +341,32 @@
     }
 
     async function doScan(token) {
-      const payload = {
-        repoUrl:   STATE.repoUrl,
-        repoOwner: STATE.repoOwner,
-        repoName:  STATE.repoName,
-        token:     token || null,
-      };
-
       $('report-area').style.display = 'none';
-      $('fix-btn').style.display     = 'none';
-      $('pr-btn').style.display      = 'none';
-
-      const progressFill = $('progress-fill');
-      const progressBar  = $('progress-bar');
-      progressBar.style.display  = 'block';
-      progressFill.style.width   = '10%';
-      log('SCAN', 'tag-info', `Scanning ${STATE.repoOwner}/${STATE.repoName}…`);
+      $('fix-btn').style.display = 'none';
+      $('pr-btn').style.display  = 'none';
+      setProgress(10);
+      log('SCAN','tag-info',`Scanning ${STATE.repoOwner}/${STATE.repoName}…`);
 
       try {
         const res  = await apiFetch('/api/scan-repo', {
           method: 'POST',
-          body:   JSON.stringify(payload),
+          body:   JSON.stringify({ repoUrl: STATE.repoUrl, repoOwner: STATE.repoOwner, repoName: STATE.repoName, token: token || null }),
         });
-        progressFill.style.width = '80%';
+        setProgress(80);
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Scan failed');
-
-        STATE.scanResults        = data.results;
-        progressFill.style.width = '100%';
-        setTimeout(() => { progressBar.style.display = 'none'; }, 600);
-
+        STATE.scanResults = data.results;
+        setProgress(100);
+        $('report-title').textContent = '📊 Scan Report';
         renderReport(data.results);
         $('report-area').style.display = 'block';
         $('fix-btn').style.display     = 'inline-flex';
-        log('SCAN', 'tag-ok', `Scan complete: ${data.results.length} files analyzed`);
+        log('SCAN','tag-ok',`Scan complete: ${data.results.length} files analyzed`);
         toast('✅ Scan complete');
       } catch (e) {
-        log('SCAN', 'tag-err', e.message);
+        log('SCAN','tag-err', e.message);
         toast('❌ ' + e.message);
-        progressBar.style.display = 'none';
+        setProgress(0, false);
       }
     }
 
@@ -368,11 +375,10 @@
       const totalFiles  = results.length;
       const totalIssues = results.reduce((sum, f) => sum + f.issues.length, 0);
 
-      let html = `
-        <div class="summary-box">
-          <div class="summary-line"><span>Files scanned</span><span class="val">${totalFiles}</span></div>
-          <div class="summary-line"><span>Total issues</span><span class="val red">${totalIssues}</span></div>
-        </div>`;
+      let html = `<div class="summary-box">
+        <div class="summary-line"><span>Files scanned</span><span class="val">${totalFiles}</span></div>
+        <div class="summary-line"><span>Total issues</span><span class="val red">${totalIssues}</span></div>
+      </div>`;
 
       if (!totalIssues) {
         html += `<div style="color:#10b981;margin-top:12px;">✅ No issues found. Great job!</div>`;
@@ -381,128 +387,191 @@
           if (!item.issues.length) continue;
           html += `<div style="font-weight:700;color:#60a5fa;margin-top:12px;">📄 ${escHtml(item.file)}</div>`;
           for (const issue of item.issues) {
-            const sev         = (issue.severity || 'MED').toLowerCase();
-            const borderColor = sev === 'high' ? '#ef4444' : sev === 'med' ? '#f59e0b' : '#60a5fa';
-            html += `
-              <div class="bug-item" style="border-left:2px solid ${borderColor};">
-                <span class="sev-${sev}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">
-                  [${(issue.severity || 'MED').toUpperCase()}]
-                </span>
-                <span>${escHtml(issue.description || 'Issue')}</span>
-                ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
-              </div>`;
+            const sev   = (issue.severity || 'MED').toLowerCase();
+            const color = sev === 'high' ? '#ef4444' : sev === 'med' ? '#f59e0b' : '#60a5fa';
+            html += `<div class="bug-item" style="border-left:2px solid ${color};">
+              <span class="sev-${sev}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">[${(issue.severity||'MED').toUpperCase()}]</span>
+              <span>${escHtml(issue.description||'Issue')}</span>
+              ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
+            </div>`;
           }
         }
       }
 
       container.innerHTML = html;
-      $('s-files').textContent = totalFiles;
+      $('s-files').textContent  = totalFiles;
       $('s-issues').textContent = totalIssues;
       $('s-time').textContent   = new Date().toLocaleTimeString();
     }
 
-    /* ─── FIXES ─────────────────────────────────────────────────── */
+    /* ─── FIX MODE: GENERATE FIXES ─────────────────────────────── */
     async function generateFixes() {
       if (!STATE.scanResults) { toast('⚠ No scan results.'); return; }
-
-      const filesToFix = STATE.scanResults
-        .filter(f => f.issues && f.issues.length > 0)
+      const filesToFix = STATE.scanResults.filter(f => f.issues?.length > 0)
         .map(f => ({ file: f.file, code: f.code, issues: f.issues }));
-
       if (!filesToFix.length) { toast('⚠ No issues to fix.'); return; }
 
-      log('FIX', 'tag-info', `Generating fixes for ${filesToFix.length} files…`);
-      $('fix-btn').disabled     = true;
-      $('fix-btn').textContent  = '⏳ Generating…';
+      log('FIX','tag-info',`Generating fixes for ${filesToFix.length} files…`);
+      $('fix-btn').disabled = true; $('fix-btn').textContent = '⏳ Generating…';
 
       try {
-        const res  = await apiFetch('/api/generate-fixes', {
-          method: 'POST',
-          body:   JSON.stringify({ files: filesToFix }),
-        });
+        const res  = await apiFetch('/api/generate-fixes', { method:'POST', body: JSON.stringify({ files: filesToFix }) });
         const data = await res.json();
         if (!data.fixes) throw new Error('No fixes returned');
         STATE.fixes = data.fixes;
         $('pr-btn').style.display = 'inline-flex';
-        log('FIX', 'tag-ok', `Generated fixes for ${data.fixes.length} files`);
-        toast('✅ Fixes generated. Click "Create PR" to open a pull request.');
+        log('FIX','tag-ok',`Generated fixes for ${data.fixes.length} files`);
+        toast('✅ Fixes ready. Click "Create PR".');
         showFixPreview(data.fixes);
       } catch (e) {
-        log('FIX', 'tag-err', e.message);
-        toast('❌ ' + e.message);
+        log('FIX','tag-err', e.message); toast('❌ ' + e.message);
       } finally {
-        $('fix-btn').disabled    = false;
-        $('fix-btn').textContent = '🔧 Apply Fixes';
+        $('fix-btn').disabled = false; $('fix-btn').textContent = '🔧 Apply Fixes';
       }
     }
 
-    function showFixPreview(fixes) {
+    function showFixPreview(fixes, label='🔧 Fixes Generated') {
       const container = $('report-content');
       let html = container.innerHTML
                + `<div style="margin-top:16px;border-top:1px solid #2a3a4e;padding-top:12px;">
-                    <div style="font-weight:700;color:#10b981;">🔧 Fixes Generated</div>`;
+                    <div style="font-weight:700;color:#10b981;">${label}</div>`;
       for (const fix of fixes) {
         html += `<div style="margin-top:6px;font-size:11px;color:#8aa9c9;">
-                   📄 ${escHtml(fix.file)} – applied: ${escHtml(fix.applied.join(', ') || 'none')}
-                 </div>`;
+          📄 ${escHtml(fix.file)} — ${escHtml((fix.applied||[]).join(', ') || 'reviewed')}
+        </div>`;
         if (fix.newCode) {
           html += `<details style="margin-left:12px;">
-                     <summary style="cursor:pointer;color:#8aa9c9;font-size:11px;">Show preview</summary>
-                     <pre style="background:#0f172a;padding:6px;border-radius:4px;font-size:10px;
-                                 color:#e0e8f0;white-space:pre-wrap;max-height:200px;overflow:auto;">
-${escHtml(fix.newCode.slice(0, 800))}${fix.newCode.length > 800 ? '\n…truncated' : ''}</pre>
-                   </details>`;
+            <summary style="cursor:pointer;color:#8aa9c9;font-size:11px;">Show preview</summary>
+            <pre style="background:#0f172a;padding:6px;border-radius:4px;font-size:10px;color:#e0e8f0;white-space:pre-wrap;max-height:200px;overflow:auto;">${escHtml(fix.newCode.slice(0,800))}${fix.newCode.length>800?'\n…truncated':''}</pre>
+          </details>`;
         }
       }
       html += `</div>`;
       container.innerHTML = html;
     }
 
-    /* ─── CREATE PR ─────────────────────────────────────────────── */
-    async function createPR() {
-      if (!STATE.fixes || !STATE.fixes.length) { toast('⚠ Generate fixes first.'); return; }
-      if (!STATE.repoOwner || !STATE.repoName) { toast('⚠ Repo owner/name not set.'); return; }
-      if (!STATE.token)                         { toast('⚠ You must be logged in to create a PR.'); return; }
+    /* ─── FEATURE MODE ──────────────────────────────────────────── */
+    async function loadFeatureFiles() {
+      if (!STATE.repoUrl) { toast('⚠ Select a repo first'); return; }
+      if (!STATE.token)   { toast('⚠ Login required for feature mode'); return; }
 
-      log('PR', 'tag-info', 'Creating pull request…');
-      $('pr-btn').disabled    = true;
-      $('pr-btn').textContent = '⏳ Creating…';
+      log('FEAT','tag-info','Loading repo files…');
+      setProgress(20);
+
+      try {
+        const res  = await apiFetch('/api/scan-repo', {
+          method: 'POST',
+          body: JSON.stringify({ repoUrl: STATE.repoUrl, repoOwner: STATE.repoOwner, repoName: STATE.repoName, token: STATE.token }),
+        });
+        setProgress(80);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        STATE.featureFiles = data.results.map(r => ({ file: r.file, code: r.code }));
+        setProgress(100);
+
+        // Render file checkboxes
+        const checkboxContainer = $('feature-file-checkboxes');
+        checkboxContainer.innerHTML = STATE.featureFiles.map((f, i) => `
+          <label class="feature-file-check">
+            <input type="checkbox" value="${i}" checked />
+            ${escHtml(f.file)}
+          </label>`).join('');
+        $('feature-file-list').style.display = 'block';
+        log('FEAT','tag-ok',`Loaded ${STATE.featureFiles.length} files`);
+        toast(`✅ ${STATE.featureFiles.length} files loaded. Describe your feature.`);
+      } catch (e) {
+        log('FEAT','tag-err', e.message); toast('❌ ' + e.message);
+        setProgress(0, false);
+      }
+    }
+
+    async function generateFeature() {
+      const desc = $('feature-description').value.trim();
+      if (!desc) { toast('⚠ Describe the feature first'); return; }
+      if (!STATE.featureFiles.length) { toast('⚠ Load files first'); return; }
+      if (!STATE.token) { toast('⚠ Login required'); return; }
+
+      // Get selected files
+      const checked = [...document.querySelectorAll('#feature-file-checkboxes input:checked')];
+      const selected = checked.map(cb => STATE.featureFiles[parseInt(cb.value)]);
+      if (!selected.length) { toast('⚠ Select at least one file'); return; }
+
+      log('FEAT','tag-info',`Generating feature for ${selected.length} files: "${desc}"`);
+      setProgress(15);
+
+      try {
+        const res  = await apiFetch('/api/generate-feature', {
+          method: 'POST',
+          body: JSON.stringify({ files: selected, featureDescription: desc }),
+        });
+        setProgress(80);
+        const data = await res.json();
+        if (!data.fixes) throw new Error('No feature code returned');
+        STATE.fixes = data.fixes;
+        STATE.featureDescription = desc;
+        setProgress(100);
+
+        $('report-title').textContent = '✨ Feature Preview';
+        $('report-content').innerHTML = '';
+        $('report-area').style.display = 'block';
+        $('fix-btn').style.display = 'none';
+        $('pr-btn').style.display  = 'inline-flex';
+
+        showFixPreview(data.fixes, `✨ Feature: "${escHtml(desc)}"`);
+        $('s-files').textContent  = data.fixes.length;
+        $('s-issues').textContent = '—';
+        $('s-time').textContent   = new Date().toLocaleTimeString();
+
+        log('FEAT','tag-ok',`Feature generated for ${data.fixes.length} files`);
+        toast('✅ Feature generated! Review and click "Create PR".');
+      } catch (e) {
+        log('FEAT','tag-err', e.message); toast('❌ ' + e.message);
+        setProgress(0, false);
+      }
+    }
+
+    /* ─── CREATE PR (fix or feature) ────────────────────────────── */
+    async function createPR() {
+      if (!STATE.fixes?.length)         { toast('⚠ Generate fixes or a feature first.'); return; }
+      if (!STATE.repoOwner || !STATE.repoName) { toast('⚠ Repo not set.'); return; }
+      if (!STATE.token)                 { toast('⚠ Login required to create a PR.'); return; }
+
+      const isFeature = STATE.mode === 'feature';
+      log('PR','tag-info', isFeature ? `Creating feature PR…` : 'Creating fix PR…');
+      $('pr-btn').disabled = true; $('pr-btn').textContent = '⏳ Creating…';
 
       try {
         const res  = await apiFetch('/api/create-pr', {
           method: 'POST',
-          body:   JSON.stringify({
-            repoOwner: STATE.repoOwner,
-            repoName:  STATE.repoName,
-            branch:    STATE.repoBranch || 'main',
-            fixes:     STATE.fixes,
-            token:     STATE.token,
+          body: JSON.stringify({
+            repoOwner:          STATE.repoOwner,
+            repoName:           STATE.repoName,
+            branch:             STATE.repoBranch || 'main',
+            fixes:              STATE.fixes,
+            token:              STATE.token,
+            featureDescription: STATE.featureDescription || null,
+            prType:             isFeature ? 'feature' : 'fix',
           }),
         });
         const data = await res.json();
         if (!data.url) throw new Error(data.error || 'PR creation failed');
-        log('PR', 'tag-ok', `PR created: ${data.url}`);
+        log('PR','tag-ok',`PR created: ${data.url}`);
         toast(`✅ PR #${data.number} opened!`);
         $('report-content').innerHTML +=
           `<div style="margin-top:12px;border-top:1px solid #10b981;padding-top:8px;">
-             🔀 <a href="${data.url}" target="_blank" rel="noopener" style="color:#10b981;">
-               View PR #${data.number}
-             </a>
-           </div>`;
+            🔀 <a href="${data.url}" target="_blank" rel="noopener" style="color:#10b981;">View PR #${data.number}</a>
+            &nbsp;&nbsp;📝 README updated with VisCarMa change log entry.
+          </div>`;
       } catch (e) {
-        log('PR', 'tag-err', e.message);
-        toast('❌ ' + e.message);
+        log('PR','tag-err', e.message); toast('❌ ' + e.message);
       } finally {
-        $('pr-btn').disabled    = false;
-        $('pr-btn').textContent = '🔀 Create PR';
+        $('pr-btn').disabled = false; $('pr-btn').textContent = '🔀 Create PR';
       }
     }
 
     /* ─── INIT ──────────────────────────────────────────────────── */
     (function init() {
-      log('SYS', 'tag-sys', 'VisCarMa Hybrid Scanner ready.');
-      // Small delay so cookie-session cookie is fully set after OAuth redirect
-      // before we try to read it back via /api/user
+      log('SYS','tag-sys','VisCarMa Hybrid Scanner ready.');
       setTimeout(checkAuth, 150);
     })();
   </script>
