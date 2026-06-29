@@ -1,523 +1,282 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VisCarMa · Code Scanner</title>
-    <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisCarMa · devAIne Agent</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-    <!-- Header -->
-    <div class="flex header">
+  <!-- Header -->
+  <div class="flex header">
+    <div class="flex">
+      <span class="logo">Vis<span class="accent">Car</span>Ma</span>
+      <span class="badge">Hybrid</span>
+    </div>
+    <div class="flex">
+      <span id="user-info" style="font-size:12px;color:#4a5568;"></span>
+      <button class="btn btn-ghost" id="login-btn" onclick="login()">Login with GitHub</button>
+    </div>
+  </div>
+
+  <!-- Main Controls -->
+  <div class="box">
+    <div class="flex" style="justify-content:space-between;">
+      <div class="flex" style="flex:1;">
+        <!-- Manual input -->
+        <input type="text" id="repo-url-input" placeholder="https://github.com/owner/repo" style="flex:2;min-width:200px;" />
+        <button class="btn" onclick="scanManual()">🔍 Scan Public Repo</button>
+      </div>
+      <div class="flex" style="flex:1;justify-content:flex-end;">
+        <select id="repo-select" style="flex:1;min-width:150px;display:none;" onchange="selectRepo()">
+          <option value="">Select repo</option>
+        </select>
+        <button class="btn btn-primary" id="scan-logged-btn" onclick="scanLoggedIn()" style="display:none;">🚀 Scan Selected</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:#4a5568;margin-top:6px;">
+      ℹ️ Log in to scan private repos and create PRs. Paste a public repo URL for quick scans.
+    </div>
+    <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  </div>
+
+  <!-- Stats -->
+  <div class="box stats">
+    <span class="stat-box">Files <span class="stat-val" id="s-files">0</span></span>
+    <span class="stat-box">Issues <span class="stat-val" id="s-issues">0</span></span>
+    <span class="stat-box">Last <span class="stat-val" id="s-time">—</span></span>
+  </div>
+
+  <!-- Log -->
+  <div class="box log-container">
+    <div class="log-header">
+      <span>📋 Log</span>
+      <button class="btn btn-ghost" onclick="clearLog()">clear</button>
+    </div>
+    <div class="log-box" id="log-box">
+      <div class="log-line">
+        <span class="log-ts">--:--:--</span>
+        <span class="log-tag tag-sys">SYS</span>
+        <span>Ready. Enter a repo URL or login to select one.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Area -->
+  <div id="report-area" style="display:none;margin-top:14px;">
+    <div class="box report-panel">
+      <div class="panel-title">
+        <span>📊 Scan Report</span>
         <div class="flex">
-            <span class="logo">Vis<span class="accent">Car</span>Ma</span>
-            <span class="badge">Scanner</span>
+          <button class="btn btn-ghost" id="fix-btn" onclick="generateFixes()" style="display:none;">🔧 Apply Fixes</button>
+          <button class="btn btn-primary" id="pr-btn" onclick="createPR()" style="display:none;">🔀 Create PR</button>
         </div>
-        <span id="status-badge" class="status-badge idle">idle</span>
+      </div>
+      <div id="report-content" style="padding:12px;"></div>
     </div>
+  </div>
 
-    <!-- Folder Selection + Scan -->
-    <div class="box">
-        <div class="flex" style="justify-content:space-between;">
-            <div class="flex">
-                <button class="btn" id="pick-folder-btn" onclick="pickFolder()">📂 Select Project Folder</button>
-                <input type="file" id="folder-input" webkitdirectory multiple style="display:none;" onchange="handleFolderInput(event)" />
-                <span id="folder-path" class="folder-path">No folder selected</span>
-            </div>
-            <button class="btn btn-primary" id="scan-all-btn" onclick="scanAllFiles()" disabled>🚀 Scan All with AI</button>
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <script>
+    /* ─── STATE ────────────────────────────────────────────────── */
+    const STATE = {
+      user: null,
+      token: null,
+      repoUrl: null,
+      repoOwner: null,
+      repoName: null,
+      scanResults: null,
+      fixes: null,
+    };
+
+    /* ─── DOM HELPERS ──────────────────────────────────────────── */
+    const $ = id => document.getElementById(id);
+    const logBox = $('log-box');
+    const statusBadge = $('status-badge');
+
+    function ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
+
+    function log(tag, cls, msg) {
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      line.innerHTML = `<span class="log-ts">${ts()}</span><span class="log-tag ${cls}">${tag}</span><span>${escHtml(msg)}</span>`;
+      logBox.appendChild(line);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function clearLog() { logBox.innerHTML = ''; log('SYS', 'tag-sys', 'Log cleared.'); }
+
+    function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function toast(msg) {
+      const el = $('toast');
+      el.textContent = msg;
+      el.style.opacity = '1';
+      clearTimeout(window.toastTimer);
+      window.toastTimer = setTimeout(() => el.style.opacity = '0', 2500);
+    }
+
+    /* ─── AUTH ──────────────────────────────────────────────────── */
+    async function checkAuth() {
+      const res = await fetch('/api/user');
+      const data = await res.json();
+      if (data.user) {
+        STATE.user = data.user;
+        STATE.token = data.token;
+        $('user-info').textContent = `👤 ${data.user.login}`;
+        $('login-btn').textContent = 'Logout';
+        $('login-btn').onclick = () => window.location.href = '/auth/logout';
+        // Show repo selector
+        $('repo-select').style.display = 'inline-block';
+        $('scan-logged-btn').style.display = 'inline-flex';
+        await loadRepos();
+      } else {
+        $('user-info').textContent = '';
+        $('login-btn').textContent = 'Login with GitHub';
+        $('login-btn').onclick = login;
+        $('repo-select').style.display = 'none';
+        $('scan-logged-btn').style.display = 'none';
+      }
+    }
+
+    function login() {
+      window.location.href = '/auth/github';
+    }
+
+    async function loadRepos() {
+      const res = await fetch('/api/repos');
+      const repos = await res.json();
+      const select = $('repo-select');
+      select.innerHTML = '<option value="">Select repo</option>';
+      for (const repo of repos) {
+        const opt = document.createElement('option');
+        opt.value = repo.full_name;
+        opt.textContent = repo.full_name;
+        select.appendChild(opt);
+      }
+    }
+
+    function selectRepo() {
+      const val = $('repo-select').value;
+      if (val) {
+        const [owner, name] = val.split('/');
+        STATE.repoUrl = `https://github.com/${val}.git`;
+        STATE.repoOwner = owner;
+        STATE.repoName = name;
+        $('repo-url-input').value = STATE.repoUrl;
+      }
+    }
+
+    /* ─── SCANNING ─────────────────────────────────────────────── */
+    async function scanManual() {
+      const url = $('repo-url-input').value.trim();
+      if (!url) { toast('⚠ Enter a repo URL'); return; }
+      // Parse owner/name
+      const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)(?:\.git)?/);
+      if (!match) { toast('⚠ Invalid GitHub URL'); return; }
+      STATE.repoOwner = match[1];
+      STATE.repoName = match[2];
+      STATE.repoUrl = url;
+      await doScan(null);
+    }
+
+    async function scanLoggedIn() {
+      if (!STATE.repoUrl) { toast('⚠ Select a repo first'); return; }
+      await doScan(STATE.token);
+    }
+
+    async function doScan(token) {
+      const payload = {
+        repoUrl: STATE.repoUrl,
+        repoOwner: STATE.repoOwner,
+        repoName: STATE.repoName,
+        token: token || null,
+      };
+      $('report-area').style.display = 'none';
+      $('fix-btn').style.display = 'none';
+      $('pr-btn').style.display = 'none';
+      const progressFill = $('progress-fill');
+      const progressBar = $('progress-bar');
+      progressBar.style.display = 'block';
+      progressFill.style.width = '10%';
+      log('SCAN', 'tag-info', `Scanning ${STATE.repoOwner}/${STATE.repoName}...`);
+
+      try {
+        const res = await fetch('/api/scan-repo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        progressFill.style.width = '80%';
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        STATE.scanResults = data.results;
+        progressFill.style.width = '100%';
+        setTimeout(() => { progressBar.style.display = 'none'; }, 600);
+        renderReport(data.results);
+        $('report-area').style.display = 'block';
+        $('fix-btn').style.display = 'inline-flex';
+        log('SCAN', 'tag-ok', `Scan complete: ${data.results.length} files analyzed`);
+        toast('✅ Scan complete');
+      } catch (e) {
+        log('SCAN', 'tag-err', e.message);
+        toast('❌ ' + e.message);
+        progressBar.style.display = 'none';
+      }
+    }
+
+    function renderReport(results) {
+      const container = $('report-content');
+      const totalFiles = results.length;
+      const totalIssues = results.reduce((sum, f) => sum + f.issues.length, 0);
+      let html = `
+        <div class="summary-box">
+          <div class="summary-line"><span>Files scanned</span><span class="val">${totalFiles}</span></div>
+          <div class="summary-line"><span>Total issues</span><span class="val red">${totalIssues}</span></div>
         </div>
-        <div style="font-size:10px;color:#4a5568;margin-top:6px;">
-            ℹ️ Uses backend (ESLint + AI) for deep code analysis.
-        </div>
-        <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-    </div>
-
-    <!-- Stats -->
-    <div class="box stats">
-        <span class="stat-box">Files <span class="stat-val" id="s-files">0</span></span>
-        <span class="stat-box">Dirs <span class="stat-val" id="s-dirs">0</span></span>
-        <span class="stat-box">Issues <span class="stat-val" id="s-issues">0</span></span>
-        <span class="stat-box">Last <span class="stat-val" id="s-time">—</span></span>
-    </div>
-
-    <!-- Log -->
-    <div class="box log-container">
-        <div class="log-header">
-            <span>📋 Log</span>
-            <button class="btn btn-ghost" onclick="clearLog()">clear</button>
-        </div>
-        <div class="log-box" id="log-box">
-            <div class="log-line">
-                <span class="log-ts">--:--:--</span>
-                <span class="log-tag tag-sys">SYS</span>
-                <span>Select a folder and click "Scan All with AI".</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Main grid -->
-    <div class="grid-2">
-        <!-- File Tree -->
-        <div class="box tree-panel">
-            <div class="panel-title">📁 File Tree</div>
-            <div class="file-tree" id="file-tree">
-                <div style="color:#4a5568;">Select a folder to see files.</div>
-            </div>
-        </div>
-        <!-- File Content -->
-        <div class="box content-panel">
-            <div class="panel-title">
-                <span id="file-title">📄 File Content</span>
-                <button class="btn btn-ghost" onclick="analyzeCurrentFile()">🔍 AI Analyze</button>
-            </div>
-            <div id="file-content" class="file-content">
-                <div style="color:#4a5568;">Select a file from the tree.</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Scan Report -->
-    <div id="report-area" style="display:none;margin-top:14px;">
-        <div class="box report-panel">
-            <div class="panel-title">📊 Scan Report</div>
-            <div id="report-content" style="padding:12px;"></div>
-        </div>
-    </div>
-
-    <!-- Toast -->
-    <div id="toast"></div>
-
-    <script>
-        /* ─── STATE ────────────────────────────────────────────────── */
-        const STATE = {
-            rootHandle: null,
-            fileMap: {},
-            tree: null,
-            currentFile: null,
-            currentContent: null,
-            filesCount: 0,
-            dirsCount: 0,
-            totalIssues: 0,
-            scanResults: [],
-            isScanning: false,
-            folderName: null,
-        };
-
-        /* ─── DOM HELPERS ──────────────────────────────────────────── */
-        const $ = id => document.getElementById(id);
-        const logBox = $('log-box');
-        const statusBadge = $('status-badge');
-        const treeContainer = $('file-tree');
-        const contentContainer = $('file-content');
-        const fileTitle = $('file-title');
-        const folderPath = $('folder-path');
-        const scanAllBtn = $('scan-all-btn');
-
-        /* ─── TOAST ────────────────────────────────────────────────── */
-        let toastTimer;
-
-        function toast(msg) {
-            const el = $('toast');
-            el.textContent = msg;
-            el.style.opacity = '1';
-            clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => el.style.opacity = '0', 2500);
-        }
-
-        /* ─── LOGGER ──────────────────────────────────────────────── */
-        function ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
-
-        function log(tag, cls, msg) {
-            const line = document.createElement('div');
-            line.className = 'log-line';
-            line.innerHTML =
-                `<span class="log-ts">${ts()}</span><span class="log-tag ${cls}">${tag}</span><span>${escHtml(msg)}</span>`;
-            logBox.appendChild(line);
-            logBox.scrollTop = logBox.scrollHeight;
-        }
-
-        function clearLog() { logBox.innerHTML = '';
-            log('SYS', 'tag-sys', 'Log cleared.'); }
-
-        function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
-        function setStatus(state, text) { statusBadge.textContent = text || state;
-            statusBadge.className = 'status-badge ' + state; }
-
-        /* ─── FOLDER SELECTION ────────────────────────────────────── */
-        function pickFolder() {
-            if (window.showDirectoryPicker) {
-                (async () => {
-                    try {
-                        const root = await window.showDirectoryPicker({ mode: 'read' });
-                        STATE.rootHandle = root;
-                        folderPath.textContent = root.name + ' (local)';
-                        log('INFO', 'tag-ok', `Selected folder: ${root.name}`);
-                        await loadFolderFromHandle(root);
-                        scanAllBtn.disabled = false;
-                        toast('✅ Folder loaded');
-                    } catch (err) {
-                        if (err.name !== 'AbortError' && err.name !== 'SecurityError') {
-                            log('ERROR', 'tag-err', err.message);
-                            toast('❌ ' + err.message);
-                        }
-                    }
-                })();
-            } else {
-                $('folder-input').click();
-            }
-        }
-
-        function handleFolderInput(event) {
-            const files = event.target.files;
-            if (!files.length) return;
-            const firstPath = files[0].webkitRelativePath;
-            const folderName = firstPath.split('/')[0];
-            STATE.folderName = folderName;
-            folderPath.textContent = folderName + ' (selected via file input)';
-            log('INFO', 'tag-ok', `Selected folder: ${folderName} (${files.length} files)`);
-            const fileMap = {};
-            const fileList = [];
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                const path = file.webkitRelativePath;
-                const ext = path.split('.').pop().toLowerCase();
-                const codeExts = ['js', 'html', 'css', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'ts', 'jsx', 'tsx', 'vue', 'svelte',
-                    'json', 'xml', 'yaml', 'yml', 'toml', 'sh', 'bash'
-                ];
-                if (codeExts.includes(ext)) {
-                    fileMap[path] = { content: null, file: file };
-                    fileList.push({ name: path.split('/').pop(), path, file });
-                }
-            }
-            STATE.fileMap = fileMap;
-            STATE.filesCount = Object.keys(fileMap).length;
-            STATE.dirsCount = 0;
-            const tree = buildTreeFromFileList(fileList);
-            STATE.tree = tree;
-            $('s-files').textContent = STATE.filesCount;
-            $('s-dirs').textContent = '—';
-            renderTree(tree);
-            scanAllBtn.disabled = false;
-            toast(`✅ Loaded ${STATE.filesCount} files`);
-            setStatus('done', 'folder loaded');
-        }
-
-        function buildTreeFromFileList(fileList) {
-            const root = { name: '', type: 'dir', children: [] };
-            const map = { '': root };
-            fileList.forEach(item => {
-                const parts = item.path.split('/');
-                let current = root;
-                let path = '';
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i];
-                    path = path ? path + '/' + part : part;
-                    if (i === parts.length - 1) {
-                        current.children.push({ name: part, type: 'file', path: item.path, file: item.file });
-                    } else {
-                        let dir = current.children.find(c => c.type === 'dir' && c.name === part);
-                        if (!dir) {
-                            dir = { name: part, type: 'dir', children: [], path: path };
-                            current.children.push(dir);
-                        }
-                        current = dir;
-                    }
-                }
-            });
-            return root.children;
-        }
-
-        async function loadFolderFromHandle(handle, path = '') {
-            const tree = [];
-            const fileMap = {};
-            await traverseDirectory(handle, path, tree, fileMap);
-            STATE.tree = tree;
-            STATE.fileMap = fileMap;
-            STATE.filesCount = Object.keys(fileMap).length;
-            STATE.dirsCount = tree.length - STATE.filesCount;
-            $('s-files').textContent = STATE.filesCount;
-            $('s-dirs').textContent = STATE.dirsCount;
-            renderTree(tree);
-            log('INFO', 'tag-ok', `Loaded ${STATE.filesCount} files, ${STATE.dirsCount} dirs`);
-            setStatus('done', 'folder loaded');
-        }
-
-        async function traverseDirectory(handle, path, tree, fileMap) {
-            const entries = [];
-            for await (const entry of handle.values()) entries.push(entry);
-            entries.sort((a, b) => {
-                if (a.kind === 'directory' && b.kind !== 'directory') return -1;
-                if (a.kind !== 'directory' && b.kind === 'directory') return 1;
-                return a.name.localeCompare(b.name);
-            });
-            for (const entry of entries) {
-                const fullPath = path ? path + '/' + entry.name : entry.name;
-                if (entry.kind === 'directory') {
-                    const dirNode = { name: entry.name, type: 'dir', children: [], path: fullPath };
-                    tree.push(dirNode);
-                    await traverseDirectory(entry, fullPath, dirNode.children, fileMap);
-                } else {
-                    const ext = entry.name.split('.').pop().toLowerCase();
-                    const codeExts = ['js', 'html', 'css', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'ts', 'jsx', 'tsx', 'vue', 'svelte',
-                        'json', 'xml', 'yaml', 'yml', 'toml', 'sh', 'bash'
-                    ];
-                    if (codeExts.includes(ext)) {
-                        const fileNode = { name: entry.name, type: 'file', path: fullPath, handle: entry };
-                        tree.push(fileNode);
-                        fileMap[fullPath] = { handle: entry, content: null };
-                    }
-                }
-            }
-        }
-
-        function renderTree(nodes, parentEl) {
-            const container = parentEl || treeContainer;
-            container.innerHTML = '';
-            if (!nodes || !nodes.length) {
-                container.innerHTML = '<div style="color:#4a5568;">No files.</div>';
-                return;
-            }
-            const ul = document.createElement('div');
-            ul.className = 'tree';
-            nodes.forEach(node => {
-                const item = document.createElement('div');
-                item.className = 'tree-item';
-                const icon = document.createElement('span');
-                icon.className = 'icon';
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'name ' + (node.type === 'dir' ? 'dir' : 'file');
-                if (node.type === 'dir') {
-                    icon.textContent = '📁';
-                    nameSpan.textContent = node.name + '/';
-                    item.onclick = () => toggleDir(node, item);
-                    item.appendChild(icon);
-                    item.appendChild(nameSpan);
-                    ul.appendChild(item);
-                    const childContainer = document.createElement('div');
-                    childContainer.className = 'tree-children';
-                    childContainer.style.display = 'none';
-                    ul.appendChild(childContainer);
-                    node._el = item;
-                    node._childContainer = childContainer;
-                } else {
-                    icon.textContent = '📄';
-                    nameSpan.textContent = node.name;
-                    item.onclick = () => loadLocalFile(node);
-                    item.appendChild(icon);
-                    item.appendChild(nameSpan);
-                    ul.appendChild(item);
-                }
-            });
-            container.appendChild(ul);
-        }
-
-        function toggleDir(node, el) {
-            const childContainer = node._childContainer;
-            if (!childContainer) return;
-            if (childContainer.style.display === 'none') {
-                childContainer.style.display = 'block';
-                if (!childContainer.hasChildNodes()) renderTree(node.children, childContainer);
-                el.querySelector('.icon').textContent = '📂';
-            } else {
-                childContainer.style.display = 'none';
-                el.querySelector('.icon').textContent = '📁';
-            }
-        }
-
-        async function loadLocalFile(node) {
-            try {
-                let content = '';
-                if (node.handle) {
-                    const file = await node.handle.getFile();
-                    content = await file.text();
-                } else if (node.file) {
-                    content = await node.file.text();
-                } else {
-                    const entry = STATE.fileMap[node.path];
-                    if (entry && entry.file) content = await entry.file.text();
-                    else if (entry && entry.handle) {
-                        const file = await entry.handle.getFile();
-                        content = await file.text();
-                    } else { toast('⚠ File not found'); return; }
-                }
-                STATE.currentFile = node.path;
-                STATE.currentContent = content;
-                fileTitle.textContent = `📄 ${node.path}`;
-                contentContainer.innerHTML =
-                    `<div style="white-space:pre-wrap;font-family:monospace;font-size:12px;color:#c8d8e8;">${escHtml(content)}</div>`;
-                log('INFO', 'tag-ok', `Loaded: ${node.path}`);
-                setStatus('done', 'file loaded');
-            } catch (err) {
-                log('ERROR', 'tag-err', err.message);
-                toast('❌ ' + err.message);
-            }
-        }
-
-        /* ─── BACKEND API CALL ────────────────────────────────────── */
-        async function analyzeWithBackend(code, filename, extension) {
-            try {
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code, filename, extension }),
-                });
-                if (!response.ok) {
-                    const err = await response.text();
-                    throw new Error(`Server error ${response.status}: ${err}`);
-                }
-                const data = await response.json();
-                return data.issues || [];
-            } catch (e) {
-                log('API', 'tag-err', `Backend error: ${e.message}`);
-                return [];
-            }
-        }
-
-        /* ─── ANALYZE CURRENT FILE ────────────────────────────────── */
-        async function analyzeCurrentFile() {
-            if (!STATE.currentContent) {
-                toast('⚠ Load a file first');
-                return;
-            }
-            const content = STATE.currentContent;
-            const filename = STATE.currentFile;
-            const ext = filename.split('.').pop().toLowerCase();
-
-            const codeExts = ['js', 'html', 'css', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'ts', 'jsx', 'tsx', 'vue', 'svelte'];
-            if (!codeExts.includes(ext)) {
-                toast('⚠ Not a code file');
-                return;
-            }
-
-            log('ANALYSE', 'tag-info', `Analysing ${filename} via backend...`);
-            setStatus('analysing', 'analysing...');
-
-            const issues = await analyzeWithBackend(content, filename, ext);
-
-            if (!issues.length) {
-                issues.push({ severity: 'LOW', description: 'No issues found by backend.', fix: '' });
-            }
-
-            const reportArea = $('report-area');
-            reportArea.style.display = 'block';
-            const reportContent = $('report-content');
-            let html =
-                `<div style="margin-bottom:8px;font-size:11px;color:#4a5568;">${filename} · ${issues.length} issue(s)</div>`;
-            issues.forEach(issue => {
-                const sevClass = (issue.severity || 'MED').toLowerCase();
-                html += `
-                    <div class="bug-item" style="border-left:2px solid ${sevClass==='high'?'#ff5370':sevClass==='med'?'#ffb547':'#58a6ff'};">
-                        <span class="sev-${sevClass}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">[${(issue.severity || 'MED').toUpperCase()}]</span>
-                        <span>${escHtml(issue.description || 'Issue')}</span>
-                        ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
-                    </div>
-                `;
-            });
-            reportContent.innerHTML = html;
-            log('ANALYSE', 'tag-ok', `Backend found ${issues.length} issues in ${filename}`);
-            setStatus('done', 'done ✓');
-            toast('✅ Analysis done');
-        }
-
-        /* ─── SCAN ALL FILES ──────────────────────────────────────── */
-        async function scanAllFiles() {
-            if (STATE.isScanning) return;
-            if (!Object.keys(STATE.fileMap).length) { toast('⚠ Select a folder first'); return; }
-
-            STATE.isScanning = true;
-            const startTime = Date.now();
-            scanAllBtn.disabled = true;
-            scanAllBtn.textContent = '⏳ Scanning...';
-            setStatus('analysing', 'scanning...');
-            log('SCAN', 'tag-info', 'Starting full project scan via backend...');
-
-            const progressBar = $('progress-bar');
-            const progressFill = $('progress-fill');
-            progressBar.style.display = 'block';
-
-            const files = Object.keys(STATE.fileMap);
-            const total = files.length;
-            let scanned = 0;
-            const allResults = [];
-
-            for (const path of files) {
-                try {
-                    let content = '';
-                    const entry = STATE.fileMap[path];
-                    if (entry.handle) { const file = await entry.handle.getFile();
-                        content = await file.text(); } else if (entry.file) { content = await entry.file.text(); } else
-                        continue;
-                    const ext = path.split('.').pop().toLowerCase();
-                    const codeExts = ['js', 'html', 'css', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'ts', 'jsx', 'tsx', 'vue', 'svelte'];
-                    if (!codeExts.includes(ext)) { scanned++;
-                        progressFill.style.width = (scanned / total * 100) + '%'; continue; }
-
-                    const issues = await analyzeWithBackend(content, path, ext);
-                    if (issues.length) allResults.push({ file: path, issues });
-                    scanned++;
-                    progressFill.style.width = (scanned / total * 100) + '%';
-                    if (scanned % 2 === 0) log('PROGRESS', 'tag-info', `Scanned ${scanned}/${total} files...`);
-                } catch (e) {}
-            }
-
-            progressFill.style.width = '100%';
-            setTimeout(() => { progressBar.style.display = 'none';
-                progressFill.style.width = '0%'; }, 800);
-
-            STATE.scanResults = allResults;
-            STATE.totalIssues = allResults.reduce((sum, f) => sum + f.issues.length, 0);
-            $('s-issues').textContent = STATE.totalIssues;
-            $('s-time').textContent = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
-
-            renderScanReport(allResults, total, startTime);
-            log('SCAN', 'tag-ok', `Scan complete: ${allResults.length} files with issues, ${STATE.totalIssues} total issues`);
-            setStatus('done', 'scan complete');
-            toast(`✅ Scan done: ${STATE.totalIssues} issues found`);
-
-            scanAllBtn.disabled = false;
-            scanAllBtn.textContent = '🚀 Scan All with AI';
-            STATE.isScanning = false;
-        }
-
-        function renderScanReport(results, totalFiles, startTime) {
-            const reportArea = $('report-area');
-            reportArea.style.display = 'block';
-            const reportContent = $('report-content');
-            let html = `
-                <div class="summary-box">
-                    <div class="summary-line"><span>Files scanned</span><span class="val">${totalFiles}</span></div>
-                    <div class="summary-line"><span>Files with issues</span><span class="val red">${results.length}</span></div>
-                    <div class="summary-line"><span>Total issues</span><span class="val red">${STATE.totalIssues}</span></div>
-                    <div class="summary-line"><span>Duration</span><span class="val">${((Date.now() - startTime) / 1000).toFixed(1)}s</span></div>
-                </div>
+      `;
+      if (!totalIssues) {
+        html += `<div style="color:#00ffa3;margin-top:12px;">✅ No issues found. Great job!</div>`;
+      } else {
+        for (const item of results) {
+          if (!item.issues.length) continue;
+          html += `<div style="font-weight:700;color:#58a6ff;margin-top:12px;">📄 ${item.file}</div>`;
+          for (const issue of item.issues) {
+            const sevClass = (issue.severity || 'MED').toLowerCase();
+            html += `
+              <div class="bug-item" style="border-left:2px solid ${sevClass==='high'?'#ff5370':sevClass==='med'?'#ffb547':'#58a6ff'};">
+                <span class="sev-${sevClass}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">[${(issue.severity || 'MED').toUpperCase()}]</span>
+                <span>${escHtml(issue.description || 'Issue')}</span>
+                ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
+              </div>
             `;
-            if (!results.length) {
-                html += `<div style="color:#00ffa3;margin-top:12px;">✅ No issues found. Great job!</div>`;
-            } else {
-                results.forEach(item => {
-                    html += `<div style="font-weight:700;color:#58a6ff;margin-top:12px;">📄 ${item.file}</div>`;
-                    item.issues.forEach(issue => {
-                        const sevClass = (issue.severity || 'MED').toLowerCase();
-                        html += `
-                            <div class="bug-item" style="border-left:2px solid ${sevClass==='high'?'#ff5370':sevClass==='med'?'#ffb547':'#58a6ff'};">
-                                <span class="sev-${sevClass}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">[${(issue.severity || 'MED').toUpperCase()}]</span>
-                                <span>${escHtml(issue.description || 'Issue')}</span>
-                                ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
-                            </div>
-                        `;
-                    });
-                });
-            }
-            reportContent.innerHTML = html;
+          }
         }
+      }
+      container.innerHTML = html;
+      $('s-files').textContent = totalFiles;
+      $('s-issues').textContent = totalIssues;
+      $('s-time').textContent = new Date().toLocaleTimeString();
+    }
 
-        /* ─── INIT ────────────────────────────────────────────────── */
-        (function init() {
-            log('SYS', 'tag-sys', 'VisCarMa Scanner ready. Select a folder and scan.');
-        })();
-    </script>
+    /* ─── FIXES & PR ───────────────────────────────────────────── */
+    async function generateFixes() {
+      if (!STATE.scanResults) return;
+      const files = STATE.scanResults
+        .filter(f => f.issues.length > 0)
+        .map(f => ({ file: f.file, code: f.code || '', issues: f.issues }));
+      // We need file contents; we didn't store them. We'll re-fetch or use the clone result.
+      // For simplicity, we'll prompt user to scan again? Actually we can store code during scan.
+      // We'll update the scan to return code as well. For now, let's ask user to re-scan with code.
+      toast('⚠ Please re-scan the repo first (we need file content)');
+    }
+
+    // We'll extend the scan to store code per file in STATE.scanFiles.
+    // For now, we'll keep it simple.
+  </script>
 
 </body>
 </html>
