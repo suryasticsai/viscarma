@@ -1294,11 +1294,41 @@ async function loadUsage() {
   try {
     const res  = await apiFetch('/api/usage');
     const data = await res.json();
-    $('usage-display').innerHTML =
-      `Plan: <span style="color:var(--blue)">${data.plan}</span> &nbsp;·&nbsp; ` +
-      `Scans this month: <span style="color:var(--${data.remaining===0?'red':'emerald'})">${data.count}/${data.limit===Infinity?'∞':data.limit}</span> &nbsp;·&nbsp; ` +
-      `Remaining: <span style="color:var(--emerald)">${data.remaining===Infinity?'∞':data.remaining}</span>`;
+    const isPro = data.plan === 'pro';
+    const rem   = data.remaining === Infinity ? '∞' : data.remaining;
+    const lim   = data.limit    === Infinity ? '∞' : data.limit;
+    const planColor = isPro ? 'var(--purple)' : data.plan === 'free' ? 'var(--blue)' : 'var(--text-3)';
+    const planBg    = isPro ? 'var(--purple-dim)' : 'var(--blue-dim)';
+    const planBorder= isPro ? 'var(--purple)' : 'var(--blue)';
+
+    $('usage-display').innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;
+          background:${planBg};color:${planColor};border:1px solid ${planBorder}">
+          ${data.plan.toUpperCase()}${data.isWhitelisted ? ' (whitelisted)' : ''}
+        </span>
+        <span class="text-muted">Scans this month:</span>
+        <span style="color:var(--${data.remaining===0?'red':'emerald'});font-weight:700">${data.count} / ${lim}</span>
+        <span class="text-muted">·</span>
+        <span style="color:var(--emerald)">${rem} remaining</span>
+        ${!isPro ? `<button class="btn btn-sm" style="margin-left:auto;border-color:var(--purple);color:var(--purple)" onclick="upgradeToPro()">⚡ Upgrade to Pro</button>` : ''}
+      </div>`;
   } catch(e) { $('usage-display').textContent = 'Could not load usage.'; }
+}
+
+async function upgradeToPro() {
+  if (!STATE.token) { toast('Login with GitHub first'); return; }
+  try {
+    const res  = await apiFetch('/api/stripe/create-checkout', { method: 'POST', body: JSON.stringify({}) });
+    const data = await res.json();
+    if (data.error) {
+      // Stripe not configured yet — show setup instructions
+      toast(data.error, 5000);
+      log('PRO','tag-warn', data.error);
+      return;
+    }
+    if (data.url) window.open(data.url, '_blank');
+  } catch(e) { toast('Upgrade failed: ' + e.message); }
 }
 
 /* ══════════════════════════════════════════════════════
@@ -1502,6 +1532,20 @@ async function publishRulePack() {
 ══════════════════════════════════════════════════════ */
 (function init() {
   setTimeout(checkAuth, 150);
+
+  // Handle Stripe redirect back after payment
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('pro') === 'success') {
+    toast('🎉 Welcome to Pro! Unlimited scans activated.', 5000);
+    log('PRO','tag-ok','Pro plan activated via Stripe.');
+    history.replaceState({}, '', '/'); // clean URL
+    // Switch to Rules tab to show updated plan
+    setTimeout(() => { switchMode('fix'); showPanel('rules'); }, 500);
+  }
+  if (params.get('pro') === 'cancelled') {
+    toast('Upgrade cancelled — you can upgrade anytime from the Rules tab.');
+    history.replaceState({}, '', '/');
+  }
 })();
 </script>
 </body>
