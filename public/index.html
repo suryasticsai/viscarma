@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="VisCarMa — Hybrid code scanner with ESLint, AI analysis, and GitHub PR integration." />
   <title>VisCarMa · Hybrid Scanner</title>
   <link rel="icon" type="image/png" href="/viscarma_logo.png" />
   <link rel="stylesheet" href="style.css" />
@@ -19,7 +20,7 @@
     <div class="flex auth-section">
       <span id="auth-status" class="auth-status">
         <span class="status-dot" id="status-dot"></span>
-        <span id="user-info" style="font-size:12px;color:#8aa9c9;">Not logged in</span>
+        <span id="user-info" style="font-size:12px;color:#8aa9c9;">Checking auth…</span>
       </span>
       <button class="btn btn-ghost" id="login-btn" onclick="login()">Login with GitHub</button>
     </div>
@@ -119,7 +120,9 @@
     const $ = id => document.getElementById(id);
     const logBox = $('log-box');
 
-    function ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
+    function ts() {
+      return new Date().toLocaleTimeString('en-GB', { hour12: false });
+    }
 
     function log(tag, cls, msg) {
       const line = document.createElement('div');
@@ -129,53 +132,78 @@
       logBox.scrollTop = logBox.scrollHeight;
     }
 
-    function clearLog() { logBox.innerHTML = ''; log('SYS', 'tag-sys', 'Log cleared.'); }
+    function clearLog() {
+      logBox.innerHTML = '';
+      log('SYS', 'tag-sys', 'Log cleared.');
+    }
 
-    function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function escHtml(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
 
     function toast(msg) {
       const el = $('toast');
       el.textContent = msg;
       el.style.opacity = '1';
       clearTimeout(window.toastTimer);
-      window.toastTimer = setTimeout(() => el.style.opacity = '0', 2500);
+      window.toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
     }
 
     /* ─── AUTH ──────────────────────────────────────────────────── */
+
+    // FIX: all fetch calls now include credentials:'include' so the
+    // cookie-session cookie is sent with every request.
+    async function apiFetch(url, options = {}) {
+      return fetch(url, {
+        ...options,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+      });
+    }
+
     async function checkAuth() {
       try {
-        const res = await fetch('/api/user');
+        const res = await apiFetch('/api/user');
         if (!res.ok) {
-          // Retry once if server error (might be session not ready)
-          console.warn('Auth check failed, retrying...');
-          setTimeout(checkAuth, 1000);
+          // Non-200 from server — retry once after 1.5s
+          console.warn('[AUTH] /api/user returned', res.status, '— retrying in 1.5s');
+          setTimeout(checkAuth, 1500);
           return;
         }
         const data = await res.json();
-        if (data.user) {
-          STATE.user = data.user;
-          STATE.token = data.token;
-          // Update UI
-          $('user-info').textContent = `Logged in as ${data.user.login}`;
-          $('status-dot').className = 'status-dot online';
-          $('login-btn').textContent = 'Logout';
-          $('login-btn').onclick = () => window.location.href = '/auth/logout';
-          $('repo-select').style.display = 'inline-block';
-          $('scan-logged-btn').style.display = 'inline-flex';
-          await loadRepos();
-        } else {
-          // Not logged in
-          $('user-info').textContent = 'Not logged in';
-          $('status-dot').className = 'status-dot offline';
-          $('login-btn').textContent = 'Login with GitHub';
-          $('login-btn').onclick = login;
-          $('repo-select').style.display = 'none';
-          $('scan-logged-btn').style.display = 'none';
-        }
+        applyAuthState(data.user, data.token);
       } catch (e) {
-        console.error('Auth check failed:', e);
-        // Retry once after 1s
-        setTimeout(checkAuth, 1000);
+        console.error('[AUTH] checkAuth error:', e);
+        // Network error — retry once
+        setTimeout(checkAuth, 1500);
+      }
+    }
+
+    function applyAuthState(user, token) {
+      if (user) {
+        STATE.user = user;
+        STATE.token = token;
+        $('user-info').textContent = `Logged in as ${user.login}`;
+        $('status-dot').className = 'status-dot online';
+        $('login-btn').textContent = 'Logout';
+        $('login-btn').onclick = logout;
+        $('repo-select').style.display = 'inline-block';
+        $('scan-logged-btn').style.display = 'inline-flex';
+        loadRepos();
+        log('AUTH', 'tag-ok', `Authenticated as ${user.login}`);
+      } else {
+        STATE.user = null;
+        STATE.token = null;
+        $('user-info').textContent = 'Not logged in';
+        $('status-dot').className = 'status-dot offline';
+        $('login-btn').textContent = 'Login with GitHub';
+        $('login-btn').onclick = login;
+        $('repo-select').style.display = 'none';
+        $('scan-logged-btn').style.display = 'none';
+        log('AUTH', 'tag-sys', 'Not authenticated.');
       }
     }
 
@@ -183,9 +211,14 @@
       window.location.href = '/auth/github';
     }
 
+    function logout() {
+      window.location.href = '/auth/logout';
+    }
+
     async function loadRepos() {
       try {
-        const res = await fetch('/api/repos');
+        const res = await apiFetch('/api/repos');
+        if (!res.ok) throw new Error('Failed to load repos');
         const repos = await res.json();
         const select = $('repo-select');
         select.innerHTML = '<option value="">Select repo</option>';
@@ -195,8 +228,10 @@
           opt.textContent = repo.full_name;
           select.appendChild(opt);
         }
+        log('AUTH', 'tag-ok', `Loaded ${repos.length} repos`);
       } catch (e) {
-        console.error('Failed to load repos:', e);
+        console.error('[REPOS]', e);
+        log('AUTH', 'tag-err', 'Failed to load repos: ' + e.message);
       }
     }
 
@@ -208,7 +243,7 @@
         STATE.repoName = name;
         STATE.repoUrl = `https://github.com/${val}.git`;
         STATE.repoBranch = 'main';
-        $('repo-url-input').value = STATE.repoUrl;
+        $('repo-url-input').value = `https://github.com/${val}`;
       }
     }
 
@@ -216,11 +251,11 @@
     async function scanManual() {
       const url = $('repo-url-input').value.trim();
       if (!url) { toast('⚠ Enter a repo URL'); return; }
-      const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)(?:\.git)?/);
+      const match = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/);
       if (!match) { toast('⚠ Invalid GitHub URL'); return; }
       STATE.repoOwner = match[1];
       STATE.repoName = match[2];
-      STATE.repoUrl = url;
+      STATE.repoUrl = `https://github.com/${match[1]}/${match[2]}.git`;
       STATE.repoBranch = 'main';
       await doScan(null);
     }
@@ -237,24 +272,25 @@
         repoName: STATE.repoName,
         token: token || null,
       };
+
       $('report-area').style.display = 'none';
       $('fix-btn').style.display = 'none';
       $('pr-btn').style.display = 'none';
+
       const progressFill = $('progress-fill');
       const progressBar = $('progress-bar');
       progressBar.style.display = 'block';
       progressFill.style.width = '10%';
-      log('SCAN', 'tag-info', `Scanning ${STATE.repoOwner}/${STATE.repoName}...`);
+      log('SCAN', 'tag-info', `Scanning ${STATE.repoOwner}/${STATE.repoName}…`);
 
       try {
-        const res = await fetch('/api/scan-repo', {
+        const res = await apiFetch('/api/scan-repo', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         progressFill.style.width = '80%';
         const data = await res.json();
-        if (!data.success) throw new Error(data.error);
+        if (!data.success) throw new Error(data.error || 'Scan failed');
         STATE.scanResults = data.results;
         progressFill.style.width = '100%';
         setTimeout(() => { progressBar.style.display = 'none'; }, 600);
@@ -275,22 +311,25 @@
       const container = $('report-content');
       const totalFiles = results.length;
       const totalIssues = results.reduce((sum, f) => sum + f.issues.length, 0);
+
       let html = `
         <div class="summary-box">
           <div class="summary-line"><span>Files scanned</span><span class="val">${totalFiles}</span></div>
           <div class="summary-line"><span>Total issues</span><span class="val red">${totalIssues}</span></div>
         </div>
       `;
+
       if (!totalIssues) {
         html += `<div style="color:#10b981;margin-top:12px;">✅ No issues found. Great job!</div>`;
       } else {
         for (const item of results) {
           if (!item.issues.length) continue;
-          html += `<div style="font-weight:700;color:#60a5fa;margin-top:12px;">📄 ${item.file}</div>`;
+          html += `<div style="font-weight:700;color:#60a5fa;margin-top:12px;">📄 ${escHtml(item.file)}</div>`;
           for (const issue of item.issues) {
             const sevClass = (issue.severity || 'MED').toLowerCase();
+            const borderColor = sevClass === 'high' ? '#ef4444' : sevClass === 'med' ? '#f59e0b' : '#60a5fa';
             html += `
-              <div class="bug-item" style="border-left:2px solid ${sevClass==='high'?'#ef4444':sevClass==='med'?'#f59e0b':'#60a5fa'};">
+              <div class="bug-item" style="border-left:2px solid ${borderColor};">
                 <span class="sev-${sevClass}" style="font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:6px;">[${(issue.severity || 'MED').toUpperCase()}]</span>
                 <span>${escHtml(issue.description || 'Issue')}</span>
                 ${issue.fix ? `<div class="fix-suggestion">💡 ${escHtml(issue.fix)}</div>` : ''}
@@ -299,6 +338,7 @@
           }
         }
       }
+
       container.innerHTML = html;
       $('s-files').textContent = totalFiles;
       $('s-issues').textContent = totalIssues;
@@ -321,14 +361,13 @@
         return;
       }
 
-      log('FIX', 'tag-info', `Generating fixes for ${filesToFix.length} files...`);
+      log('FIX', 'tag-info', `Generating fixes for ${filesToFix.length} files…`);
       $('fix-btn').disabled = true;
-      $('fix-btn').textContent = '⏳ Generating...';
+      $('fix-btn').textContent = '⏳ Generating…';
 
       try {
-        const res = await fetch('/api/generate-fixes', {
+        const res = await apiFetch('/api/generate-fixes', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ files: filesToFix }),
         });
         const data = await res.json();
@@ -350,11 +389,17 @@
     function showFixPreview(fixes) {
       const container = $('report-content');
       let html = container.innerHTML;
-      html += `<div style="margin-top:16px;border-top:1px solid #2a3a4e;padding-top:12px;"><div style="font-weight:700;color:#10b981;">🔧 Fixes Generated</div>`;
+      html += `<div style="margin-top:16px;border-top:1px solid #2a3a4e;padding-top:12px;">
+                 <div style="font-weight:700;color:#10b981;">🔧 Fixes Generated</div>`;
       for (const fix of fixes) {
-        html += `<div style="margin-top:6px;font-size:11px;color:#8aa9c9;">📄 ${fix.file} – applied: ${fix.applied.join(', ') || 'none'}</div>`;
+        html += `<div style="margin-top:6px;font-size:11px;color:#8aa9c9;">
+                   📄 ${escHtml(fix.file)} – applied: ${escHtml(fix.applied.join(', ') || 'none')}
+                 </div>`;
         if (fix.newCode) {
-          html += `<details style="margin-left:12px;"><summary>Show diff</summary><pre style="background:#0f172a;padding:6px;border-radius:4px;font-size:10px;color:#e0e8f0;white-space:pre-wrap;max-height:200px;overflow:auto;">${escHtml(fix.newCode.slice(0, 800))}${fix.newCode.length > 800 ? '\n…truncated' : ''}</pre></details>`;
+          html += `<details style="margin-left:12px;">
+                     <summary style="cursor:pointer;color:#8aa9c9;font-size:11px;">Show preview</summary>
+                     <pre style="background:#0f172a;padding:6px;border-radius:4px;font-size:10px;color:#e0e8f0;white-space:pre-wrap;max-height:200px;overflow:auto;">${escHtml(fix.newCode.slice(0, 800))}${fix.newCode.length > 800 ? '\n…truncated' : ''}</pre>
+                   </details>`;
         }
       }
       html += `</div>`;
@@ -375,14 +420,13 @@
         return;
       }
 
-      log('PR', 'tag-info', 'Creating pull request...');
+      log('PR', 'tag-info', 'Creating pull request…');
       $('pr-btn').disabled = true;
-      $('pr-btn').textContent = '⏳ Creating...';
+      $('pr-btn').textContent = '⏳ Creating…';
 
       try {
-        const res = await fetch('/api/create-pr', {
+        const res = await apiFetch('/api/create-pr', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             repoOwner: STATE.repoOwner,
             repoName: STATE.repoName,
@@ -396,7 +440,10 @@
           log('PR', 'tag-ok', `PR created: ${data.url}`);
           toast(`✅ PR #${data.number} opened!`);
           const container = $('report-content');
-          container.innerHTML += `<div style="margin-top:12px;border-top:1px solid #10b981;padding-top:8px;">🔀 <a href="${data.url}" target="_blank" style="color:#10b981;">View PR #${data.number}</a></div>`;
+          container.innerHTML += `
+            <div style="margin-top:12px;border-top:1px solid #10b981;padding-top:8px;">
+              🔀 <a href="${data.url}" target="_blank" rel="noopener" style="color:#10b981;">View PR #${data.number}</a>
+            </div>`;
         } else {
           throw new Error(data.error || 'PR creation failed');
         }
@@ -411,9 +458,10 @@
 
     /* ─── INIT ────────────────────────────────────────────────── */
     (function init() {
-      // Check auth on page load
-      checkAuth();
       log('SYS', 'tag-sys', 'VisCarMa Hybrid Scanner ready.');
+      // FIX: small delay so the cookie-session cookie is fully set
+      // after an OAuth redirect before we read it back via /api/user
+      setTimeout(checkAuth, 150);
     })();
   </script>
 
