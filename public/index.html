@@ -700,9 +700,26 @@ async function doScan() {
       + '<div class="summary-card"><div class="s-label">LOW</div><div class="s-val">' + low + '</div></div>'
       + '</div>';
 
-    data.results.forEach(function(f) {
+    // File selection controls
+    html += '<div class="row-between" style="margin:8px 0 16px;padding:10px 12px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius)">'
+      + '<div style="font-size:12px;color:var(--text-2)"><strong id="selected-count">' + data.results.filter(function(f){return f.issues.length>0;}).length + '</strong> of ' + data.results.filter(function(f){return f.issues.length>0;}).length + ' files selected</div>'
+      + '<div style="display:flex;gap:8px">'
+      + '<button class="btn btn-ghost btn-sm" onclick="selectAllFiles(true)">Select all</button>'
+      + '<button class="btn btn-ghost btn-sm" onclick="selectAllFiles(false)">Deselect all</button>'
+      + '</div></div>';
+
+    data.results.forEach(function(f, idx) {
       if (!f.issues.length) return;
-      html += '<div class="file-heading"><span style="opacity:0.5">&#x2B21;</span>' + esc(f.file) + '<span class="badge" style="margin-left:auto">' + f.issues.length + '</span></div>';
+      var sevHigh = f.issues.filter(function(i){return i.severity==='HIGH';}).length;
+      html += '<div class="file-block" data-file-idx="' + idx + '">'
+        + '<div class="file-heading" style="display:flex;align-items:center;gap:8px">'
+        + '<input type="checkbox" class="file-select-cb" data-idx="' + idx + '" checked onchange="updateSelectedCount()" style="cursor:pointer;width:15px;height:15px"/>'
+        + '<span style="opacity:0.5">&#x2B21;</span>'
+        + '<span style="flex:1;cursor:pointer" onclick="openFile(' + idx + ')">' + esc(f.file) + '</span>'
+        + '<button class="btn btn-ghost btn-sm" onclick="explainFileByIndex(' + idx + ')" title="Explain with AI">Explain</button>'
+        + '<button class="btn btn-ghost btn-sm" onclick="fixSingleFile(' + idx + ')" title="Fix only this file">Fix this</button>'
+        + '<span class="badge">' + f.issues.length + '</span>'
+        + '</div>';
       f.issues.forEach(function(issue) {
         var sev   = (issue.severity || 'MED').toLowerCase();
         var color = sev==='high' ? 'var(--red)' : sev==='med' ? 'var(--amber)' : 'var(--blue)';
@@ -712,10 +729,12 @@ async function doScan() {
           + (issue.fix ? '<div class="issue-fix">&#x1F4A1; ' + esc(issue.fix) + '</div>' : '')
           + '</div>';
       });
+      html += '</div>';
     });
 
     $('report-content').innerHTML = html;
     $('fix-btn').style.display = 'block';
+    $('fix-btn').textContent = 'Apply fixes to selected';
     buildFileList(data.results);
     log('SCAN','tag-ok','Done. ' + totalIssues + ' issues in ' + data.results.length + ' files.');
     toast('Scan complete - ' + totalIssues + ' issues found');
@@ -734,6 +753,54 @@ function buildFileList(results) {
       + '</div>';
   }).join('');
   $('file-list-panel').innerHTML = html;
+}
+
+/* FILE SELECTION */
+function getSelectedFileIndices() {
+  return Array.from(document.querySelectorAll('.file-select-cb:checked'))
+    .map(function(cb) { return parseInt(cb.getAttribute('data-idx')); });
+}
+
+function selectAllFiles(checked) {
+  document.querySelectorAll('.file-select-cb').forEach(function(cb) { cb.checked = checked; });
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  var count = document.querySelectorAll('.file-select-cb:checked').length;
+  var el = $('selected-count');
+  if (el) el.textContent = count;
+}
+
+function explainFileByIndex(idx) {
+  STATE.currentFile = idx;
+  godExplainFile();
+}
+
+async function fixSingleFile(idx) {
+  var results = STATE.scanResults;
+  if (!results || !results[idx]) { toast('File not found'); return; }
+  var f = results[idx];
+  if (!f.issues || !f.issues.length) { toast('No issues in this file'); return; }
+  log('FIX','tag-info','Fixing single file: ' + f.file + '...');
+  toast('Fixing ' + f.file + '...');
+  try {
+    var res  = await apiFetch('/api/generate-fixes', { method:'POST', body: JSON.stringify({ files: [f] }) });
+    var data = await res.json();
+    if (!data.fixes || !data.fixes.length) throw new Error('No fix generated');
+    // Merge this fix into STATE.fixes
+    if (!STATE.fixes) STATE.fixes = [];
+    var existing = STATE.fixes.findIndex(function(x) { return x.file === f.file; });
+    if (existing >= 0) STATE.fixes[existing] = data.fixes[0];
+    else STATE.fixes.push(data.fixes[0]);
+    STATE.currentFile = STATE.fixes.length - 1;
+    buildFileList(STATE.fixes);
+    STATE.showingDiff = true;
+    openFile(STATE.fixes.length - 1);
+    $('pr-btn').style.display = 'block';
+    log('FIX','tag-ok','Fixed ' + f.file);
+    toast('Fixed ' + f.file + ' - review diff, then Create PR');
+  } catch(e) { log('FIX','tag-err', e.message); toast('Fix failed: ' + e.message); }
 }
 
 function openFile(i) {
@@ -780,8 +847,16 @@ function copyEditorContent() {
 /* FIXES */
 async function generateFixes() {
   if (!STATE.scanResults) { toast('Scan first'); return; }
-  var filesToFix = STATE.scanResults.filter(function(f) { return f.issues && f.issues.length > 0; });
-  if (!filesToFix.length) { toast('No issues to fix'); return; }
+  var selectedIndices = getSelectedFileIndices();
+  var filesToFix;
+  if (selectedIndices.length > 0) {
+    filesToFix = selectedIndices.map(function(i) { return STATE.scanResults[i]; })
+      .filter(function(f) { return f && f.issues && f.issues.length > 0; });
+  } else {
+    filesToFix = STATE.scanResults.filter(function(f) { return f.issues && f.issues.length > 0; });
+  }
+  if (!filesToFix.length) { toast('No files selected, or no issues to fix'); return; }
+  log('FIX','tag-info','Selected ' + filesToFix.length + ' file(s) to fix');
 
   $('fix-btn').disabled = true; $('fix-btn').textContent = 'Generating...';
   log('FIX','tag-info','Generating fixes for ' + filesToFix.length + ' files...');
