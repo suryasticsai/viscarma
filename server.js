@@ -7,6 +7,7 @@
 //   - Server-side scan history (/api/history)
 //   - All Tier 1 + Tier 2 features
 
+import 'dotenv/config';
 import express      from 'express';
 import cors         from 'cors';
 import cookieSession from 'cookie-session';
@@ -36,6 +37,7 @@ const {
   GITHUB_CLIENT_ID,
   GITHUB_CLIENT_SECRET,
   OLLAMA_API_KEY,
+  OPENROUTER_API_KEY,
   SESSION_SECRET = 'dev-secret-change-me-in-production',
   REDIRECT_URI   = 'https://viscarma.onrender.com/auth/callback',
   FRONTEND_URL   = 'https://viscarma.onrender.com',
@@ -96,6 +98,30 @@ async function getESLint() {
   return eslintInstance;
 }
 
+// ─── Safe JSON fetch ─────────────────────────────────────────────
+// Checks Content-Type before calling .json() so an HTML error page
+// from a gateway, rate-limiter, or expired auth doesn't throw an
+// unhandled parse exception (the single most common silent failure).
+async function safeJsonFetch(url, options = {}) {
+  const res = await fetch(url, options);
+  const ct  = res.headers.get('content-type') || '';
+  if (ct.includes('text/html')) {
+    const preview = await res.text();
+    console.error(`[AI] Got HTML from ${url} (status ${res.status}) — likely a gateway/auth error:\n${preview.slice(0, 200)}`);
+    return { ok: false, status: res.status, data: null };
+  }
+  let data = null;
+  try { data = await res.json(); } catch (e) {
+    console.error(`[AI] JSON parse failed from ${url} (status ${res.status}): ${e.message}`);
+    return { ok: false, status: res.status, data: null };
+  }
+  if (!res.ok) {
+    console.error(`[AI] ${url} responded ${res.status}: ${JSON.stringify(data).slice(0, 200)}`);
+    return { ok: false, status: res.status, data };
+  }
+  return { ok: true, status: res.status, data };
+}
+
 // ─── AI call ─────────────────────────────────────────────────────
 async function callAI(prompt) {
   const useOllama = OLLAMA_API_KEY && OLLAMA_API_KEY.length > 0;
@@ -107,8 +133,17 @@ async function callAI(prompt) {
     if (OLLAMA_API_KEY) headers['Authorization'] = `Bearer ${OLLAMA_API_KEY}`;
     body = { model: process.env.OLLAMA_MODEL || 'llama3.2', prompt, stream: false };
   } else {
+    if (!OPENROUTER_API_KEY) {
+      console.error('AI error: no OLLAMA_API_KEY or OPENROUTER_API_KEY set — set OPENROUTER_API_KEY in your .env (get a free key at https://openrouter.ai/settings/keys)');
+      return null;
+    }
     endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-    headers  = { 'Content-Type': 'application/json' };
+    headers  = {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+      'HTTP-Referer':  FRONTEND_URL,
+      'X-Title':       'VisCarMa',
+    };
     body = {
       model: 'google/gemma-2-9b-it:free',
       messages: [
@@ -120,20 +155,88 @@ async function callAI(prompt) {
   }
 
   try {
-    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
-    if (!res.ok) return null;
-    const data = await res.json();
+    const { ok, data } = await safeJsonFetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!ok || !data) return null;
     return useOllama ? (data.response || null) : (data.choices?.[0]?.message?.content || null);
-  } catch (e) { console.error('AI error:', e.message); return null; }
+  } catch (e) { console.error('[AI] Unexpected error:', e.message); return null; }
 }
 
+// ─── Robust AI response parser ────────────────────────────────────
+// Ported and adapted from GrishteSync's parse_ai_response().
+// Handles: markdown fences, literal newlines inside strings,
+// trailing commas, unbalanced brackets, and plain JSON.parse failures.
 function parseAIResponse(text) {
   if (!text) return [];
-  const match = text.match(/\[[\s\S]*\]/);
-  if (!match) return [];
-  try { const p = JSON.parse(match[0]); return Array.isArray(p) ? p : []; }
-  catch { return []; }
+
+  // 1. Strip markdown fences (```json ... ``` or ``` ... ```)
+  text = text.replace(/^```(?:json)?\s*/m, '').replace(/\s*```$/m, '').trim();
+
+  // 2. Isolate the outermost JSON array
+  const start = text.indexOf('[');
+  const end   = text.lastIndexOf(']');
+  if (start === -1 || end === -1 || end <= start) return [];
+  let src = text.slice(start, end + 1);
+
+  // 3. Walk character-by-character to escape literal newlines/tabs
+  //    that appear *inside* JSON string values (most common AI formatting bug).
+  function escapeStringLiterals(str) {
+    const out = [];
+    let inString = false, escaped = false;
+    for (const ch of str) {
+      if (escaped)        { out.push(ch); escaped = false; continue; }
+      if (ch === '\\')    { out.push(ch); escaped = true;  continue; }
+      if (ch === '"')     { inString = !inString; out.push(ch); continue; }
+      if (inString) {
+        if (ch === '\n')  { out.push('\\n'); continue; }
+        if (ch === '\r')  { continue; }
+        if (ch === '\t')  { out.push('\\t'); continue; }
+      }
+      out.push(ch);
+    }
+    return out.join('');
+  }
+  src = escapeStringLiterals(src);
+
+  // 4. Strip trailing commas before ] or }
+  src = src.replace(/,\s*([}\]])/g, '$1');
+
+  // 5. First parse attempt
+  try {
+    const p = JSON.parse(src);
+    return Array.isArray(p) ? p : [];
+  } catch { /* fall through */ }
+
+  // 6. Bracket-balance fix, then retry
+  const opens  = (src.match(/\[/g) || []).length;
+  const closes = (src.match(/\]/g) || []).length;
+  if (opens > closes) src += ']'.repeat(opens - closes);
+  try {
+    const p = JSON.parse(src);
+    return Array.isArray(p) ? p : [];
+  } catch { return []; }
 }
+
+// ─── AI call that expects a JSON array response ───────────────────
+// Wraps callAI + parseAIResponse and adds a single self-correction
+// retry when the first response isn't valid JSON — ported from
+// GrishteSync's multi-turn retry pattern in /api/generate.
+async function callAIForJSON(prompt) {
+  const raw = await callAI(prompt);
+  if (!raw) return [];
+
+  const parsed = parseAIResponse(raw);
+  if (parsed.length > 0) return parsed;
+
+  // Self-correction: append a correction turn and retry once
+  console.warn('[AI] Response was not a valid JSON array — sending correction prompt.');
+  const raw2 = await callAI(
+    `${prompt}\n\nYour previous response could not be parsed as a JSON array.\nReturn ONLY a valid JSON array starting with [ and ending with ]. No markdown, no explanation, no prose.`
+  );
+  if (!raw2) return [];
+  return parseAIResponse(raw2);
+}
+
+
 
 // ─── SECURITY SCANNER (Tier 2) ───────────────────────────────────
 // Detects: hardcoded secrets, OWASP top 10 patterns, SQL injection,
@@ -317,10 +420,9 @@ async function analyzeFile(code, filename) {
 
   // 5. AI analysis (if not already saturated)
   if (issues.length < 12) {
-    const aiRaw    = await callAI(
+    const aiIssues = await callAIForJSON(
       `Analyse this code for bugs, security issues, and bad practices. File: ${filename}\n\n${code.slice(0, 3000)}\n\nReturn a JSON array ONLY (no other text): [{"severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`
     );
-    const aiIssues = parseAIResponse(aiRaw);
     const existing = new Set(issues.map(i => i.description));
     for (const ai of aiIssues) {
       if (!existing.has(ai.description)) { issues.push(ai); existing.add(ai.description); }
@@ -762,10 +864,9 @@ app.post('/api/review-pr', async (req, res) => {
 
     for (const file of changedFiles.slice(0, 10)) { // cap at 10 files
       if (!file.patch) continue;
-      const aiRaw = await callAI(
+      const aiIssues = await callAIForJSON(
         `Review this code diff and identify bugs, security issues, or bad practices.\nFile: ${file.filename}\n\nDiff:\n${file.patch.slice(0, 2000)}\n\nReturn a JSON array ONLY: [{"line_note":"...","severity":"HIGH|MED|LOW","suggestion":"..."}]`
       );
-      const aiIssues = parseAIResponse(aiRaw);
       for (const issue of aiIssues) {
         reviewNotes.push('**`' + file.filename + '`** [' + issue.severity + '] ' + issue.line_note + ' — ' + issue.suggestion);
       }
@@ -1961,8 +2062,7 @@ Number of issues already found by static analysis: ${issues.length}
 
 Return a JSON array of additional issues ONLY (no duplicates of common ones already found): [{"severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`;
 
-  const aiRaw = await callAI(aiPrompt);
-  const aiIssues = parseAIResponse(aiRaw);
+  const aiIssues = await callAIForJSON(aiPrompt);
   const existing = new Set(issues.map(i => i.description));
   for (const ai of aiIssues) {
     if (!existing.has(ai.description)) { issues.push(ai); existing.add(ai.description); }
@@ -2084,13 +2184,12 @@ app.post('/api/godmode/scan-deps', async (req, res) => {
     }
 
     // AI analysis of the full dependency list
-    const aiRaw = await callAI(
+    const aiVulns = await callAIForJSON(
       `Analyse these npm dependencies for security risks, deprecated packages, or better alternatives.
 Dependencies: ${JSON.stringify(allDeps, null, 2)}
 
 Return a JSON array: [{"package":"...","severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`
     );
-    const aiVulns = parseAIResponse(aiRaw);
     const existing = new Set(vulns.map(v => v.package + v.issue));
     for (const ai of aiVulns) {
       if (!existing.has(ai.package + ai.description)) vulns.push(ai);
@@ -2225,7 +2324,8 @@ app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().
 
 app.listen(PORT, () => {
   console.log(`🕵️  VisCarMa backend v2.0 running on port ${PORT}`);
-  console.log(`🔐 OLLAMA_API_KEY ${OLLAMA_API_KEY ? '✓ set' : '✗ not set (using OpenRouter fallback)'}`);
+  console.log(`🔐 OLLAMA_API_KEY ${OLLAMA_API_KEY ? '✓ set' : '✗ not set'}`);
+  console.log(`🔐 OPENROUTER_API_KEY ${OPENROUTER_API_KEY ? '✓ set (using OpenRouter fallback)' : '✗ not set — AI features will be disabled unless OLLAMA_API_KEY is set'}`);
   console.log(`🌐 FRONTEND_URL: ${FRONTEND_URL}`);
   console.log(`🔁 REDIRECT_URI: ${REDIRECT_URI}`);
   console.log(`✅ VisCarMa server listening on port ${PORT}`);
