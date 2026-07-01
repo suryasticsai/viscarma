@@ -24,6 +24,9 @@ import crypto       from 'crypto';
 import webpush      from 'web-push';
 import cron         from 'node-cron';
 
+// ============ NEW: AI Provider imports ============
+import { callAIWithJSON, setAIProvider, getAIProvider } from './lib/ai-providers.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
@@ -42,6 +45,16 @@ const {
   REDIRECT_URI   = 'https://viscarma.onrender.com/auth/callback',
   FRONTEND_URL   = 'https://viscarma.onrender.com',
 } = process.env;
+
+// ============ NEW: Set active AI provider based on env ============
+const AI_PROVIDER = process.env.AI_PROVIDER || 'openrouter';
+try {
+  setAIProvider(AI_PROVIDER);
+  console.log(`🔐 AI Provider: ${AI_PROVIDER}`);
+} catch (e) {
+  console.warn(`⚠️ AI Provider "${AI_PROVIDER}" not found, falling back to openrouter`);
+  setAIProvider('openrouter');
+}
 
 app.use(cookieSession({
   name: 'viscarma_sess', keys: [SESSION_SECRET],
@@ -122,43 +135,19 @@ async function safeJsonFetch(url, options = {}) {
   return { ok: true, status: res.status, data };
 }
 
-// ─── AI call ─────────────────────────────────────────────────────
+// ─── AI call (DEPRECATED — kept for backward compatibility) ─────
+// New code should use callAIWithJSON from lib/ai-providers.js
+// This function is now a thin wrapper that delegates to the provider system.
 async function callAI(prompt) {
-  const useOllama = OLLAMA_API_KEY && OLLAMA_API_KEY.length > 0;
-  let endpoint, headers, body;
-
-  if (useOllama) {
-    endpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/generate';
-    headers  = { 'Content-Type': 'application/json' };
-    if (OLLAMA_API_KEY) headers['Authorization'] = `Bearer ${OLLAMA_API_KEY}`;
-    body = { model: process.env.OLLAMA_MODEL || 'llama3.2', prompt, stream: false };
-  } else {
-    if (!OPENROUTER_API_KEY) {
-      console.error('AI error: no OLLAMA_API_KEY or OPENROUTER_API_KEY set — set OPENROUTER_API_KEY in your .env (get a free key at https://openrouter.ai/settings/keys)');
-      return null;
-    }
-    endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-    headers  = {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-      'HTTP-Referer':  FRONTEND_URL,
-      'X-Title':       'VisCarMa',
-    };
-    body = {
-      model: 'google/gemma-2-9b-it:free',
-      messages: [
-        { role: 'system', content: 'You are a senior code reviewer and engineer. Follow instructions exactly.' },
-        { role: 'user',   content: prompt },
-      ],
-      temperature: 0.3, max_tokens: 1200,
-    };
-  }
-
+  console.warn('[AI] callAI() is deprecated — use callAIWithJSON() from lib/ai-providers.js');
   try {
-    const { ok, data } = await safeJsonFetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
-    if (!ok || !data) return null;
-    return useOllama ? (data.response || null) : (data.choices?.[0]?.message?.content || null);
-  } catch (e) { console.error('[AI] Unexpected error:', e.message); return null; }
+    const provider = getAIProvider();
+    const result = await provider.generate(prompt, 'deprecated');
+    return result;
+  } catch (e) {
+    console.error('[AI] Fallback call failed:', e.message);
+    return null;
+  }
 }
 
 // ─── Robust AI response parser ────────────────────────────────────
@@ -216,27 +205,15 @@ function parseAIResponse(text) {
   } catch { return []; }
 }
 
-// ─── AI call that expects a JSON array response ───────────────────
-// Wraps callAI + parseAIResponse and adds a single self-correction
-// retry when the first response isn't valid JSON — ported from
-// GrishteSync's multi-turn retry pattern in /api/generate.
+// ══════════════════════════════════════════════════════════════
+// NOTE: callAIForJSON is now imported from lib/ai-providers.js
+// The function below is kept for backward compatibility and
+// delegates to the new system.
+// ══════════════════════════════════════════════════════════════
 async function callAIForJSON(prompt) {
-  const raw = await callAI(prompt);
-  if (!raw) return [];
-
-  const parsed = parseAIResponse(raw);
-  if (parsed.length > 0) return parsed;
-
-  // Self-correction: append a correction turn and retry once
-  console.warn('[AI] Response was not a valid JSON array — sending correction prompt.');
-  const raw2 = await callAI(
-    `${prompt}\n\nYour previous response could not be parsed as a JSON array.\nReturn ONLY a valid JSON array starting with [ and ending with ]. No markdown, no explanation, no prose.`
-  );
-  if (!raw2) return [];
-  return parseAIResponse(raw2);
+  console.warn('[AI] callAIForJSON() is deprecated — use imported version from lib/ai-providers.js');
+  return await callAIWithJSON(prompt, 'deprecated');
 }
-
-
 
 // ─── SECURITY SCANNER (Tier 2) ───────────────────────────────────
 // Detects: hardcoded secrets, OWASP top 10 patterns, SQL injection,
@@ -420,8 +397,10 @@ async function analyzeFile(code, filename) {
 
   // 5. AI analysis (if not already saturated)
   if (issues.length < 12) {
-    const aiIssues = await callAIForJSON(
-      `Analyse this code for bugs, security issues, and bad practices. File: ${filename}\n\n${code.slice(0, 3000)}\n\nReturn a JSON array ONLY (no other text): [{"severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`
+    // ============ NEW: Using callAIWithJSON from the provider system ============
+    const aiIssues = await callAIWithJSON(
+      `Analyse this code for bugs, security issues, and bad practices. File: ${filename}\n\n${code.slice(0, 3000)}\n\nReturn a JSON array ONLY (no other text): [{"severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`,
+      filename
     );
     const existing = new Set(issues.map(i => i.description));
     for (const ai of aiIssues) {
@@ -482,12 +461,20 @@ async function generateFixesForFile(code, filename, issues) {
   // AI fixes for remaining issues
   const aiIssues = issues.filter(i => i.fix && !i.fix.startsWith('Apply:') && !i.fix.startsWith('Line'));
   if (aiIssues.length > 0 && !applied.length) {
-    const aiResponse = await callAI(
-      `Fix the following issues and return ONLY the full corrected code, no explanation, no markdown fences.\nIssues:\n${aiIssues.map(i => `- ${i.description}`).join('\n')}\n\nFile: ${filename}\n\n${newCode}`
+    // ============ NEW: Using callAIWithJSON for fix generation ============
+    const aiResponse = await callAIWithJSON(
+      `Fix the following issues and return ONLY the full corrected code, no explanation, no markdown fences.\nIssues:\n${aiIssues.map(i => `- ${i.description}`).join('\n')}\n\nFile: ${filename}\n\n${newCode}`,
+      filename + '.fix'
     );
-    if (aiResponse) {
-      const block = aiResponse.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-      newCode = block ? block[1] : aiResponse;
+    if (aiResponse && aiResponse.length) {
+      // The response might be a JSON array with fixes, but we just want the code
+      // If it's not valid JSON, use it as raw response
+      let rawResponse = aiResponse;
+      if (Array.isArray(aiResponse) && aiResponse.length > 0 && aiResponse[0].fix) {
+        rawResponse = aiResponse[0].fix;
+      }
+      const block = rawResponse.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+      newCode = block ? block[1] : rawResponse;
       applied.push('AI-generated fixes');
     }
   }
@@ -510,10 +497,16 @@ Rules:
 File contents:
 ${code.slice(0, 4000)}`;
 
-  const aiResponse = await callAI(prompt);
+  // ============ NEW: Using callAIWithJSON for feature generation ============
+  const aiResponse = await callAIWithJSON(prompt, filename + '.feature');
   if (!aiResponse) return { newCode: code, success: false };
-  const block = aiResponse.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-  return { newCode: block ? block[1] : aiResponse, success: true };
+  // If callAIWithJSON returns an array, try to extract the code from the first item
+  let raw = aiResponse;
+  if (Array.isArray(aiResponse) && aiResponse.length > 0) {
+    raw = aiResponse[0].fix || aiResponse[0].description || JSON.stringify(aiResponse);
+  }
+  const block = raw.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+  return { newCode: block ? block[1] : raw, success: true };
 }
 
 // ─── PR body builder ─────────────────────────────────────────────
@@ -543,7 +536,7 @@ ${fixes.map(f => '**`' + f.file + '`** — AI implemented: _' + featureDescripti
 
   const fileDetails = fixes.map(f => {
     const appliedList = f.applied?.length
-      ? f.applied.map(a => `  - ${a}`).join('\n')
+      ? f.applied.map(a => '  - ' + a).join('\n')
       : '  - No auto-fixes applied';
     return '**`' + f.file + '`**\n' + appliedList;
   }).join('\n\n');
@@ -864,11 +857,13 @@ app.post('/api/review-pr', async (req, res) => {
 
     for (const file of changedFiles.slice(0, 10)) { // cap at 10 files
       if (!file.patch) continue;
-      const aiIssues = await callAIForJSON(
-        `Review this code diff and identify bugs, security issues, or bad practices.\nFile: ${file.filename}\n\nDiff:\n${file.patch.slice(0, 2000)}\n\nReturn a JSON array ONLY: [{"line_note":"...","severity":"HIGH|MED|LOW","suggestion":"..."}]`
+      // ============ NEW: Using callAIWithJSON ============
+      const aiIssues = await callAIWithJSON(
+        `Review this code diff and identify bugs, security issues, or bad practices.\nFile: ${file.filename}\n\nDiff:\n${file.patch.slice(0, 2000)}\n\nReturn a JSON array ONLY: [{"line_note":"...","severity":"HIGH|MED|LOW","suggestion":"..."}]`,
+        file.filename + '.diff'
       );
       for (const issue of aiIssues) {
-        reviewNotes.push('**`' + file.filename + '`** [' + issue.severity + '] ' + issue.line_note + ' — ' + issue.suggestion);
+        reviewNotes.push('**`' + file.filename + '`** [' + issue.severity + '] ' + (issue.line_note || issue.description) + ' — ' + (issue.suggestion || issue.fix));
       }
     }
 
@@ -920,11 +915,11 @@ app.post('/api/jira-tasks', async (req, res) => {
   }
 });
 
-// ─── SERVER-SIDE AGENT ───────────────────────────────────────────
-// Runs entirely on the server — survives browser tab close.
-// Browser polls /api/agent/status every 3s to get live updates.
+// ══════════════════════════════════════════════════════════════
+// SERVER-SIDE AGENT
+// ══════════════════════════════════════════════════════════════
 
-const agentJobs = new Map(); // sessionId -> job state
+const agentJobs = new Map();
 
 function makeJobId() { return crypto.randomBytes(8).toString('hex'); }
 
@@ -949,74 +944,68 @@ async function runAgentJob(job) {
       await fs.mkdir(repoPath, { recursive: true });
       let cloneUrl = repoUrl;
       if (ghToken) cloneUrl = repoUrl.replace('https://', `https://x-access-token:${ghToken}@`);
+      await simpleGit().clone(cloneUrl, repoPath, ['--depth','1']);
+      const files   = await walkDir(repoPath);
+      const results = [];
+      for (const fp of files) {
+        const rel  = path.relative(repoPath, fp);
+        const code = await fs.readFile(fp, 'utf-8');
+        const issues = await analyzeFile(code, rel);
+        results.push({ file: rel, code, issues });
+      }
+      await fs.rm(repoPath, { recursive: true, force: true });
 
-      try {
-        await simpleGit().clone(cloneUrl, repoPath, ['--depth','1']);
-        const files   = await walkDir(repoPath);
-        const results = [];
-        for (const fp of files) {
-          const rel  = path.relative(repoPath, fp);
-          const code = await fs.readFile(fp, 'utf-8');
-          const issues = await analyzeFile(code, rel);
-          results.push({ file: rel, code, issues });
-        }
-        await fs.rm(repoPath, { recursive: true, force: true });
-
-        if (isFeature) {
-          const selected = results.slice(0, 3).map(r => ({ file: r.file, code: r.code }));
-          const featRes  = await fetch(`http://localhost:${PORT}/api/generate-feature`, {
+      if (isFeature) {
+        const selected = results.slice(0, 3).map(r => ({ file: r.file, code: r.code }));
+        const featRes  = await fetch(`http://localhost:${PORT}/api/generate-feature`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: selected, featureDescription: task.text }),
+        });
+        const featData = await featRes.json();
+        if (featData.fixes?.length) {
+          const prRes  = await fetch(`http://localhost:${PORT}/api/create-pr`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ files: selected, featureDescription: task.text }),
+            body: JSON.stringify({ repoOwner, repoName, branch: repoBranch||'main', fixes: featData.fixes, token: ghToken, prType:'feature', featureDescription: task.text }),
           });
-          const featData = await featRes.json();
-          if (featData.fixes?.length) {
+          const prData = await prRes.json();
+          if (prData.url) {
+            task.prUrl = prData.url;
+            task.prNumber = prData.number;
+            job.log.push(`[${new Date().toLocaleTimeString()}] Feature PR #${prData.number} opened: ${prData.url}`);
+            job.prs.push({ number: prData.number, url: prData.url, type: 'feature', task: task.text });
+          }
+        }
+      } else {
+        const filesToFix = results.filter(f => f.issues?.length > 0).map(f => ({ file:f.file, code:f.code, issues:f.issues }));
+        if (!filesToFix.length) {
+          job.log.push(`[${new Date().toLocaleTimeString()}] No issues found for this task.`);
+        } else {
+          const fixRes  = await fetch(`http://localhost:${PORT}/api/generate-fixes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: filesToFix }),
+          });
+          const fixData = await fixRes.json();
+          if (fixData.fixes?.length) {
             const prRes  = await fetch(`http://localhost:${PORT}/api/create-pr`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ repoOwner, repoName, branch: repoBranch||'main', fixes: featData.fixes, token: ghToken, prType:'feature', featureDescription: task.text }),
+              body: JSON.stringify({ repoOwner, repoName, branch: repoBranch||'main', fixes: fixData.fixes, token: ghToken, prType:'fix' }),
             });
             const prData = await prRes.json();
             if (prData.url) {
               task.prUrl = prData.url;
               task.prNumber = prData.number;
-              job.log.push(`[${new Date().toLocaleTimeString()}] Feature PR #${prData.number} opened: ${prData.url}`);
-              job.prs.push({ number: prData.number, url: prData.url, type: 'feature', task: task.text });
-            }
-          }
-        } else {
-          const filesToFix = results.filter(f => f.issues?.length > 0).map(f => ({ file:f.file, code:f.code, issues:f.issues }));
-          if (!filesToFix.length) {
-            job.log.push(`[${new Date().toLocaleTimeString()}] No issues found for this task.`);
-          } else {
-            const fixRes  = await fetch(`http://localhost:${PORT}/api/generate-fixes`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ files: filesToFix }),
-            });
-            const fixData = await fixRes.json();
-            if (fixData.fixes?.length) {
-              const prRes  = await fetch(`http://localhost:${PORT}/api/create-pr`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ repoOwner, repoName, branch: repoBranch||'main', fixes: fixData.fixes, token: ghToken, prType:'fix' }),
-              });
-              const prData = await prRes.json();
-              if (prData.url) {
-                task.prUrl = prData.url;
-                task.prNumber = prData.number;
-                job.log.push(`[${new Date().toLocaleTimeString()}] Fix PR #${prData.number} opened: ${prData.url}`);
-                job.prs.push({ number: prData.number, url: prData.url, type: 'fix', task: task.text });
-              }
+              job.log.push(`[${new Date().toLocaleTimeString()}] Fix PR #${prData.number} opened: ${prData.url}`);
+              job.prs.push({ number: prData.number, url: prData.url, type: 'fix', task: task.text });
             }
           }
         }
-        task.status = 'done';
-        job.log.push(`[${new Date().toLocaleTimeString()}] Done: "${task.text}"`);
-      } catch (e) {
-        await fs.rm(repoPath, { recursive: true, force: true }).catch(()=>{});
-        throw e;
       }
+      task.status = 'done';
+      job.log.push(`[${new Date().toLocaleTimeString()}] Done: "${task.text}"`);
     } catch (e) {
       task.status = 'error';
       job.log.push(`[${new Date().toLocaleTimeString()}] Failed: ${e.message}`);
@@ -1067,13 +1056,11 @@ app.post('/api/agent/start', async (req, res) => {
   };
 
   agentJobs.set(jobId, job);
-  // Store jobId in session so status can be polled
   req.session.agentJobId = jobId;
 
   job.log.push(`[${new Date().toLocaleTimeString()}] Agent activated — ${tasks.length} task(s), ${durationMins||45} min window`);
   res.json({ jobId, status: 'running', message: 'Agent started on server' });
 
-  // Run async — don't await (non-blocking)
   runAgentJob(job).catch(e => {
     job.status = 'error';
     job.log.push(`[${new Date().toLocaleTimeString()}] Agent crashed: ${e.message}`);
@@ -1095,7 +1082,7 @@ app.get('/api/agent/status', (req, res) => {
     currentIndex: job.currentIndex,
     tasks:        job.tasks.map(t => ({ text: t.text, status: t.status, prUrl: t.prUrl, prNumber: t.prNumber })),
     prs:          job.prs,
-    log:          job.log.slice(-50), // last 50 log lines
+    log:          job.log.slice(-50),
   });
 });
 
@@ -1112,10 +1099,6 @@ app.post('/api/agent/stop', (req, res) => {
 });
 
 // ─── BROWSER PUSH NOTIFICATIONS ──────────────────────────────────
-// VAPID keys — generate once and store in env vars:
-//   npx web-push generate-vapid-keys
-// Then set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in Render env vars.
-
 const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY  || null;
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || null;
 const VAPID_EMAIL       = process.env.VAPID_EMAIL       || 'mailto:suryasticsai@gmail.com';
@@ -1124,7 +1107,7 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
   console.log('🔔 Web Push VAPID configured');
 } else {
-  console.log('⚠️  VAPID keys not set — push notifications disabled (set VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY)');
+  console.log('⚠️  VAPID keys not set — push notifications disabled');
 }
 
 app.get('/api/push/vapid-public-key', (req, res) => {
@@ -1133,8 +1116,6 @@ app.get('/api/push/vapid-public-key', (req, res) => {
 });
 
 // ─── GITHUB ACTION GENERATOR ──────────────────────────────────────
-// Generates .github/workflows/viscarma.yml and commits it via PR
-
 app.post('/api/generate-action', async (req, res) => {
   const { repoOwner, repoName, branch, token } = req.body;
   const ghToken = token || req.session?.githubToken;
@@ -1173,14 +1154,14 @@ jobs:
         id: scan
         run: |
           echo "Triggering VisCarMa scan..."
-          RESPONSE=$(curl -s -X POST \
-            -H "Content-Type: application/json" \
+          RESPONSE=$(curl -s -X POST \\
+            -H "Content-Type: application/json" \\
             -d '{
               "repoUrl": "https://github.com/\${{ github.repository }}.git",
               "repoOwner": "\${{ github.repository_owner }}",
               "repoName": "\${{ github.event.repository.name }}",
               "token": "\${{ secrets.VISCARMA_TOKEN }}"
-            }' \
+            }' \\
             https://viscarma.onrender.com/api/scan-repo)
           echo "scan_result=\$RESPONSE" >> \$GITHUB_OUTPUT
           echo "Scan complete"
@@ -1216,7 +1197,6 @@ jobs:
       body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: baseSha }),
     });
 
-    // Check if workflow file already exists
     const existing = await fetch(`${baseUrl}/contents/.github/workflows/viscarma.yml?ref=${newBranch}`, {
       headers: { Authorization: `token ${ghToken}` },
     }).then(r => r.ok ? r.json() : null);
@@ -1301,7 +1281,6 @@ function applyCustomRules(code, filename) {
   const ext    = filename.split('.').pop().toLowerCase();
   for (const rule of customRules) {
     if (rule.disabled) continue;
-    // fileTypes filter — empty means all files
     if (rule.fileTypes?.length && !rule.fileTypes.includes(ext)) continue;
     try {
       const re = new RegExp(rule.pattern, rule.flags || 'g');
@@ -1324,7 +1303,6 @@ app.get('/api/rules', (req, res) => {
 app.post('/api/rules', async (req, res) => {
   const { name, description, pattern, flags, severity, fix, fileTypes } = req.body;
   if (!name || !pattern) return res.status(400).json({ error: 'name and pattern required' });
-  // Validate regex before saving
   try { new RegExp(pattern, flags || 'g'); }
   catch(e) { return res.status(400).json({ error: 'Invalid regex: ' + e.message }); }
 
@@ -1370,7 +1348,6 @@ async function loadSchedules() {
   try {
     const raw = await fs.readFile(SCHEDULES_FILE, 'utf-8');
     schedules = JSON.parse(raw);
-    // Re-register all active cron jobs on startup
     for (const s of schedules) {
       if (!s.disabled) registerCronJob(s);
     }
@@ -1393,7 +1370,6 @@ function registerCronJob(schedule) {
     await saveSchedules();
 
     try {
-      // Scan
       const folderId = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
       const repoPath = path.join(TEMP_DIR, folderId);
       await fs.mkdir(repoPath, { recursive: true });
@@ -1410,7 +1386,6 @@ function registerCronJob(schedule) {
       }
       await fs.rm(repoPath, { recursive: true, force: true });
 
-      // Fix
       const filesToFix = results.filter(f => f.issues?.length > 0).map(f => ({ file:f.file, code:f.code, issues:f.issues }));
       if (!filesToFix.length) {
         schedule.lastRunStatus = 'clean';
@@ -1424,7 +1399,6 @@ function registerCronJob(schedule) {
         fixes.push({ file: item.file, newCode, applied, issues: item.issues });
       }
 
-      // PR
       const baseUrl  = `https://api.github.com/repos/${schedule.repoOwner}/${schedule.repoName}`;
       const baseRef  = await fetch(`${baseUrl}/git/refs/heads/${schedule.branch||'main'}`, {
         headers: { Authorization: `token ${schedule.token}` },
@@ -1509,824 +1483,39 @@ app.post('/api/schedules', async (req, res) => {
 });
 
 app.delete('/api/schedules/:id', async (req, res) => {
-  if (cronJobs.has(req.params.id)) { cronJobs.get(req.params.id).destroy(); cronJobs.delete(req.params.id); }
+  if (cronJobs.has(req.params.id)) {
+    cronJobs.get(req.params.id).destroy();
+    cronJobs.delete(req.params.id);
+  }
+  const before = schedules.length;
   schedules = schedules.filter(s => s.id !== req.params.id);
   await saveSchedules();
-  res.json({ deleted: true });
+  res.json({ deleted: schedules.length < before });
 });
 
-app.post('/api/schedules/:id/toggle', async (req, res) => {
-  const s = schedules.find(s => s.id === req.params.id);
-  if (!s) return res.status(404).json({ error: 'Not found' });
-  s.disabled = !s.disabled;
-  if (s.disabled) { cronJobs.get(s.id)?.destroy(); cronJobs.delete(s.id); }
-  else registerCronJob(s);
+app.patch('/api/schedules/:id/toggle', async (req, res) => {
+  const schedule = schedules.find(s => s.id === req.params.id);
+  if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
+  schedule.disabled = !schedule.disabled;
+  if (schedule.disabled && cronJobs.has(schedule.id)) {
+    cronJobs.get(schedule.id).destroy();
+    cronJobs.delete(schedule.id);
+  } else if (!schedule.disabled) {
+    registerCronJob(schedule);
+  }
   await saveSchedules();
-  res.json({ disabled: s.disabled });
+  res.json({ schedule: { ...schedule, token: undefined } });
 });
 
-// ══════════════════════════════════════════════════════════════
-// TIER 3: TEST GENERATOR
-// ══════════════════════════════════════════════════════════════
-async function generateTestsForFile(code, filename) {
-  const ext      = filename.split('.').pop().toLowerCase();
-  const framework = ext === 'py' ? 'pytest' : ext === 'java' ? 'JUnit 5' : 'Jest';
-  const testExt   = ext === 'py' ? 'py' : ext === 'java' ? 'java' : ext;
-  const testFile  = filename.replace(/\.([^.]+)$/, `.test.$1`);
-
-  const prompt = `You are a senior engineer. Write comprehensive unit tests for this file.
-Testing framework: ${framework}
-File: ${filename}
-
-Rules:
-- Return ONLY the complete test file contents, no explanation, no markdown fences.
-- Cover all functions and edge cases.
-- Use descriptive test names.
-- Include setup/teardown where needed.
-- Add a comment at the top: // Tests generated by VisCarMa
-- Test file should be: ${testFile}
-
-Source code:
-${code.slice(0, 4000)}`;
-
-  const aiResponse = await callAI(prompt);
-  if (!aiResponse) return null;
-  const block = aiResponse.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-  return { testFile, testCode: block ? block[1] : aiResponse, framework };
-}
-
-app.post('/api/generate-tests', async (req, res) => {
-  const { files, repoOwner, repoName, branch, token } = req.body;
-  const ghToken = token || req.session?.githubToken;
-  if (!files?.length) return res.status(400).json({ error: 'files required' });
-
-  const results = [];
-  for (const item of files) {
-    const result = await generateTestsForFile(item.code, item.file);
-    if (result) results.push({ ...result, sourceFile: item.file });
-  }
-
-  if (!results.length) return res.status(500).json({ error: 'AI could not generate tests' });
-
-  // If repo info provided, commit tests as PR
-  if (ghToken && repoOwner && repoName) {
-    try {
-      const baseUrl  = `https://api.github.com/repos/${repoOwner}/${repoName}`;
-      const baseRef  = await fetch(`${baseUrl}/git/refs/heads/${branch||'main'}`, {
-        headers: { Authorization: `token ${ghToken}` },
-      });
-      const baseSha  = (await baseRef.json()).object?.sha;
-      if (!baseSha) throw new Error('Branch not found');
-      const newBranch = `viscarma-tests-${Date.now()}`;
-      await fetch(`${baseUrl}/git/refs`, {
-        method: 'POST',
-        headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: baseSha }),
-      });
-      for (const r of results) {
-        const existing = await fetch(`${baseUrl}/contents/${r.testFile}?ref=${newBranch}`, {
-          headers: { Authorization: `token ${ghToken}` },
-        }).then(res => res.ok ? res.json() : null);
-        await fetch(`${baseUrl}/contents/${r.testFile}`, {
-          method: 'PUT',
-          headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: `test: VisCarMa generates tests for ${r.sourceFile}`,
-            content: Buffer.from(r.testCode).toString('base64'),
-            ...(existing?.sha ? { sha: existing.sha } : {}),
-            branch: newBranch,
-          }),
-        });
-      }
-      const pr = await fetch(`${baseUrl}/pulls`, {
-        method: 'POST',
-        headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: `test: AI-generated unit tests by VisCarMa`,
-          head: newBranch, base: branch||'main',
-          body: `[![VisCarMa](https://img.shields.io/badge/tests%20by-VisCarMa-388bfd?style=flat-square)](https://viscarma.onrender.com)\n\n## 🧪 AI-Generated Tests\n\n${results.map(r => '- `' + r.testFile + '` — ' + r.framework).join('\n')}\n\n---\n🤖 by [VisCarMa](https://viscarma.onrender.com)`,
-        }),
-      });
-      const prData = await pr.json();
-      res.json({ results, prUrl: prData.html_url, prNumber: prData.number });
-    } catch(e) {
-      res.json({ results, prError: e.message });
-    }
-  } else {
-    res.json({ results });
-  }
+// ─── Health check ────────────────────────────────────────────────
+app.get('/health', (req, res) => {
+  const aiStatus = process.env.AI_PROVIDER || 'openrouter';
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), aiProvider: aiStatus });
 });
-
-// ══════════════════════════════════════════════════════════════
-// TIER 4: FREEMIUM SCAN LIMITS
-// ══════════════════════════════════════════════════════════════
-const USAGE_FILE = path.join(process.cwd(), 'data', 'usage.json');
-let usageStore   = {};
-
-async function loadUsage() {
-  try { usageStore = JSON.parse(await fs.readFile(USAGE_FILE, 'utf-8')); }
-  catch { usageStore = {}; }
-}
-async function saveUsage() {
-  await fs.mkdir(path.dirname(USAGE_FILE), { recursive: true });
-  await fs.writeFile(USAGE_FILE, JSON.stringify(usageStore, null, 2));
-}
-loadUsage();
-
-const LIMITS = { anonymous: 3, free: 20, pro: Infinity };
-
-// ── PRO WHITELIST ─────────────────────────────────────────────
-// Add GitHub usernames to VISCARMA_PRO_USERS env var (comma-separated)
-// e.g.  VISCARMA_PRO_USERS=suryasticsai,alice,bob
-// These users get unlimited scans immediately, no payment needed.
-const PRO_WHITELIST = new Set(
-  (process.env.VISCARMA_PRO_USERS || 'suryasticsai')
-    .split(',').map(u => u.trim().toLowerCase()).filter(Boolean)
-);
-
-// ── PRO DB (Stripe-backed, loaded from data/pro.json) ─────────
-// Stripe webhook writes here when payment succeeds.
-// Format: { "github_user_id": { plan:"pro", since:"...", stripeCustomerId:"..." } }
-const PRO_FILE = path.join(process.cwd(), 'data', 'pro.json');
-let proStore   = {};
-
-async function loadProStore() {
-  try { proStore = JSON.parse(await fs.readFile(PRO_FILE, 'utf-8')); }
-  catch { proStore = {}; }
-}
-async function saveProStore() {
-  await fs.mkdir(path.dirname(PRO_FILE), { recursive: true });
-  await fs.writeFile(PRO_FILE, JSON.stringify(proStore, null, 2));
-}
-loadProStore();
-
-function getPlan(req) {
-  if (!req.session?.githubUser) return 'anonymous';
-  const login = req.session.githubUser.login?.toLowerCase();
-  const id    = String(req.session.githubUser.id);
-
-  // 1. Manual whitelist (instant Pro)
-  if (PRO_WHITELIST.has(login)) return 'pro';
-
-  // 2. Stripe-verified Pro (set by webhook)
-  if (proStore[id]?.plan === 'pro') return 'pro';
-
-  return 'free';
-}
-
-function getUsageKey(req) {
-  const userId = req.session?.githubUser?.id;
-  const month  = new Date().toISOString().slice(0,7);
-  return userId ? `user:${userId}:${month}` : `ip:${req.ip}:${month}`;
-}
-
-async function checkAndIncrementUsage(req) {
-  const key   = getUsageKey(req);
-  const plan  = getPlan(req);
-  const limit = LIMITS[plan];
-  const count = usageStore[key] || 0;
-  if (count >= limit) return { allowed: false, count, limit, plan };
-  usageStore[key] = count + 1;
-  await saveUsage();
-  return { allowed: true, count: usageStore[key], limit, plan };
-}
-
-app.get('/api/usage', async (req, res) => {
-  const key   = getUsageKey(req);
-  const plan  = getPlan(req);
-  const limit = LIMITS[plan];
-  const count = usageStore[key] || 0;
-  res.json({
-    count, limit, plan,
-    remaining: limit === Infinity ? Infinity : Math.max(0, limit - count),
-    isWhitelisted: plan === 'pro' && PRO_WHITELIST.has(req.session?.githubUser?.login?.toLowerCase()),
-  });
-});
-
-// ── STRIPE WEBHOOK ────────────────────────────────────────────
-// When a user pays, Stripe posts here.
-// Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET in Render env vars.
-// In Stripe dashboard: Webhooks → Add endpoint → https://viscarma.onrender.com/api/stripe/webhook
-// Events to listen for: checkout.session.completed, customer.subscription.deleted
-
-const STRIPE_SECRET_KEY      = process.env.STRIPE_SECRET_KEY      || null;
-const STRIPE_WEBHOOK_SECRET  = process.env.STRIPE_WEBHOOK_SECRET  || null;
-const STRIPE_PRO_PRICE_ID    = process.env.STRIPE_PRO_PRICE_ID    || null; // your Price ID from Stripe dashboard
-
-// Raw body needed for Stripe signature verification
-app.post('/api/stripe/webhook',
-  express.raw({ type: 'application/json' }),
-  async (req, res) => {
-    if (!STRIPE_SECRET_KEY || !STRIPE_WEBHOOK_SECRET) {
-      return res.status(503).json({ error: 'Stripe not configured' });
-    }
-    // Lazy-load Stripe only when keys are present
-    const Stripe     = (await import('stripe')).default;
-    const stripe     = new Stripe(STRIPE_SECRET_KEY);
-    const sig        = req.headers['stripe-signature'];
-    let event;
-    try {
-      event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
-    } catch (e) {
-      console.error('[STRIPE] Webhook signature failed:', e.message);
-      return res.status(400).send(`Webhook Error: ${e.message}`);
-    }
-
-    if (event.type === 'checkout.session.completed') {
-      const session   = event.data.object;
-      const githubId  = session.metadata?.github_user_id;
-      const login     = session.metadata?.github_login;
-      if (githubId) {
-        proStore[githubId] = {
-          plan:             'pro',
-          since:            new Date().toISOString(),
-          stripeCustomerId: session.customer,
-          stripeSessionId:  session.id,
-          githubLogin:      login,
-        };
-        await saveProStore();
-        console.log(`[STRIPE] Pro activated for GitHub user: ${login} (${githubId})`);
-      }
-    }
-
-    if (event.type === 'customer.subscription.deleted') {
-      const sub      = event.data.object;
-      const customerId = sub.customer;
-      // Find user by Stripe customer ID and downgrade
-      const entry = Object.entries(proStore).find(([, v]) => v.stripeCustomerId === customerId);
-      if (entry) {
-        const [githubId, data] = entry;
-        proStore[githubId] = { ...data, plan: 'free', cancelledAt: new Date().toISOString() };
-        await saveProStore();
-        console.log(`[STRIPE] Pro cancelled for: ${data.githubLogin}`);
-      }
-    }
-
-    res.json({ received: true });
-  }
-);
-
-// ── STRIPE CHECKOUT SESSION ────────────────────────────────────
-// Browser calls this to get a Stripe checkout URL
-app.post('/api/stripe/create-checkout', async (req, res) => {
-  if (!STRIPE_SECRET_KEY) return res.status(503).json({ error: 'Stripe not configured. Add STRIPE_SECRET_KEY to Render env vars.' });
-  if (!req.session?.githubUser) return res.status(401).json({ error: 'Login required' });
-  if (!STRIPE_PRO_PRICE_ID) return res.status(503).json({ error: 'No price configured. Add STRIPE_PRO_PRICE_ID to Render env vars.' });
-
-  try {
-    const Stripe  = (await import('stripe')).default;
-    const stripe  = new Stripe(STRIPE_SECRET_KEY);
-    const session = await stripe.checkout.sessions.create({
-      mode:        'subscription',
-      line_items:  [{ price: STRIPE_PRO_PRICE_ID, quantity: 1 }],
-      success_url: `${FRONTEND_URL}?pro=success`,
-      cancel_url:  `${FRONTEND_URL}?pro=cancelled`,
-      metadata:    {
-        github_user_id: String(req.session.githubUser.id),
-        github_login:   req.session.githubUser.login,
-      },
-      customer_email: req.body.email || undefined,
-    });
-    res.json({ url: session.url });
-  } catch (e) {
-    console.error('[STRIPE] Checkout failed:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── ADMIN: manually grant/revoke Pro ──────────────────────────
-// Only usable by whitelisted admin (you)
-app.post('/api/admin/set-pro', async (req, res) => {
-  const callerLogin = req.session?.githubUser?.login?.toLowerCase();
-  if (!PRO_WHITELIST.has(callerLogin)) return res.status(403).json({ error: 'Admin only' });
-  const { githubId, githubLogin, grant } = req.body;
-  if (!githubId) return res.status(400).json({ error: 'githubId required' });
-  if (grant) {
-    proStore[String(githubId)] = { plan: 'pro', since: new Date().toISOString(), grantedBy: callerLogin, githubLogin };
-  } else {
-    if (proStore[String(githubId)]) proStore[String(githubId)].plan = 'free';
-  }
-  await saveProStore();
-  res.json({ ok: true, plan: grant ? 'pro' : 'free', githubLogin });
-});
-
-// ── LIMIT-CHECK MIDDLEWARE on scan-repo ───────────────────────
-app.use('/api/scan-repo', async (req, res, next) => {
-  if (req.method !== 'POST') return next();
-  const check = await checkAndIncrementUsage(req);
-  if (!check.allowed) {
-    return res.status(429).json({
-      error: `Scan limit reached. Plan: ${check.plan} — ${check.limit === Infinity ? 'unlimited' : check.limit + '/month'}. Upgrade to Pro for unlimited scans.`,
-      count: check.count, limit: check.limit, plan: check.plan,
-      upgradeUrl: '/api/stripe/create-checkout',
-    });
-  }
-  req.usageInfo = check;
-  next();
-});
-
-// ══════════════════════════════════════════════════════════════
-// TIER 4: PUBLIC SCAN BADGE
-// ══════════════════════════════════════════════════════════════
-// GET /badge/:owner/:repo.svg  — returns SVG badge
-// Shows last scan result from history
-
-app.get('/badge/:owner/:repo.svg', (req, res) => {
-  const { owner, repo } = req.params;
-  const repoKey = `${owner}/${repo}`;
-  const lastScan = scanHistory.find(h => h.repo === repoKey);
-
-  let label, color, message;
-  if (!lastScan) {
-    label = 'VisCarMa'; message = 'not scanned'; color = '#8b949e';
-  } else if (lastScan.high > 0) {
-    label = 'VisCarMa'; message = `${lastScan.high} HIGH issues`; color = '#f85149';
-  } else if (lastScan.med > 0) {
-    label = 'VisCarMa'; message = `${lastScan.med} warnings`; color = '#d29922';
-  } else {
-    label = 'VisCarMa'; message = 'clean ✓'; color = '#3fb950';
-  }
-
-  const labelW   = label.length * 7 + 10;
-  const messageW = message.length * 7 + 10;
-  const totalW   = labelW + messageW;
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="20">
-  <title>${label}: ${message}</title>
-  <rect width="${labelW}" height="20" fill="#21262d" rx="3"/>
-  <rect x="${labelW}" width="${messageW}" height="20" fill="${color}" rx="3"/>
-  <rect x="${labelW - 3}" width="6" height="20" fill="${color}"/>
-  <text x="${labelW/2}" y="14" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11" fill="#fff" text-anchor="middle">${label}</text>
-  <text x="${labelW + messageW/2}" y="14" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11" fill="#fff" text-anchor="middle">${message}</text>
-</svg>`;
-
-  res.setHeader('Content-Type', 'image/svg+xml');
-  res.setHeader('Cache-Control', 'public, max-age=300'); // 5 min cache
-  res.send(svg);
-});
-
-// Badge README markdown endpoint — returns the markdown to copy
-app.get('/badge/:owner/:repo', (req, res) => {
-  const { owner, repo } = req.params;
-  const badgeUrl   = `${FRONTEND_URL}/badge/${owner}/${repo}.svg`;
-  const reportUrl  = `${FRONTEND_URL}`;
-  const markdown   = `[![VisCarMa](${badgeUrl})](${reportUrl})`;
-  res.json({ markdown, badgeUrl, reportUrl });
-});
-
-// ══════════════════════════════════════════════════════════════
-// TIER 4: RULE MARKETPLACE
-// ══════════════════════════════════════════════════════════════
-const MARKETPLACE_FILE = path.join(process.cwd(), 'data', 'marketplace.json');
-let marketplace = [];
-
-async function loadMarketplace() {
-  try { marketplace = JSON.parse(await fs.readFile(MARKETPLACE_FILE, 'utf-8')); }
-  catch { marketplace = []; }
-}
-async function saveMarketplace() {
-  await fs.mkdir(path.dirname(MARKETPLACE_FILE), { recursive: true });
-  await fs.writeFile(MARKETPLACE_FILE, JSON.stringify(marketplace, null, 2));
-}
-loadMarketplace();
-
-// Browse marketplace packs
-app.get('/api/marketplace', (req, res) => {
-  const { category, search } = req.query;
-  let results = [...marketplace];
-  if (category) results = results.filter(p => p.category === category);
-  if (search)   results = results.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.description.toLowerCase().includes(search.toLowerCase())
-  );
-  res.json({ packs: results.sort((a,b) => (b.installs||0) - (a.installs||0)) });
-});
-
-// Publish your custom rules as a pack
-app.post('/api/marketplace/publish', async (req, res) => {
-  if (!req.session?.githubUser) return res.status(401).json({ error: 'Login required to publish' });
-  const { name, description, category, rules } = req.body;
-  if (!name || !rules?.length) return res.status(400).json({ error: 'name and rules required' });
-
-  const pack = {
-    id:          crypto.randomBytes(8).toString('hex'),
-    name, description,
-    category:    category || 'general',
-    author:      req.session.githubUser.login,
-    authorAvatar: req.session.githubUser.avatar,
-    rules,
-    installs:    0,
-    rating:      0,
-    ratings:     [],
-    publishedAt: new Date().toISOString(),
-  };
-  marketplace.push(pack);
-  await saveMarketplace();
-  res.json({ pack });
-});
-
-// Install a pack (copies rules to user's custom rules)
-app.post('/api/marketplace/:id/install', async (req, res) => {
-  const pack = marketplace.find(p => p.id === req.params.id);
-  if (!pack) return res.status(404).json({ error: 'Pack not found' });
-
-  let installed = 0;
-  for (const rule of pack.rules) {
-    if (customRules.find(r => r.name === rule.name && r.pattern === rule.pattern)) continue;
-    customRules.push({
-      ...rule,
-      id:          crypto.randomBytes(6).toString('hex'),
-      createdAt:   new Date().toISOString(),
-      marketplace: true,
-      packId:      pack.id,
-      packName:    pack.name,
-    });
-    installed++;
-  }
-  pack.installs = (pack.installs || 0) + 1;
-  await saveCustomRules();
-  await saveMarketplace();
-  res.json({ installed, total: pack.rules.length });
-});
-
-// Rate a pack
-app.post('/api/marketplace/:id/rate', async (req, res) => {
-  if (!req.session?.githubUser) return res.status(401).json({ error: 'Login required' });
-  const pack   = marketplace.find(p => p.id === req.params.id);
-  if (!pack) return res.status(404).json({ error: 'Pack not found' });
-  const rating = Math.min(5, Math.max(1, parseInt(req.body.rating)));
-  pack.ratings  = pack.ratings.filter(r => r.user !== req.session.githubUser.login);
-  pack.ratings.push({ user: req.session.githubUser.login, rating });
-  pack.rating   = pack.ratings.reduce((s,r) => s+r.rating, 0) / pack.ratings.length;
-  await saveMarketplace();
-  res.json({ rating: pack.rating, count: pack.ratings.length });
-});
-
-// ══════════════════════════════════════════════════════════════
-// GOD MODE — LIVE URL SCANNER (fetch + cheerio + JSDOM, no browser)
-// ══════════════════════════════════════════════════════════════
-
-async function fetchAndAnalyseUrl(url) {
-  const issues = [];
-
-  // Fetch the live page
-  let html;
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'VisCarMa/2.0 (+https://viscarma.onrender.com)' },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    html = await res.text();
-  } catch (e) {
-    return { url, issues: [{ severity: 'HIGH', description: `Failed to fetch URL: ${e.message}`, fix: 'Check the URL is publicly accessible.' }], title: 'Fetch failed', meta: {} };
-  }
-
-  const $ = cheerio.load(html);
-  const dom = new JSDOM(html);
-  const doc = dom.window.document;
-
-  // ── Meta & SEO ──────────────────────────────────────────────
-  const title = $('title').text().trim();
-  if (!title) issues.push({ severity: 'HIGH', description: 'Missing <title> tag — critical for SEO.', fix: 'Add a descriptive <title> to your <head>.' });
-  else if (title.length < 10) issues.push({ severity: 'MED', description: `Title too short (${title.length} chars): "${title}"`, fix: 'Title should be 30–60 characters.' });
-  else if (title.length > 60) issues.push({ severity: 'LOW', description: `Title too long (${title.length} chars) — may be truncated in search results.`, fix: 'Keep title under 60 characters.' });
-
-  const metaDesc = $('meta[name="description"]').attr('content');
-  if (!metaDesc) issues.push({ severity: 'MED', description: 'Missing meta description — hurts SEO click-through rate.', fix: 'Add <meta name="description" content="150–160 char description">.' });
-  else if (metaDesc.length > 160) issues.push({ severity: 'LOW', description: `Meta description too long (${metaDesc.length} chars).`, fix: 'Keep meta description under 160 characters.' });
-
-  if (!$('meta[name="viewport"]').length)
-    issues.push({ severity: 'HIGH', description: 'Missing viewport meta tag — site will not be mobile responsive.', fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1.0">.' });
-
-  if (!$('html').attr('lang'))
-    issues.push({ severity: 'MED', description: 'Missing lang attribute on <html> — accessibility and SEO issue.', fix: 'Add lang="en" (or appropriate language code) to <html>.' });
-
-  const canonical = $('link[rel="canonical"]').attr('href');
-  if (!canonical) issues.push({ severity: 'LOW', description: 'No canonical URL — may cause duplicate content issues.', fix: 'Add <link rel="canonical" href="YOUR_URL">.' });
-
-  // ── Open Graph / Social ─────────────────────────────────────
-  if (!$('meta[property="og:title"]').length)
-    issues.push({ severity: 'LOW', description: 'Missing og:title — link previews on social media will be poor.', fix: 'Add <meta property="og:title" content="...">.' });
-  if (!$('meta[property="og:image"]').length)
-    issues.push({ severity: 'LOW', description: 'Missing og:image — no image when shared on social media.', fix: 'Add <meta property="og:image" content="URL_TO_IMAGE">.' });
-
-  // ── Accessibility ───────────────────────────────────────────
-  const imgsNoAlt = $('img:not([alt])').length;
-  if (imgsNoAlt > 0) issues.push({ severity: 'MED', description: `${imgsNoAlt} image(s) missing alt attribute — screen reader accessibility failure.`, fix: 'Add descriptive alt="..." to every <img>.' });
-
-  const inputsNoLabel = $('input:not([aria-label]):not([aria-labelledby])').filter((i, el) => {
-    const id = $(el).attr('id');
-    return !id || !$(`label[for="${id}"]`).length;
-  }).length;
-  if (inputsNoLabel > 0) issues.push({ severity: 'MED', description: `${inputsNoLabel} input(s) missing associated <label> or aria-label.`, fix: 'Add <label for="inputId"> or aria-label to each input.' });
-
-  const emptyLinks = $('a').filter((i, el) => !$(el).text().trim() && !$(el).attr('aria-label')).length;
-  if (emptyLinks > 0) issues.push({ severity: 'MED', description: `${emptyLinks} link(s) with no visible text — inaccessible to screen readers.`, fix: 'Add descriptive text or aria-label to all links.' });
-
-  if (!$('[role="main"], main').length)
-    issues.push({ severity: 'LOW', description: 'No <main> landmark element — reduces accessibility navigation.', fix: 'Wrap your primary content in a <main> element.' });
-
-  // ── Performance hints ───────────────────────────────────────
-  const inlineStyles = $('[style]').length;
-  if (inlineStyles > 10) issues.push({ severity: 'LOW', description: `${inlineStyles} elements use inline styles — harder to maintain and overrides CSS cascade.`, fix: 'Move inline styles to CSS classes.' });
-
-  const scriptCount = $('script:not([type="application/json"]):not([type="application/ld+json"])').length;
-  if (scriptCount > 10) issues.push({ severity: 'LOW', description: `${scriptCount} <script> tags detected — consider bundling.`, fix: 'Bundle scripts with a build tool to reduce HTTP requests.' });
-
-  const renderBlockingCss = $('link[rel="stylesheet"]:not([media])').length;
-  if (renderBlockingCss > 3) issues.push({ severity: 'MED', description: `${renderBlockingCss} render-blocking stylesheets detected.`, fix: 'Use media queries or load non-critical CSS asynchronously.' });
-
-  // ── Security headers (inferred from meta) ───────────────────
-  const csp = $('meta[http-equiv="Content-Security-Policy"]').length;
-  if (!csp) issues.push({ severity: 'MED', description: 'No Content-Security-Policy meta tag detected.', fix: 'Add a CSP header via your server or a meta tag to prevent XSS.' });
-
-  // ── Broken / suspicious patterns ────────────────────────────
-  const httpLinks = $('a[href^="http:"]').length;
-  if (httpLinks > 0) issues.push({ severity: 'MED', description: `${httpLinks} link(s) use insecure HTTP — mixed content risk.`, fix: 'Change all links to use HTTPS.' });
-
-  const consoleInScripts = $('script').filter((i, el) => $(el).html()?.includes('console.log')).length;
-  if (consoleInScripts > 0) issues.push({ severity: 'LOW', description: `console.log() found in ${consoleInScripts} inline script(s).`, fix: 'Remove console.log() before going to production.' });
-
-  // ── Structured data ─────────────────────────────────────────
-  const jsonLd = $('script[type="application/ld+json"]').length;
-  if (!jsonLd) issues.push({ severity: 'LOW', description: 'No JSON-LD structured data — missed opportunity for rich search results.', fix: 'Add Schema.org JSON-LD markup for your page type.' });
-
-  // ── AI analysis of the page content ─────────────────────────
-  const bodyText = $('body').text().replace(/\s+/g, ' ').trim().slice(0, 2000);
-  const aiPrompt = `Analyse this webpage's HTML and content for UX, SEO, accessibility, and performance issues.
-URL: ${url}
-Title: ${title || 'none'}
-Body text preview: ${bodyText}
-Number of issues already found by static analysis: ${issues.length}
-
-Return a JSON array of additional issues ONLY (no duplicates of common ones already found): [{"severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`;
-
-  const aiIssues = await callAIForJSON(aiPrompt);
-  const existing = new Set(issues.map(i => i.description));
-  for (const ai of aiIssues) {
-    if (!existing.has(ai.description)) { issues.push(ai); existing.add(ai.description); }
-  }
-
-  // ── Page metadata ───────────────────────────────────────────
-  const meta = {
-    title: title || null,
-    description: metaDesc || null,
-    h1: $('h1').first().text().trim() || null,
-    h1Count: $('h1').length,
-    links: $('a[href]').length,
-    images: $('img').length,
-    scripts: scriptCount,
-    wordCount: bodyText.split(' ').length,
-  };
-
-  if (meta.h1Count === 0) issues.push({ severity: 'HIGH', description: 'No <h1> tag found — critical for SEO and document structure.', fix: 'Add exactly one <h1> tag as the main page heading.' });
-  if (meta.h1Count > 1) issues.push({ severity: 'MED', description: `Multiple <h1> tags (${meta.h1Count}) — only one is recommended per page.`, fix: 'Use a single <h1> for the main heading; use <h2>-<h6> for subheadings.' });
-
-  return { url, issues, title: title || url, meta };
-}
-
-// God Mode: analyse multiple URLs + optional linked pages
-app.post('/api/godmode/scan-url', async (req, res) => {
-  const { url, deepScan } = req.body;
-  if (!url) return res.status(400).json({ error: 'url required' });
-
-  try {
-    const primary = await fetchAndAnalyseUrl(url);
-    const results  = [primary];
-
-    // Deep scan: follow internal links (up to 4 more pages)
-    if (deepScan) {
-      const html  = await fetch(url, { headers: { 'User-Agent': 'VisCarMa/2.0' } }).then(r => r.text()).catch(() => '');
-      const $     = cheerio.load(html);
-      const base  = new URL(url);
-      const links = [];
-      $('a[href]').each((i, el) => {
-        try {
-          const href = new URL($('a', el).attr('href') || $(el).attr('href'), base);
-          if (href.hostname === base.hostname && !links.includes(href.href) && href.href !== url) {
-            links.push(href.href);
-          }
-        } catch {}
-      });
-      for (const link of links.slice(0, 4)) {
-        try {
-          const pageResult = await fetchAndAnalyseUrl(link);
-          results.push(pageResult);
-        } catch {}
-      }
-    }
-
-    res.json({ success: true, results, totalIssues: results.reduce((s, r) => s + r.issues.length, 0) });
-  } catch (e) {
-    console.error('[GODMODE]', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── Self-verification loop ─────────────────────────────────────
-// After fixes are applied, re-scan and compare before vs after
-app.post('/api/godmode/verify', async (req, res) => {
-  const { files, originalIssueCount } = req.body;
-  if (!files?.length) return res.status(400).json({ error: 'files required' });
-
-  const results = [];
-  let totalAfter = 0;
-  for (const item of files) {
-    const issues = await analyzeFile(item.code, item.file);
-    totalAfter += issues.length;
-    results.push({ file: item.file, issuesBefore: item.issueCount || 0, issuesAfter: issues.length, issues, improved: issues.length < (item.issueCount || 0) });
-  }
-
-  const improved = totalAfter < originalIssueCount;
-  res.json({ verified: improved, before: originalIssueCount, after: totalAfter, reduction: originalIssueCount - totalAfter, results });
-});
-
-// ── Dependency vulnerability scanner ──────────────────────────
-// Reads package.json from repo, checks npm registry for CVEs
-app.post('/api/godmode/scan-deps', async (req, res) => {
-  const { repoOwner, repoName, token } = req.body;
-  const ghToken = token || req.session?.githubToken;
-  if (!repoOwner || !repoName) return res.status(400).json({ error: 'repoOwner and repoName required' });
-
-  try {
-    // Fetch package.json from repo
-    const pkgRes  = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/package.json`, {
-      headers: { Authorization: ghToken ? `token ${ghToken}` : '', Accept: 'application/vnd.github.v3+json' },
-    });
-    if (!pkgRes.ok) return res.status(404).json({ error: 'package.json not found in repo' });
-    const pkgData = await pkgRes.json();
-    const pkg     = JSON.parse(Buffer.from(pkgData.content, 'base64').toString('utf-8'));
-
-    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-    const vulns   = [];
-
-    // Check each package against npm registry for deprecation + known issues
-    const checks = Object.entries(allDeps).slice(0, 20); // cap at 20 to avoid rate limits
-    for (const [name, versionRange] of checks) {
-      try {
-        const npmRes  = await fetch(`https://registry.npmjs.org/${name}/latest`);
-        if (!npmRes.ok) continue;
-        const npmData = await npmRes.json();
-
-        if (npmData.deprecated) {
-          vulns.push({ package: name, currentRange: versionRange, severity: 'HIGH', issue: 'Deprecated', description: npmData.deprecated, fix: `Replace ${name} with an actively maintained alternative.` });
-        }
-
-        // Check for drastically outdated versions
-        const latest = npmData.version;
-        const currentMajor = parseInt((versionRange.replace(/[\^~>=<]/g, '').split('.')[0]) || '0');
-        const latestMajor  = parseInt((latest.split('.')[0]) || '0');
-        if (latestMajor - currentMajor >= 2) {
-          vulns.push({ package: name, currentRange: versionRange, latestVersion: latest, severity: 'MED', issue: 'Major version gap', description: `${name} is ${latestMajor - currentMajor} major versions behind (you: ~${currentMajor}.x, latest: ${latest}).`, fix: `Run: npm install ${name}@latest` });
-        }
-      } catch {}
-    }
-
-    // AI analysis of the full dependency list
-    const aiVulns = await callAIForJSON(
-      `Analyse these npm dependencies for security risks, deprecated packages, or better alternatives.
-Dependencies: ${JSON.stringify(allDeps, null, 2)}
-
-Return a JSON array: [{"package":"...","severity":"HIGH|MED|LOW","description":"...","fix":"..."}]`
-    );
-    const existing = new Set(vulns.map(v => v.package + v.issue));
-    for (const ai of aiVulns) {
-      if (!existing.has(ai.package + ai.description)) vulns.push(ai);
-    }
-
-    res.json({ package: pkg.name, version: pkg.version, totalDeps: Object.keys(allDeps).length, checked: checks.length, vulns });
-  } catch (e) {
-    console.error('[DEPS]', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── Auto-merge (merge PR if all issues are LOW) ─────────────────
-app.post('/api/godmode/auto-merge', async (req, res) => {
-  const { repoOwner, repoName, prNumber, token } = req.body;
-  const ghToken = token || req.session?.githubToken;
-  if (!ghToken) return res.status(401).json({ error: 'Not authenticated' });
-
-  try {
-    const baseUrl = `https://api.github.com/repos/${repoOwner}/${repoName}`;
-
-    // Check PR is mergeable
-    const prRes  = await fetch(`${baseUrl}/pulls/${prNumber}`, { headers: { Authorization: `token ${ghToken}` } });
-    const pr     = await prRes.json();
-    if (!pr.mergeable) return res.json({ merged: false, reason: 'PR is not mergeable (conflicts or checks failing)' });
-    if (pr.state !== 'open') return res.json({ merged: false, reason: `PR is ${pr.state}` });
-
-    // Merge it
-    const mergeRes  = await fetch(`${baseUrl}/pulls/${prNumber}/merge`, {
-      method: 'PUT',
-      headers: { Authorization: `token ${ghToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        commit_title:   `fix: VisCarMa auto-merge PR #${prNumber}`,
-        commit_message: `Auto-merged by VisCarMa God Mode after verification.
-
-All issues confirmed LOW severity or resolved.`,
-        merge_method:   'squash',
-      }),
-    });
-    const mergeData = await mergeRes.json();
-    if (!mergeData.merged) return res.json({ merged: false, reason: mergeData.message });
-
-    res.json({ merged: true, sha: mergeData.sha, message: mergeData.message });
-  } catch (e) {
-    console.error('[AUTO-MERGE]', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── Multi-repo sweep ───────────────────────────────────────────
-// Scan + fix multiple repos in one call
-app.post('/api/godmode/multi-repo', async (req, res) => {
-  const { repos, token } = req.body; // repos: [{repoUrl, repoOwner, repoName}]
-  const ghToken = token || req.session?.githubToken;
-  if (!repos?.length) return res.status(400).json({ error: 'repos array required' });
-
-  const results = [];
-  for (const repo of repos.slice(0, 5)) { // cap at 5 repos
-    try {
-      const folderId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      const repoPath = path.join(TEMP_DIR, folderId);
-      await fs.mkdir(repoPath, { recursive: true });
-      let cloneUrl = repo.repoUrl;
-      if (ghToken) cloneUrl = repo.repoUrl.replace('https://', `https://x-access-token:${ghToken}@`);
-      await simpleGit().clone(cloneUrl, repoPath, ['--depth', '1']);
-      const files   = await walkDir(repoPath);
-      const scanResults = [];
-      for (const fp of files) {
-        const rel  = path.relative(repoPath, fp);
-        const code = await fs.readFile(fp, 'utf-8');
-        const issues = await analyzeFile(code, rel);
-        scanResults.push({ file: rel, code, issues });
-      }
-      await fs.rm(repoPath, { recursive: true, force: true });
-      const totalIssues = scanResults.reduce((s, f) => s + f.issues.length, 0);
-      results.push({ ...repo, success: true, files: scanResults.length, issues: totalIssues, results: scanResults });
-    } catch (e) {
-      results.push({ ...repo, success: false, error: e.message });
-    }
-  }
-
-  res.json({ repos: results, totalRepos: results.length, totalIssues: results.reduce((s, r) => s + (r.issues || 0), 0) });
-});
-
-// ── AI code explainer ──────────────────────────────────────────
-app.post('/api/godmode/explain', async (req, res) => {
-  const { code, filename } = req.body;
-  if (!code) return res.status(400).json({ error: 'code required' });
-
-  const prompt = `You are a senior engineer explaining code to a junior developer.
-Explain this file in plain English. Be clear, friendly, and thorough.
-
-File: ${filename || 'unknown'}
-
-Structure your response as:
-1. What this file does (1-2 sentences)
-2. Key functions/classes and what they do
-3. How data flows through it
-4. Any patterns or architecture decisions worth noting
-5. Potential improvements
-
-Code:
-${code.slice(0, 4000)}`;
-
-  const explanation = await callAI(prompt);
-  res.json({ explanation: explanation || 'AI could not generate explanation.', filename });
-});
-
-// ── Proper diff patching (replaces string replace) ─────────────
-app.post('/api/godmode/diff', async (req, res) => {
-  const { original, modified, filename } = req.body;
-  if (!original || !modified) return res.status(400).json({ error: 'original and modified required' });
-
-  try {
-    const patch   = Diff.createPatch(filename || 'file', original, modified, 'original', 'fixed');
-    const changes = Diff.diffLines(original, modified);
-    const stats   = { added: 0, removed: 0, unchanged: 0 };
-    for (const part of changes) {
-      const lines = part.count || 0;
-      if (part.added) stats.added += lines;
-      else if (part.removed) stats.removed += lines;
-      else stats.unchanged += lines;
-    }
-    res.json({ patch, stats, changes: changes.length });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ─── Health ──────────────────────────────────────────────────────
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 app.listen(PORT, () => {
-  console.log(`🕵️  VisCarMa backend v2.0 running on port ${PORT}`);
-  console.log(`🔐 OLLAMA_API_KEY ${OLLAMA_API_KEY ? '✓ set' : '✗ not set'}`);
-  console.log(`🔐 OPENROUTER_API_KEY ${OPENROUTER_API_KEY ? '✓ set (using OpenRouter fallback)' : '✗ not set — AI features will be disabled unless OLLAMA_API_KEY is set'}`);
-  console.log(`🌐 FRONTEND_URL: ${FRONTEND_URL}`);
-  console.log(`🔁 REDIRECT_URI: ${REDIRECT_URI}`);
-  console.log(`✅ VisCarMa server listening on port ${PORT}`);
+  console.log(`🕵️ VisCarma backend running on port ${PORT}`);
+  console.log(`🔐 AI Provider: ${process.env.AI_PROVIDER || 'openrouter'}`);
+  console.log(`🔐 GROQ_API_KEY ${process.env.GROQ_API_KEY ? '✓ set' : '✗ not set'}`);
+  console.log(`🔐 OPENROUTER_API_KEY ${process.env.OPENROUTER_API_KEY ? '✓ set' : '✗ not set'}`);
 });
