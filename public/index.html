@@ -51,7 +51,41 @@
       <button class="btn btn-sm" id="login-btn" onclick="login()">Login with GitHub</button>
     </div>
   </header>
+<!-- Sidebar -->
+<button class="nav-btn" id="nav-pr-agent" onclick="nav('pr-agent')">
+  <span class="ni">🤖</span> PR Agent
+</button>
 
+<!-- Panel -->
+<div class="panel" id="panel-pr-agent">
+  <div class="sec-head">
+    <div class="sec-eye">// pr_agent</div>
+    <h1 class="sec-h1">🤖 PR Agent</h1>
+    <p class="sec-sub">Your autonomous PR responder. It listens, responds, and reworks.</p>
+  </div>
+  <div style="padding:16px;">
+    <div class="card">
+      <div class="card-title">📋 Active PRs</div>
+      <div id="active-prs">
+        <div style="color:var(--text-2);">No active PRs being monitored.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🔧 Monitor a PR</div>
+      <div class="flex">
+        <input type="text" id="pr-agent-repo" placeholder="owner/repo" style="flex:1;" />
+        <input type="number" id="pr-agent-number" placeholder="PR #" style="width:100px;" />
+        <button class="btn btn-primary" onclick="startPRAgent()">▶ Monitor</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">💬 Recent Activity</div>
+      <div id="agent-activity" style="max-height:300px;overflow-y:auto;">
+        <div style="color:var(--text-2);">No activity yet.</div>
+      </div>
+    </div>
+  </div>
+</div> 
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-section">
