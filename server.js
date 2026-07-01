@@ -24,6 +24,78 @@ import crypto       from 'crypto';
 import webpush      from 'web-push';
 import cron         from 'node-cron';
 
+// server.js — Add this endpoint
+import { PRAgent } from './lib/pr-agent.js';
+
+// ─── PR Agent Webhook ─────────────────────────────────────────────
+app.post('/api/pr-agent/comment', async (req, res) => {
+  const { repoOwner, repoName, prNumber, token } = req.body;
+  const ghToken = token || req.session?.githubToken;
+
+  if (!ghToken) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  try {
+    const agent = new PRAgent(repoOwner, repoName, prNumber, ghToken);
+
+    // Check for new comments
+    const newComments = await agent.listenForComments();
+
+    if (newComments === 0) {
+      return res.json({ message: 'No new comments to process' });
+    }
+
+    res.json({
+      message: `Processed ${newComments} comment(s)`,
+      commentsProcessed: newComments,
+    });
+  } catch (error) {
+    console.error('[PR Agent]', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── GitHub Webhook Listener ──────────────────────────────────────
+app.post('/api/webhook/github', async (req, res) => {
+  const event = req.headers['x-github-event'];
+  const payload = req.body;
+
+  // Only listen for PR comments
+  if (event === 'issue_comment' && payload.issue?.pull_request) {
+    const { repo, issue, comment } = payload;
+    const prNumber = issue.number;
+    const repoOwner = repo.owner.login;
+    const repoName = repo.name;
+
+    console.log(`🔔 GitHub webhook: PR #${prNumber} comment by ${comment.user.login}`);
+
+    // Skip if comment is from the agent itself
+    if (comment.user.login === 'viscarma[bot]') {
+      return res.status(200).send('Skipped: own comment');
+    }
+
+    try {
+      // Get token from session or use a bot token
+      const token = process.env.GITHUB_BOT_TOKEN;
+      if (!token) {
+        console.warn('⚠️ GITHUB_BOT_TOKEN not set — skipping auto-respond');
+        return res.status(200).send('No bot token');
+      }
+
+      const agent = new PRAgent(repoOwner, repoName, prNumber, token);
+      await agent.listenForComments();
+
+      res.status(200).json({ message: 'PR Agent processed comment' });
+    } catch (error) {
+      console.error('[Webhook]', error);
+      res.status(500).json({ error: error.message });
+    }
+  } else {
+    res.status(200).send('Ignored event');
+  }
+});
+
 // ============ NEW: AI Provider imports ============
 import { callAIWithJSON, setAIProvider, getAIProvider } from './lib/ai-providers.js';
 
