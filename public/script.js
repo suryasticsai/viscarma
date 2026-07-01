@@ -411,4 +411,100 @@ document.addEventListener('DOMContentLoaded', function() {
     if (eventSource) eventSource.close();
   });
 });
+
+// ─── PR Agent ─────────────────────────────────────────────────────
+let monitoredPRs = [];
+
+async function startPRAgent() {
+  const repo = document.getElementById('pr-agent-repo').value.trim();
+  const prNumber = parseInt(document.getElementById('pr-agent-number').value);
+
+  if (!repo || !prNumber) {
+    toast('⚠️ Please enter both repo (owner/repo) and PR number.');
+    return;
+  }
+
+  const [repoOwner, repoName] = repo.split('/');
+  if (!repoOwner || !repoName) {
+    toast('⚠️ Invalid repo format. Use owner/repo.');
+    return;
+  }
+
+  toast('🤖 Starting PR Agent...');
+
+  try {
+    const response = await fetch('/api/pr-agent/comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        repoOwner,
+        repoName,
+        prNumber,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      toast(`✅ PR Agent started for #${prNumber}`);
+      addActivity(`Started monitoring PR #${prNumber} in ${repo}`);
+      monitoredPRs.push({ repoOwner, repoName, prNumber });
+      updateActivePRs();
+    } else {
+      toast('❌ ' + (data.error || 'Failed to start PR Agent'));
+    }
+  } catch (error) {
+    toast('❌ ' + error.message);
+  }
+}
+
+function addActivity(message) {
+  const container = document.getElementById('agent-activity');
+  const entry = document.createElement('div');
+  entry.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-2);';
+  entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+  container.appendChild(entry);
+  container.scrollTop = container.scrollHeight;
+}
+
+function updateActivePRs() {
+  const container = document.getElementById('active-prs');
+  if (monitoredPRs.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-2);">No active PRs being monitored.</div>';
+    return;
+  }
+  container.innerHTML = monitoredPRs.map(pr =>
+    `<div style="padding:4px 0;border-bottom:1px solid var(--border);">
+      <span style="color:var(--blue);">${pr.repoOwner}/${pr.repoName}</span>
+      <span style="color:var(--text-1);">PR #${pr.prNumber}</span>
+      <span style="color:var(--emerald);font-size:10px;">🟢 active</span>
+    </div>`
+  ).join('');
+}
+
+// Check for new comments periodically
+setInterval(async () => {
+  if (monitoredPRs.length === 0) return;
+
+  for (const pr of monitoredPRs) {
+    try {
+      const response = await fetch('/api/pr-agent/comment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoOwner: pr.repoOwner,
+          repoName: pr.repoName,
+          prNumber: pr.prNumber,
+        }),
+      });
+      const data = await response.json();
+      if (data.commentsProcessed > 0) {
+        addActivity(`Processed ${data.commentsProcessed} comment(s) on PR #${pr.prNumber}`);
+      }
+    } catch (error) {
+      // Silent fail
+    }
+  }
+}, 60000); // Check every 60 seconds
+
 // This script is safe to use as it controls the source (server) and renders HTML directly.
